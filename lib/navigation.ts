@@ -8,6 +8,7 @@ export type AppModule = {
 };
 
 export const appModules: AppModule[] = [
+  { href: "/solicitudes", label: "Solicitudes", stage: "00", owner: "Ventas", description: "Entrada comercial desde Fillout, Booking API, email o alta manual.", status: "ready_demo" },
   { href: "/clientes", label: "Clientes", stage: "01", owner: "Ventas", description: "CRM operativo con campos base, fuente y datos de facturación.", status: "ready_demo" },
   { href: "/expedientes", label: "Expedientes", stage: "02", owner: "Operaciones", description: "Casos con estado, destino, fechas, próxima acción y bloqueos.", status: "ready_demo" },
   { href: "/viajeros", label: "Viajeros", stage: "03", owner: "Operaciones", description: "Documentación mínima, caducidades y bloqueo antes de contrato.", status: "ready_demo" },
