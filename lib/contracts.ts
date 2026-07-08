@@ -11,7 +11,10 @@ export type ContractItem = {
   travelers_ready: boolean;
   payment_required_before_signature: boolean;
   document_file?: string;
+  sent_at?: string;
   signed_at?: string;
+  signer_name?: string;
+  signature_reference?: string;
   blocker?: string;
   notes?: string;
 };
@@ -43,6 +46,7 @@ export const demoContracts: ContractItem[] = [
     travelers_ready: true,
     payment_required_before_signature: false,
     document_file: "contrato-costa-rica-demo.pdf",
+    sent_at: "2026-02-11",
     notes: "Enviado para firma externa.",
   },
 ];
@@ -52,7 +56,8 @@ export function contractSummary(items: ContractItem[]) {
   const blocked = items.filter((item) => item.status === "blocked" || !item.travelers_ready).length;
   const sent = items.filter((item) => item.status === "sent").length;
   const draft = items.filter((item) => item.status === "draft" || item.status === "not_started").length;
-  return { total: items.length, signed, blocked, sent, draft };
+  const awaitingSignature = items.filter((item) => item.status === "sent" && !item.signed_at).length;
+  return { total: items.length, signed, blocked, sent, draft, awaitingSignature };
 }
 
 export function formatContractMoney(value: number, currency = "EUR") {
