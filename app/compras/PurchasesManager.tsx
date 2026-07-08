@@ -2,7 +2,7 @@
 
 import { FormEvent, useMemo, useState } from "react";
 import { expectedPurchases as demoPurchases } from "@/lib/mock-data";
-import { formatMoney, PurchaseItem, purchaseStatuses, purchaseTotals } from "@/lib/purchases";
+import { formatMoney, invoiceDelta, needsReview, PurchaseItem, purchaseStatuses, purchaseTotals } from "@/lib/purchases";
 import { isDemoMode } from "@/lib/supabase-browser";
 
 function toPurchaseItems(): PurchaseItem[] {
@@ -13,6 +13,7 @@ function toPurchaseItems(): PurchaseItem[] {
     service: item.service,
     status: item.status as PurchaseItem["status"],
     amount: item.amount,
+    currency: "EUR",
   }));
 }
 
@@ -20,14 +21,25 @@ export function PurchasesManager() {
   const [items, setItems] = useState<PurchaseItem[]>(toPurchaseItems());
   const [selectedId, setSelectedId] = useState(items[0]?.id ?? "");
   const [invoiceNumber, setInvoiceNumber] = useState("");
+  const [invoiceDate, setInvoiceDate] = useState("");
+  const [base, setBase] = useState("");
+  const [tax, setTax] = useState("");
+  const [total, setTotal] = useState("");
   const [fileName, setFileName] = useState("");
+  const [notRequiredReason, setNotRequiredReason] = useState("");
   const [notes, setNotes] = useState("");
   const [message, setMessage] = useState<string | null>(null);
 
   const totals = useMemo(() => purchaseTotals(items), [items]);
+  const selected = items.find((item) => item.id === selectedId);
 
   function updateStatus(id: string, status: PurchaseItem["status"]) {
-    setItems((current) => current.map((item) => item.id === id ? { ...item, status } : item));
+    setItems((current) => current.map((item) => {
+      if (item.id !== id) return item;
+      const next: PurchaseItem = { ...item, status };
+      if (status === "not_required" && !item.not_required_reason) next.not_required_reason = "Motivo pendiente de completar";
+      return next;
+    }));
   }
 
   function attachInvoice(event: FormEvent<HTMLFormElement>) {
@@ -35,26 +47,52 @@ export function PurchasesManager() {
     const current = items.find((item) => item.id === selectedId);
     if (!current) return;
 
+    const invoiceTotal = Number(total) || current.amount;
     const fallbackFileName = `${current.case_code}-${current.supplier}`.replace(/\s+/g, "_") + ".pdf";
+    const delta = Math.abs(invoiceTotal - current.amount);
+    const status: PurchaseItem["status"] = delta > 1 ? "review_needed" : "uploaded";
+
     setItems((list) => list.map((item) => item.id === selectedId ? {
       ...item,
-      status: "invoice_uploaded",
+      status,
       invoice_file: fileName.trim() || fallbackFileName,
       invoice_number: invoiceNumber.trim() || undefined,
-      notes: notes.trim() || undefined,
+      invoice_date: invoiceDate || undefined,
+      invoice_base: Number(base) || undefined,
+      invoice_tax: Number(tax) || undefined,
+      invoice_total: invoiceTotal,
+      currency: "EUR",
+      review_notes: notes.trim() || (delta > 1 ? "Diferencia entre importe previsto y factura recibida." : undefined),
     } : item));
     setInvoiceNumber("");
+    setInvoiceDate("");
+    setBase("");
+    setTax("");
+    setTotal("");
     setFileName("");
     setNotes("");
-    setMessage(isDemoMode() ? "Factura marcada como subida en modo demo. La subida real irá al bucket privado de Supabase." : "Factura vinculada a la compra esperada.");
+    setMessage(isDemoMode() ? "Factura registrada en modo demo. Si hay diferencia de importe, queda en revisión antes de aprobar." : "Factura vinculada a la compra esperada.");
+  }
+
+  function markNotRequired(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const current = items.find((item) => item.id === selectedId);
+    if (!current) return;
+    if (!notRequiredReason.trim()) {
+      setMessage("Para marcar una compra como no requerida hace falta motivo obligatorio.");
+      return;
+    }
+    setItems((list) => list.map((item) => item.id === selectedId ? { ...item, status: "not_required", not_required_reason: notRequiredReason.trim() } : item));
+    setNotRequiredReason("");
+    setMessage("Compra marcada como no requerida con motivo. En real quedará auditado.");
   }
 
   return (
     <div className="grid">
       <section className="grid grid-3">
         <div className="card"><span className="badge">Compras esperadas</span><div className="metric">{totals.count}</div><p>Líneas de presupuesto que generan factura proveedor.</p></div>
-        <div className="card"><span className="badge">Pendiente de conciliar</span><div className="metric">{formatMoney(totals.pendingAmount)}</div><p>{totals.pendingCount} compras todavía no aprobadas.</p></div>
-        <div className="card"><span className="badge">Facturas subidas</span><div className="metric">{totals.uploadedCount}</div><p>Revisión manual, sin OCR ni automatismos en MVP.</p></div>
+        <div className="card"><span className="badge">Pendiente de cerrar</span><div className="metric">{formatMoney(totals.pendingAmount)}</div><p>{totals.pendingCount} compras no aprobadas/no justificadas.</p></div>
+        <div className="card"><span className="badge">Revisión necesaria</span><div className="metric">{totals.reviewNeededCount}</div><p>Diferencias de importe, proveedor, fecha o evidencia.</p></div>
       </section>
 
       <section className="grid grid-2">
@@ -62,54 +100,33 @@ export function PurchasesManager() {
           <div className="eyebrow">Subida manual</div>
           <h2>Registrar factura proveedor</h2>
           <form className="form" onSubmit={attachInvoice}>
-            <label>Compra esperada
-              <select value={selectedId} onChange={(event) => setSelectedId(event.target.value)}>
-                {items.map((item) => <option key={item.id} value={item.id}>{item.case_code} · {item.supplier} · {formatMoney(item.amount)}</option>)}
-              </select>
-            </label>
-            <label>Número de factura<input className="input" value={invoiceNumber} onChange={(event) => setInvoiceNumber(event.target.value)} placeholder="FAC-2026-0001" /></label>
+            <label>Compra esperada<select value={selectedId} onChange={(event) => setSelectedId(event.target.value)}>{items.map((item) => <option key={item.id} value={item.id}>{item.case_code} · {item.supplier} · {formatMoney(item.amount)}</option>)}</select></label>
+            <div className="grid grid-2"><label>Número de factura<input className="input" value={invoiceNumber} onChange={(event) => setInvoiceNumber(event.target.value)} placeholder="FAC-2026-0001" /></label><label>Fecha factura<input className="input" type="date" value={invoiceDate} onChange={(event) => setInvoiceDate(event.target.value)} /></label></div>
+            <div className="grid grid-3"><label>Base<input className="input" type="number" step="0.01" value={base} onChange={(event) => setBase(event.target.value)} /></label><label>Impuestos<input className="input" type="number" step="0.01" value={tax} onChange={(event) => setTax(event.target.value)} /></label><label>Total<input className="input" type="number" step="0.01" value={total} onChange={(event) => setTotal(event.target.value)} placeholder={selected ? String(selected.amount) : "0"} /></label></div>
             <label>Nombre de archivo<input className="input" value={fileName} onChange={(event) => setFileName(event.target.value)} placeholder="factura-proveedor.pdf" /></label>
             <label>Notas de revisión<textarea className="input" rows={3} value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Diferencia con presupuesto, IVA, vencimiento, etc." /></label>
             {message ? <p>{message}</p> : null}
-            <button className="btn" type="submit">Marcar factura subida</button>
+            <button className="btn" type="submit">Registrar factura</button>
           </form>
         </div>
 
         <div className="card">
-          <div className="eyebrow">Criterio de cierre</div>
-          <h2>Checklist operativo</h2>
-          <table>
-            <tbody>
-              <tr><th>Facturas aprobadas</th><td>{totals.approvedCount}/{totals.count}</td></tr>
-              <tr><th>Importe previsto total</th><td>{formatMoney(totals.total)}</td></tr>
-              <tr><th>Modo actual</th><td>{isDemoMode() ? "Demo" : "Supabase"}</td></tr>
-              <tr><th>Cierre recomendado</th><td><span className="badge">{totals.pendingCount === 0 ? "ready_to_close" : "suppliers_pending"}</span></td></tr>
-            </tbody>
-          </table>
-          <p>El expediente no debería cerrarse hasta que todas las compras esperadas estén aprobadas o justificadas.</p>
+          <div className="eyebrow">No requerida</div>
+          <h2>Justificar excepción</h2>
+          <p>Solo se debe usar cuando una compra esperada no necesita factura. El motivo es obligatorio para poder cerrar el expediente.</p>
+          <form className="form" onSubmit={markNotRequired}>
+            <label>Compra esperada<select value={selectedId} onChange={(event) => setSelectedId(event.target.value)}>{items.map((item) => <option key={item.id} value={item.id}>{item.case_code} · {item.supplier}</option>)}</select></label>
+            <label>Motivo obligatorio<textarea className="input" rows={4} value={notRequiredReason} onChange={(event) => setNotRequiredReason(event.target.value)} placeholder="Ej. servicio cancelado, coste incluido en otro proveedor, no procede factura separada..." /></label>
+            <button className="btn secondary" type="submit">Marcar no requerida</button>
+          </form>
+          <table><tbody><tr><th>Aprobadas</th><td>{totals.approvedCount}/{totals.count}</td></tr><tr><th>Cerradas o justificadas</th><td>{totals.closedCount}/{totals.count}</td></tr><tr><th>Modo actual</th><td>{isDemoMode() ? "Demo" : "Supabase"}</td></tr><tr><th>Cierre recomendado</th><td><span className="badge">{totals.pendingCount === 0 ? "ready_to_close" : "suppliers_pending"}</span></td></tr></tbody></table>
         </div>
       </section>
 
       <section className="card">
         <table>
-          <thead><tr><th>Expediente</th><th>Proveedor</th><th>Servicio</th><th>Estado</th><th>Importe</th><th>Factura</th><th>Acción</th></tr></thead>
-          <tbody>
-            {items.map((item) => (
-              <tr key={item.id}>
-                <td><strong>{item.case_code}</strong></td>
-                <td>{item.supplier}</td>
-                <td>{item.service}</td>
-                <td><span className="badge">{item.status}</span></td>
-                <td>{formatMoney(item.amount)}</td>
-                <td>{item.invoice_file ? <span>{item.invoice_file}<br/><small>{item.invoice_number || "sin número"}</small></span> : "—"}</td>
-                <td>
-                  <select value={item.status} onChange={(event) => updateStatus(item.id, event.target.value as PurchaseItem["status"])}>
-                    {purchaseStatuses.map((status) => <option key={status} value={status}>{status}</option>)}
-                  </select>
-                </td>
-              </tr>
-            ))}
-          </tbody>
+          <thead><tr><th>Expediente</th><th>Proveedor</th><th>Servicio</th><th>Estado</th><th>Previsto</th><th>Factura</th><th>Diferencia</th><th>Acción</th></tr></thead>
+          <tbody>{items.map((item) => <tr key={item.id}><td><a href={`/expedientes/${item.case_code}`}><strong>{item.case_code}</strong></a></td><td>{item.supplier}</td><td>{item.service}</td><td><span className="badge">{item.status}</span></td><td>{formatMoney(item.amount, item.currency)}</td><td>{item.invoice_file ? <span>{item.invoice_file}<br/><small>{item.invoice_number || "sin número"} · {item.invoice_date || "sin fecha"} · {item.invoice_total ? formatMoney(item.invoice_total, item.currency) : "sin total"}</small></span> : (item.not_required_reason || "—")}</td><td>{item.invoice_total ? <span>{formatMoney(invoiceDelta(item), item.currency)}{needsReview(item) ? <><br/><small>revisar</small></> : null}</span> : "—"}</td><td><select value={item.status} onChange={(event) => updateStatus(item.id, event.target.value as PurchaseItem["status"])}>{purchaseStatuses.map((status) => <option key={status} value={status}>{status}</option>)}</select></td></tr>)}</tbody>
         </table>
       </section>
     </div>
