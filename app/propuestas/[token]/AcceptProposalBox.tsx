@@ -2,15 +2,33 @@
 
 import { useState } from "react";
 
-export function AcceptProposalBox({ total }: { total: number }) {
-  const [accepted, setAccepted] = useState(false);
+type AcceptState = "idle" | "saving" | "accepted" | "error";
 
-  if (accepted) {
+export function AcceptProposalBox({ total, token }: { total: number; token: string }) {
+  const [state, setState] = useState<AcceptState>("idle");
+  const [message, setMessage] = useState<string | null>(null);
+
+  async function acceptProposal() {
+    setState("saving");
+    setMessage(null);
+    try {
+      const response = await fetch(`/api/propuestas/${encodeURIComponent(token)}/accept`, { method: "POST" });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.error || "No se ha podido registrar la aceptación.");
+      setState("accepted");
+      setMessage(payload.message || "Propuesta aceptada.");
+    } catch (error) {
+      setState("error");
+      setMessage(error instanceof Error ? error.message : "Error registrando la aceptación.");
+    }
+  }
+
+  if (state === "accepted") {
     return (
       <div>
         <div className="eyebrow">Propuesta aceptada</div>
         <div className="metric">Aceptada</div>
-        <p>Hemos registrado la aceptación en modo demo. El siguiente paso operativo será preparar contrato, documentación mínima y pago.</p>
+        <p>{message || "Hemos registrado la aceptación. El siguiente paso operativo será preparar contrato, documentación mínima y pago."}</p>
         <div style={{ display: "grid", gap: 8 }}>
           <span className="badge">Versión bloqueada</span>
           <span className="badge">Contrato pendiente</span>
@@ -25,8 +43,8 @@ export function AcceptProposalBox({ total }: { total: number }) {
       <div className="eyebrow">Inversión total</div>
       <div className="metric">{total.toLocaleString("es-ES")} €</div>
       <p>Diseño, reservas coordinadas y soporte operativo. La versión aceptada quedará bloqueada y auditable.</p>
-      <button className="btn" style={{ width: "100%" }} onClick={() => setAccepted(true)}>Aceptar propuesta</button>
-      <p><small>Modo demo: no se firma ni se cobra todavía. En fase real se guardará la aceptación con token seguro.</small></p>
+      <button className="btn" style={{ width: "100%" }} onClick={acceptProposal} disabled={state === "saving"}>{state === "saving" ? "Registrando..." : "Aceptar propuesta"}</button>
+      {message ? <p><small>{message}</small></p> : <p><small>En modo demo registra la aceptación sin cobro. En modo real bloquea la versión mediante token seguro.</small></p>}
     </div>
   );
 }
