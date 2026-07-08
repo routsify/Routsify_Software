@@ -25,6 +25,13 @@ export function LoginForm() {
       return;
     }
 
+    const { error: profileError } = await supabase.rpc("ensure_profile_for_current_user");
+    if (profileError) {
+      setMessage(profileError.message);
+      setLoading(false);
+      return;
+    }
+
     router.push("/");
     router.refresh();
   }
