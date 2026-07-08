@@ -78,6 +78,51 @@ export const cases = [
   }
 ];
 
+export const budgetLines = [
+  {
+    id: "demo-budget-1",
+    service_type_code: "hotel",
+    description_public: "5 noches en hotel boutique seleccionado en Kioto con desayuno incluido.",
+    description_internal: "Hotel boutique Kioto 5 noches",
+    supplier_name: "Hotel Aurora Kyoto",
+    destination_segment: "Kioto",
+    start_date: "2026-10-10",
+    end_date: "2026-10-15",
+    cost_budget: 2600,
+    margin_applied: 0.25,
+    sale_price: 3466.67,
+    creates_expected_purchase: true,
+  },
+  {
+    id: "demo-budget-2",
+    service_type_code: "transfer",
+    description_public: "Traslados privados en los puntos clave del itinerario para viajar sin fricción.",
+    description_internal: "Traslados privados aeropuertos y estaciones",
+    supplier_name: "Japan Private Transfers",
+    destination_segment: "Tokio/Kioto",
+    start_date: "2026-10-05",
+    end_date: "2026-10-18",
+    cost_budget: 900,
+    margin_applied: 0.25,
+    sale_price: 1200,
+    creates_expected_purchase: true,
+  },
+  {
+    id: "demo-budget-3",
+    service_type_code: "fee",
+    description_public: "Diseño del viaje, coordinación operativa y soporte antes y durante el viaje.",
+    description_internal: "Fee diseño y soporte",
+    supplier_name: "Routsify",
+    destination_segment: "General",
+    start_date: "",
+    end_date: "",
+    cost_budget: 0,
+    margin_applied: 1,
+    sale_price: 950,
+    creates_expected_purchase: false,
+  }
+];
+
 export const expectedPurchases = [
   { case_code: "EXP-2026-0001", supplier: "Hotel Aurora Kyoto", service: "Hotel", status: "expected", amount: 2600 },
   { case_code: "EXP-2026-0001", supplier: "Japan Private Transfers", service: "Traslado", status: "expected", amount: 900 },
