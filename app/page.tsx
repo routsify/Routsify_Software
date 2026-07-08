@@ -1,3 +1,4 @@
+import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
 import { cases, expectedPurchases } from "@/lib/mock-data";
 
@@ -7,7 +8,7 @@ export default function DashboardPage() {
   const pipeline = cases.reduce((sum, item) => sum + item.accepted_value, 0);
 
   return (
-    <>
+    <AppShell>
       <PageHeader
         eyebrow="Routsify Software · MVP"
         title="Qué necesita acción hoy"
@@ -25,6 +26,6 @@ export default function DashboardPage() {
           <a className="btn secondary" href="/propuestas/demo-public-token">Abrir propuesta pública</a>
         </div>
       </section>
-    </>
+    </AppShell>
   );
 }
