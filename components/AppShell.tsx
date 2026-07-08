@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AuthStatus } from "@/components/AuthStatus";
 import { Logo } from "@/components/Logo";
 
 const nav = [
@@ -21,6 +22,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <nav className="nav">
           {nav.map(([href, label]) => <Link key={href} href={href}>{label}</Link>)}
         </nav>
+        <div style={{ marginTop: 28 }}>
+          <AuthStatus />
+        </div>
       </aside>
       <main className="main">{children}</main>
     </div>
