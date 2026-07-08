@@ -1,5 +1,6 @@
 import { Logo } from "@/components/Logo";
 import { proposal } from "@/lib/mock-data";
+import { AcceptProposalBox } from "./AcceptProposalBox";
 
 export default function PublicProposalPage() {
   return (
@@ -16,10 +17,7 @@ export default function PublicProposalPage() {
             </div>
           </div>
           <div className="card">
-            <div className="eyebrow">Inversión total</div>
-            <div className="metric">{proposal.total.toLocaleString("es-ES")} €</div>
-            <p>Diseño, reservas coordinadas y soporte operativo. La versión aceptada quedará bloqueada y auditable.</p>
-            <button className="btn" style={{ width: "100%" }}>Aceptar propuesta</button>
+            <AcceptProposalBox total={proposal.total} />
           </div>
         </section>
         <section className="grid grid-2" style={{ marginTop: 28 }}>
