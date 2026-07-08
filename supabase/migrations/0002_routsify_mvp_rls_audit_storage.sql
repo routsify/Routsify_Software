@@ -50,18 +50,33 @@ $$;
 
 create or replace function public.audit_row_change()
 returns trigger language plpgsql security definer set search_path = public as $$
+declare
+  row_org uuid;
+  row_id uuid;
 begin
+  if tg_op = 'DELETE' then
+    row_org := old.organization_id;
+    row_id := old.id;
+  else
+    row_org := new.organization_id;
+    row_id := new.id;
+  end if;
+
   insert into public.audit_log(organization_id, actor_id, entity_type, entity_id, action, before_data, after_data)
   values (
-    coalesce(new.organization_id, old.organization_id),
+    row_org,
     auth.uid(),
     tg_table_name,
-    coalesce(new.id, old.id),
+    row_id,
     tg_op,
     case when tg_op in ('UPDATE','DELETE') then to_jsonb(old) else null end,
     case when tg_op in ('INSERT','UPDATE') then to_jsonb(new) else null end
   );
-  return coalesce(new, old);
+
+  if tg_op = 'DELETE' then
+    return old;
+  end if;
+  return new;
 end;
 $$;
 
