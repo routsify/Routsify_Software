@@ -1,9 +1,10 @@
+import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
 import { serviceTypes } from "@/lib/mock-data";
 
 export default function ServiceTypesPage() {
   return (
-    <>
+    <AppShell>
       <PageHeader eyebrow="Configuración" title="Tipos de servicio" description="Los tipos mínimos salen preparados como tabla configurable para ampliarlos desde backoffice sin tocar código." action={<button className="btn">Añadir tipo</button>} />
       <section className="grid grid-2">
         <div className="card">
@@ -23,6 +24,6 @@ export default function ServiceTypesPage() {
           </form>
         </div>
       </section>
-    </>
+    </AppShell>
   );
 }
