@@ -1,30 +1,42 @@
 # Routsify_Software
 
-MVP inicial de Routsify como aplicación nueva con Next.js, Supabase y Vercel.
+MVP inicial de Routsify como aplicación nueva con Next.js, TypeScript, Supabase y Vercel.
 
 ## Estado actual
 
-- Proyecto Supabase creado: `Routsify_Software`
-- Project ref: `wphiurjzkxbkakiozgvf`
-- URL pública Supabase: `https://wphiurjzkxbkakiozgvf.supabase.co`
-- Esquema MVP aplicado con RLS, buckets privados y datos ficticios.
-- Edge Functions desplegadas: `form-webhook` y `booking-webhook`.
-- Interfaz local en modo demo con datos ficticios.
+- Aplicación desplegada en Vercel.
+- Integración GitHub a Vercel activa: cada commit a `main` despliega producción.
+- Interfaz estable en modo demo con datos ficticios.
+- Supabase está preparado a nivel de código, migraciones y Edge Functions, pero las variables reales se activarán más adelante.
+- Hasta activar Supabase real, mantener `NEXT_PUBLIC_DEMO_MODE=true`.
+
+## Flujo MVP cubierto
+
+1. Cliente
+2. Expediente
+3. Presupuesto nativo con margen por línea
+4. Propuesta pública visual
+5. Compras esperadas por proveedor
+6. Subida manual de factura proveedor
+7. Revisión de cierre operativo
+8. Preparación para integración conservadora con Holded
 
 ## Pantallas incluidas
 
 - Dashboard operativo
-- Clientes con todos los campos base del modelo
-- Expedientes con estado, próxima acción y bloqueos
-- Compras esperadas
-- Tipos de servicio configurables desde backoffice
+- Clientes con campos base del modelo y alta rápida demo
+- Expedientes con estado, próxima acción, bloqueos y alta operativa demo
+- Propuestas internas con presupuesto nativo y margen por línea
 - Propuesta pública visual y profesional
+- Compras esperadas, subida manual de factura y checklist de conciliación
+- Tipos de servicio configurables desde backoffice
+- Login preparado para Supabase Auth, protegido para no romper en modo demo
 
 ## Colores y marca
 
 - Color principal: `#379237`
 - Fondo: blanco / soft green
-- Logo: `public/logo.png`
+- Marca temporal por componente. El logo definitivo debe subirse como `public/logo.png` o SVG cuando se incorpore el asset binario al repo.
 
 ## Arranque local
 
@@ -34,18 +46,30 @@ npm install
 npm run dev
 ```
 
-Abre `http://localhost:3000`.
+## Variables de entorno
 
-## Próximos pasos
+Mantener demo mientras se completa el esqueleto funcional:
 
-1. Conectar repo a Vercel para preview automático.
-2. Configurar `WEBHOOK_SECRET` en Supabase antes de conectar Fillout o la API de booking.
-3. Crear usuarios reales en Supabase Auth y asociarlos a `profiles` con roles.
-4. Cambiar `NEXT_PUBLIC_DEMO_MODE=false` cuando se conecten las pantallas a Supabase con login.
+```bash
+NEXT_PUBLIC_APP_NAME=Routsify Software
+NEXT_PUBLIC_BRAND_COLOR=#379237
+NEXT_PUBLIC_DEMO_MODE=true
+```
+
+Cuando se active Supabase real se añadirán las variables públicas de Supabase y las claves privadas de webhooks/integraciones en Vercel.
 
 ## Integraciones previstas
 
-- Fillout: `/functions/v1/form-webhook`
-- Booking API propia: `/functions/v1/booking-webhook`
+- Fillout: `form-webhook`
+- Booking API propia: `booking-webhook`
 - Pagos: manual/transferencia al inicio; Teya webhook queda para fase posterior.
 - Holded: preparado a nivel de modelo con `integration_outbox`, `holded_contact_id`, `holded_document_id` y estados de sync.
+
+## Criterio para salir de modo demo
+
+1. Confirmar proyecto Supabase real y variables públicas válidas.
+2. Aplicar migraciones en el proyecto correcto.
+3. Crear usuarios internos en Supabase Auth.
+4. Validar RLS y perfiles por rol.
+5. Configurar buckets privados para documentos/facturas.
+6. Probar login, lectura y escritura con usuario no administrador.
