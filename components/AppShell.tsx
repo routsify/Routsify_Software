@@ -3,6 +3,7 @@ import { AuthStatus } from "@/components/AuthStatus";
 import { Logo } from "@/components/Logo";
 
 const nav = [
+  ["/hoy", "Hoy"],
   ["/", "Dashboard"],
   ["/solicitudes", "Solicitudes"],
   ["/clientes", "Clientes"],
@@ -21,14 +22,13 @@ const nav = [
   ["/informes", "Informes"],
   ["/seguridad", "Seguridad"],
   ["/ajustes/tipos-servicio", "Tipos de servicio"],
-  ["/propuestas/demo-public-token", "Propuesta pública"],
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="shell">
       <aside className="sidebar">
-        <Link className="brand" href="/">
+        <Link className="brand" href="/hoy">
           <Logo size={44} />
           <span>routsify</span>
         </Link>
