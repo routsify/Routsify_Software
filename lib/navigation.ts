@@ -23,8 +23,9 @@ export const appModules: AppModule[] = [
   { href: "/facturacion", label: "Pagos y facturación", stage: "12", owner: "Facturación", description: "Cobros manuales y borradores fiscales para sincronización conservadora.", status: "ready_demo" },
   { href: "/integraciones", label: "Integraciones", stage: "13", owner: "Admin", description: "Outbox, reintentos, entradas externas y tareas programadas.", status: "prepared" },
   { href: "/cierre", label: "Cierre operativo", stage: "14", owner: "Dirección", description: "Checklist final de contrato, pago, proveedores y notas.", status: "ready_demo" },
-  { href: "/seguridad", label: "Seguridad", stage: "15", owner: "Admin", description: "Roles, permisos y auditoría antes de activar datos reales.", status: "prepared" },
-  { href: "/ajustes/tipos-servicio", label: "Tipos de servicio", stage: "16", owner: "Admin", description: "Catálogo ampliable de servicios para presupuestos.", status: "ready_demo" },
+  { href: "/informes", label: "Informes", stage: "15", owner: "Dirección", description: "KPIs mínimos de origen, conversión, margen y proveedores problemáticos.", status: "ready_demo" },
+  { href: "/seguridad", label: "Seguridad", stage: "16", owner: "Admin", description: "Roles, permisos y auditoría antes de activar datos reales.", status: "prepared" },
+  { href: "/ajustes/tipos-servicio", label: "Tipos de servicio", stage: "17", owner: "Admin", description: "Catálogo ampliable de servicios para presupuestos.", status: "ready_demo" },
 ];
 
 export function moduleSummary(modules: AppModule[]) {
