@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
+import { getSupabaseBrowserClient, hasSupabaseBrowserEnv, isDemoMode } from "@/lib/supabase-browser";
 
 type ProfileState = {
   email: string | null;
@@ -11,9 +11,15 @@ type ProfileState = {
 
 export function AuthStatus() {
   const [state, setState] = useState<ProfileState>({ email: null, role: null });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!isDemoMode());
 
   async function loadProfile() {
+    if (isDemoMode() || !hasSupabaseBrowserEnv()) {
+      setState({ email: null, role: "demo" });
+      setLoading(false);
+      return;
+    }
+
     const supabase = getSupabaseBrowserClient();
     const { data: userData } = await supabase.auth.getUser();
 
@@ -29,6 +35,12 @@ export function AuthStatus() {
   }
 
   useEffect(() => {
+    if (isDemoMode() || !hasSupabaseBrowserEnv()) {
+      setState({ email: null, role: "demo" });
+      setLoading(false);
+      return;
+    }
+
     const supabase = getSupabaseBrowserClient();
     void loadProfile();
 
@@ -46,6 +58,7 @@ export function AuthStatus() {
   }
 
   if (loading) return <span className="badge">Comprobando sesión</span>;
+  if (state.role === "demo") return <span className="badge">Modo demo</span>;
   if (!state.email) return <Link className="btn secondary" href="/login">Entrar</Link>;
 
   return (
