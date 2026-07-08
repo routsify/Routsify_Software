@@ -6,6 +6,7 @@ const nav = [
   ["/", "Dashboard"],
   ["/clientes", "Clientes"],
   ["/expedientes", "Expedientes"],
+  ["/propuestas", "Propuestas"],
   ["/compras", "Compras"],
   ["/ajustes/tipos-servicio", "Tipos de servicio"],
   ["/propuestas/demo-public-token", "Propuesta pública"],
