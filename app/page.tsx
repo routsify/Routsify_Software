@@ -13,9 +13,9 @@ export default function DashboardPage() {
     <AppShell>
       <PageHeader
         eyebrow="Routsify Software · MVP"
-        title="Qué necesita acción hoy"
-        description="Backoffice interno con datos ficticios y flujo completo de agencia a medida: cliente, expediente, propuesta, operación, compras, pagos, cierre, seguridad e integraciones."
-        action={<a className="btn" href="/expedientes">Ver expedientes</a>}
+        title="Mapa funcional del sistema"
+        description="El dashboard explica el flujo completo. Para trabajar cada día, entra en Hoy: una única cola priorizada con bloqueos y acciones de todos los módulos."
+        action={<a className="btn" href="/hoy">Abrir Hoy</a>}
       />
 
       <section className="grid grid-3">
@@ -35,9 +35,9 @@ export default function DashboardPage() {
           <div>
             <div className="eyebrow">Mapa funcional</div>
             <h2>Flujo completo del MVP</h2>
-            <p>Orden lógico de trabajo y responsabilidad por módulo.</p>
+            <p>Orden lógico de trabajo y responsabilidad por módulo. Hoy es la capa de decisión diaria; el resto son pantallas especializadas.</p>
           </div>
-          <a className="btn secondary" href="/propuestas/demo-public-token">Abrir propuesta pública</a>
+          <a className="btn secondary" href="/hoy">Trabajar acciones abiertas</a>
         </div>
         <table>
           <thead><tr><th>Fase</th><th>Módulo</th><th>Responsable</th><th>Estado</th><th>Función</th></tr></thead>
