@@ -26,6 +26,7 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ cas
   const billingStats = billingSummary(casePayments, caseDocs);
   const budgetTotals = calculateBudgetTotals(budgetLines);
   const purchasePending = casePurchases.filter((item) => item.status !== "approved").length;
+  const saleValue = currentCase.accepted_value || budgetTotals.totalSale;
   const canClose = travelerStats.ready && contractStats.blocked === 0 && purchasePending === 0 && billingStats.pending === 0;
 
   return (
@@ -44,7 +45,7 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ cas
       </section>
 
       <section className="grid grid-3" style={{ marginTop: 18 }}>
-        <div className="card"><span className="badge">Venta propuesta</span><div className="metric">{formatCurrency(currentCase.accepted_value || budgetTotals.sale)}</div><p>Margen demo: {formatPercent(budgetTotals.marginRate)}</p></div>
+        <div className="card"><span className="badge">Venta propuesta</span><div className="metric">{formatCurrency(saleValue)}</div><p>Margen demo: {formatPercent(budgetTotals.margin)}</p></div>
         <div className="card"><span className="badge">Viajeros</span><div className="metric">{travelerStats.ready ? "ready" : "blocked"}</div><p>{caseTravelers.length} viajeros · {travelerStats.missing} faltantes · {travelerStats.expired} caducados.</p></div>
         <div className="card"><span className="badge">Pagos</span><div className="metric">{formatBillingMoney(billingStats.received)}</div><p>{formatBillingMoney(billingStats.pending)} pendiente.</p></div>
       </section>
