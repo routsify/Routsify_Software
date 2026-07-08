@@ -2,27 +2,11 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { getSupabaseBrowserClient, isDemoMode } from "@/lib/supabase-browser";
-import { clients as demoClients } from "@/lib/mock-data";
+import { cases, clients as demoClients } from "@/lib/mock-data";
+import { clientCaseStats, clientContactCompleteness, clientMissingFields, clientNextAction, clientsSummary, findPossibleDuplicate } from "@/lib/client-rules";
 import type { Client } from "@/lib/types";
 
-const fields = [
-  "display_name",
-  "client_type",
-  "first_name",
-  "last_name",
-  "company_name",
-  "email",
-  "email_normalized",
-  "phone",
-  "phone_normalized",
-  "tax_id",
-  "billing_address",
-  "country",
-  "language",
-  "source",
-  "holded_contact_id",
-  "notes",
-];
+const fields = ["display_name", "client_type", "first_name", "last_name", "company_name", "email", "phone", "tax_id", "billing_address", "country", "language", "source", "holded_contact_id", "notes"];
 
 type ClientDraft = {
   client_type: string;
@@ -95,10 +79,11 @@ export function ClientsManager() {
       });
   }, []);
 
+  const summary = useMemo(() => clientsSummary(clients, cases), [clients]);
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     if (!normalized) return clients;
-    return clients.filter((client) => [client.display_name, client.email, client.phone, client.source].some((value) => String(value ?? "").toLowerCase().includes(normalized)));
+    return clients.filter((client) => [client.display_name, client.email, client.phone, client.source, client.tax_id].some((value) => String(value ?? "").toLowerCase().includes(normalized)));
   }, [clients, query]);
 
   function updateDraft<K extends keyof ClientDraft>(key: K, value: ClientDraft[K]) {
@@ -118,6 +103,11 @@ export function ClientsManager() {
 
     const emailNormalized = normalizeEmail(draft.email);
     const phoneNormalized = normalizePhone(draft.phone);
+    const duplicate = clients.find((client) => Boolean((emailNormalized && emailNormalized === client.email_normalized) || (phoneNormalized && phoneNormalized === client.phone_normalized)));
+    if (duplicate) {
+      setError(`Posible duplicado: ${duplicate.display_name}. Revisa el cliente existente antes de crear otro.`);
+      return;
+    }
 
     const payload = {
       client_type: draft.client_type,
@@ -140,7 +130,7 @@ export function ClientsManager() {
     if (isDemoMode()) {
       setClients((current) => [{ id: `demo-client-${Date.now()}`, ...payload } as Client, ...current]);
       setDraft(emptyDraft);
-      setMessage("Cliente creado en modo demo. Cuando activemos Supabase real quedará guardado en base de datos.");
+      setMessage("Cliente creado en modo demo con deduplicación básica. En real quedará guardado en base de datos.");
       return;
     }
 
@@ -161,7 +151,6 @@ export function ClientsManager() {
       .single();
 
     setSaving(false);
-
     if (insertError) {
       setError(insertError.message);
       return;
@@ -174,12 +163,18 @@ export function ClientsManager() {
 
   return (
     <div className="grid">
+      <section className="grid grid-3">
+        <div className="card"><span className="badge">Clientes</span><div className="metric">{summary.total}</div><p>{loading ? "Cargando..." : "Base comercial y fiscal."}</p></div>
+        <div className="card"><span className="badge">Incompletos</span><div className="metric">{summary.incomplete}</div><p>Faltan contacto, fiscalidad o idioma.</p></div>
+        <div className="card"><span className="badge">Con expediente activo</span><div className="metric">{summary.activeClients}</div><p>{summary.duplicates} posibles duplicados.</p></div>
+      </section>
+
       <div className="card">
         <div className="header" style={{ marginBottom: 0 }}>
           <div>
             <div className="eyebrow">{isDemoMode() ? "Modo demo" : "Supabase real"}</div>
-            <h2>{loading ? "Cargando clientes..." : `${filtered.length} clientes`}</h2>
-            {error ? <p style={{ color: "var(--danger)" }}>{error}</p> : <p>Busca por nombre, email, teléfono o fuente.</p>}
+            <h2>{filtered.length} clientes filtrados</h2>
+            {error ? <p style={{ color: "var(--danger)" }}>{error}</p> : <p>Busca por nombre, email, teléfono, NIF o fuente.</p>}
             {message ? <p>{message}</p> : null}
           </div>
           <input className="input" style={{ maxWidth: 320 }} placeholder="Buscar cliente" value={query} onChange={(event) => setQuery(event.target.value)} />
@@ -188,42 +183,37 @@ export function ClientsManager() {
 
       <section className="card">
         <div className="eyebrow">Nuevo cliente</div>
-        <h2>Alta rápida con deduplicación preparada</h2>
+        <h2>Alta rápida sin duplicar contactos</h2>
         <form className="form" onSubmit={createClient}>
-          <div className="grid grid-3">
-            <label>Tipo<select value={draft.client_type} onChange={(event) => updateDraft("client_type", event.target.value)}><option value="person">Persona</option><option value="company">Empresa</option></select></label>
-            <label>Nombre visible<input className="input" value={draft.display_name} onChange={(event) => updateDraft("display_name", event.target.value)} placeholder="Laura Martín" /></label>
-            <label>Fuente<input className="input" value={draft.source} onChange={(event) => updateDraft("source", event.target.value)} placeholder="manual / fillout" /></label>
-          </div>
-          <div className="grid grid-3">
-            <label>Nombre<input className="input" value={draft.first_name} onChange={(event) => updateDraft("first_name", event.target.value)} /></label>
-            <label>Apellidos<input className="input" value={draft.last_name} onChange={(event) => updateDraft("last_name", event.target.value)} /></label>
-            <label>Empresa<input className="input" value={draft.company_name} onChange={(event) => updateDraft("company_name", event.target.value)} /></label>
-          </div>
-          <div className="grid grid-3">
-            <label>Email<input className="input" type="email" value={draft.email} onChange={(event) => updateDraft("email", event.target.value)} /></label>
-            <label>Teléfono<input className="input" value={draft.phone} onChange={(event) => updateDraft("phone", event.target.value)} /></label>
-            <label>NIF/CIF/Pasaporte<input className="input" value={draft.tax_id} onChange={(event) => updateDraft("tax_id", event.target.value)} /></label>
-          </div>
-          <div className="grid grid-3">
-            <label>País<input className="input" value={draft.country} onChange={(event) => updateDraft("country", event.target.value)} /></label>
-            <label>Idioma<input className="input" value={draft.language} onChange={(event) => updateDraft("language", event.target.value)} /></label>
-            <label>Dirección facturación<input className="input" value={draft.billing_address} onChange={(event) => updateDraft("billing_address", event.target.value)} /></label>
-          </div>
+          <div className="grid grid-3"><label>Tipo<select value={draft.client_type} onChange={(event) => updateDraft("client_type", event.target.value)}><option value="person">Persona</option><option value="company">Empresa</option></select></label><label>Nombre visible<input className="input" value={draft.display_name} onChange={(event) => updateDraft("display_name", event.target.value)} placeholder="Laura Martín" /></label><label>Fuente<input className="input" value={draft.source} onChange={(event) => updateDraft("source", event.target.value)} placeholder="manual / fillout" /></label></div>
+          <div className="grid grid-3"><label>Nombre<input className="input" value={draft.first_name} onChange={(event) => updateDraft("first_name", event.target.value)} /></label><label>Apellidos<input className="input" value={draft.last_name} onChange={(event) => updateDraft("last_name", event.target.value)} /></label><label>Empresa<input className="input" value={draft.company_name} onChange={(event) => updateDraft("company_name", event.target.value)} /></label></div>
+          <div className="grid grid-3"><label>Email<input className="input" type="email" value={draft.email} onChange={(event) => updateDraft("email", event.target.value)} /></label><label>Teléfono<input className="input" value={draft.phone} onChange={(event) => updateDraft("phone", event.target.value)} /></label><label>NIF/CIF/Pasaporte<input className="input" value={draft.tax_id} onChange={(event) => updateDraft("tax_id", event.target.value)} /></label></div>
+          <div className="grid grid-3"><label>País<input className="input" value={draft.country} onChange={(event) => updateDraft("country", event.target.value)} /></label><label>Idioma<input className="input" value={draft.language} onChange={(event) => updateDraft("language", event.target.value)} /></label><label>Dirección facturación<input className="input" value={draft.billing_address} onChange={(event) => updateDraft("billing_address", event.target.value)} /></label></div>
           <label>Notas<textarea className="input" rows={3} value={draft.notes} onChange={(event) => updateDraft("notes", event.target.value)} /></label>
           <button className="btn" type="submit" disabled={saving}>{saving ? "Guardando..." : "Crear cliente"}</button>
         </form>
       </section>
 
-      {filtered.map((client) => (
-        <article className="card" key={client.id}>
-          <div className="header" style={{ marginBottom: 8 }}>
-            <div><span className="badge">{client.source ?? "manual"}</span><h2>{client.display_name}</h2></div>
-            <a className="btn secondary" href="/expedientes">Ver expedientes</a>
-          </div>
-          <table><tbody>{fields.map((field) => <tr key={field}><th>{field}</th><td>{formatValue((client as Record<string, unknown>)[field])}</td></tr>)}</tbody></table>
-        </article>
-      ))}
+      {filtered.map((client) => {
+        const completeness = clientContactCompleteness(client);
+        const missing = clientMissingFields(client);
+        const duplicate = findPossibleDuplicate(client, clients);
+        const stats = clientCaseStats(client, cases);
+        return (
+          <article className="card" key={client.id}>
+            <div className="header" style={{ marginBottom: 8 }}>
+              <div><span className="badge">{client.source ?? "manual"}</span><h2>{client.display_name}</h2><p>{clientNextAction(client, clients, cases)}</p></div>
+              <a className="btn secondary" href={stats.codes[0] ? `/expedientes/${stats.codes[0]}` : "/expedientes"}>{stats.active > 0 ? "Ver expediente" : "Ver expedientes"}</a>
+            </div>
+            <section className="grid grid-3" style={{ marginBottom: 18 }}>
+              <div className="card" style={{ boxShadow: "none" }}><span className="badge">Ficha</span><div className="metric">{completeness.score}%</div><p>{missing.length ? `Falta: ${missing.join(", ")}` : "Datos mínimos completos."}</p></div>
+              <div className="card" style={{ boxShadow: "none" }}><span className="badge">Expedientes</span><div className="metric">{stats.active}/{stats.total}</div><p>{formatValue(stats.codes.join(", "))}</p></div>
+              <div className="card" style={{ boxShadow: "none" }}><span className="badge">Duplicado</span><div className="metric">{duplicate ? "revisar" : "ok"}</div><p>{duplicate ? duplicate.display_name : "Sin duplicado por email/teléfono."}</p></div>
+            </section>
+            <table><tbody>{fields.map((field) => <tr key={field}><th>{field}</th><td>{formatValue((client as Record<string, unknown>)[field])}</td></tr>)}</tbody></table>
+          </article>
+        );
+      })}
     </div>
   );
 }
