@@ -2,7 +2,9 @@ import { Logo } from "@/components/Logo";
 import { proposal } from "@/lib/mock-data";
 import { AcceptProposalBox } from "./AcceptProposalBox";
 
-export default function PublicProposalPage() {
+export default async function PublicProposalPage({ params }: { params: Promise<{ token: string }> }) {
+  const { token } = await params;
+
   return (
     <div className="proposal-hero">
       <div className="proposal-wrap">
@@ -17,7 +19,7 @@ export default function PublicProposalPage() {
             </div>
           </div>
           <div className="card">
-            <AcceptProposalBox total={proposal.total} />
+            <AcceptProposalBox total={proposal.total} token={token} />
           </div>
         </section>
         <section className="grid grid-2" style={{ marginTop: 28 }}>
