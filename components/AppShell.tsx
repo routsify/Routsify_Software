@@ -9,6 +9,7 @@ const nav = [
   ["/viajeros", "Viajeros"],
   ["/propuestas", "Propuestas"],
   ["/compras", "Compras"],
+  ["/facturacion", "Pagos y facturación"],
   ["/cierre", "Cierre operativo"],
   ["/ajustes/tipos-servicio", "Tipos de servicio"],
   ["/propuestas/demo-public-token", "Propuesta pública"],
