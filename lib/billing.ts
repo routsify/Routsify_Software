@@ -1,5 +1,5 @@
 export type PaymentStatus = "pending" | "received" | "failed" | "refunded";
-export type BillingDocumentStatus = "draft" | "ready" | "sent" | "synced" | "error";
+export type BillingDocumentStatus = "draft" | "blocked" | "ready" | "sent" | "synced" | "error";
 export type BillingDocumentType = "proforma" | "invoice" | "final_invoice" | "regularization";
 
 export type PaymentItem = {
@@ -28,7 +28,7 @@ export type BillingDocument = {
 };
 
 export const paymentStatuses: PaymentStatus[] = ["pending", "received", "failed", "refunded"];
-export const billingStatuses: BillingDocumentStatus[] = ["draft", "ready", "sent", "synced", "error"];
+export const billingStatuses: BillingDocumentStatus[] = ["draft", "blocked", "ready", "sent", "synced", "error"];
 export const billingTypes: BillingDocumentType[] = ["proforma", "invoice", "final_invoice", "regularization"];
 
 export const demoPayments: PaymentItem[] = [
@@ -75,7 +75,7 @@ export const demoBillingDocuments: BillingDocument[] = [
     type: "invoice",
     amount: 7200,
     currency: "EUR",
-    status: "draft",
+    status: "blocked",
     sync_message: "Pendiente de aceptación de propuesta y pago.",
   },
 ];
