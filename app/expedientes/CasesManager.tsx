@@ -89,7 +89,7 @@ export function CasesManager() {
       <section className="card">
         <table>
           <thead><tr><th>Código</th><th>Cliente</th><th>Estado</th><th>Destino</th><th>Próxima acción</th><th>Bloqueo</th></tr></thead>
-          <tbody>{filtered.map((item) => <tr key={item.case_code}><td><strong>{item.case_code}</strong></td><td>{item.client}</td><td><span className="badge">{item.status}</span></td><td>{item.destination}<br/><small>{item.trip_start || "—"} → {item.trip_end || "—"}</small></td><td>{item.next_action || "—"}</td><td>{item.blocker || "—"}</td></tr>)}</tbody>
+          <tbody>{filtered.map((item) => <tr key={item.case_code}><td><a href={`/expedientes/${item.case_code}`}><strong>{item.case_code}</strong></a></td><td>{item.client}</td><td><span className="badge">{item.status}</span></td><td>{item.destination}<br/><small>{item.trip_start || "—"} → {item.trip_end || "—"}</small></td><td>{item.next_action || "—"}</td><td>{item.blocker || "—"}</td></tr>)}</tbody>
         </table>
       </section>
 
