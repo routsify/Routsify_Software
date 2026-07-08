@@ -1,9 +1,10 @@
+import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
 import { cases, expectedPurchases } from "@/lib/mock-data";
 
 export default function CasesPage() {
   return (
-    <>
+    <AppShell>
       <PageHeader eyebrow="Operación de viajes" title="Expedientes" description="Estado, próxima acción, bloqueo, cliente, fechas, destino y compras proveedor pendientes." action={<button className="btn">Nuevo expediente</button>} />
       <section className="card">
         <table>
@@ -18,6 +19,6 @@ export default function CasesPage() {
           <tbody>{expectedPurchases.map((item) => <tr key={`${item.case_code}-${item.supplier}`}><td>{item.case_code}</td><td>{item.supplier}</td><td>{item.service}</td><td><span className="badge">{item.status}</span></td><td>{item.amount.toLocaleString("es-ES")} €</td></tr>)}</tbody>
         </table>
       </section>
-    </>
+    </AppShell>
   );
 }
