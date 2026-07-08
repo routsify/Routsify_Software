@@ -12,6 +12,7 @@ const nav = [
   ["/facturacion", "Pagos y facturación"],
   ["/integraciones", "Integraciones"],
   ["/cierre", "Cierre operativo"],
+  ["/seguridad", "Seguridad"],
   ["/ajustes/tipos-servicio", "Tipos de servicio"],
   ["/propuestas/demo-public-token", "Propuesta pública"],
 ];
