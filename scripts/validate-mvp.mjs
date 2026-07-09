@@ -44,6 +44,7 @@ const requiredFiles = [
   "app/clientes/page.tsx",
   "app/clientes/ClientsManager.tsx",
   "app/expedientes/page.tsx",
+  "app/expedientes/[caseCode]/page.tsx",
   "app/propuestas/page.tsx",
   "app/compras/page.tsx",
   "app/compras/PurchasesManager.tsx",
@@ -56,9 +57,11 @@ const requiredFiles = [
 const redirectRoutes = {
   "app/tareas/page.tsx": "/hoy",
   "app/comunicaciones/page.tsx": "/expedientes",
-  "app/documentos/page.tsx": "/viajeros",
+  "app/documentos/page.tsx": "/expedientes",
+  "app/viajeros/page.tsx": "/expedientes",
+  "app/contratos/page.tsx": "/expedientes",
   "app/proveedores/page.tsx": "/compras",
-  "app/facturacion/page.tsx": "/contratos",
+  "app/facturacion/page.tsx": "/expedientes",
   "app/integraciones/page.tsx": "/ajustes",
   "app/cierre/page.tsx": "/expedientes",
   "app/seguridad/page.tsx": "/ajustes",
@@ -77,15 +80,22 @@ for (const [path, target] of Object.entries(redirectRoutes)) {
 }
 
 const appShell = read("components/AppShell.tsx");
-for (const label of ["Inicio", "Clientes", "Expedientes", "Presupuestos", "Compras / Proveedores", "Viajeros y Documentos", "Contrato, Firma y Pago", "Informes", "Ajustes"]) assert(appShell.includes(label), `Missing nav label: ${label}`);
-for (const removed of ["Dashboard", "Alertas", "Configuración", "demo-public-token"]) assert(!appShell.includes(removed), `Removed item still visible: ${removed}`);
+for (const label of ["Inicio", "Clientes", "Expedientes", "Presupuestos", "Compras / Proveedores", "Informes", "Ajustes"]) assert(appShell.includes(label), `Missing nav label: ${label}`);
+for (const removed of ["Dashboard", "Alertas", "Configuración", "demo-public-token", "Viajeros y Documentos", "Contrato, Firma y Pago"]) assert(!appShell.includes(removed), `Removed item still visible: ${removed}`);
 
 const home = read("app/page.tsx");
 assert(home.includes('redirect("/hoy")'), "Root must redirect to /hoy");
 
 const navigation = read("lib/navigation.ts");
-assert(countCanonicalHrefRows(navigation) === 9, "There must be exactly 9 canonical pages including Ajustes");
+assert(countCanonicalHrefRows(navigation) === 7, "There must be exactly 7 canonical pages including Ajustes");
+assert(!navigation.includes("/viajeros"), "Travelers must not be a canonical module");
+assert(!navigation.includes("/contratos"), "Contracts must not be a canonical module");
 assert(!navigation.includes("Propuesta pública"), "Public proposal must not be an internal module");
+
+const caseDetail = read("app/expedientes/[caseCode]/page.tsx");
+for (const token of ["#viajeros-documentos", "#contrato-pago", "Sin módulos separados", "Viajeros y documentos", "Contrato y pago", "Cobros y documentos fiscales"]) assert(caseDetail.includes(token), `Missing embedded case token: ${token}`);
+assert(!caseDetail.includes('href="/viajeros"'), "Case detail should not link to removed travelers module");
+assert(!caseDetail.includes('href="/contratos"'), "Case detail should not link to removed contracts module");
 
 const clientMaster = read("lib/client-master.ts");
 for (const token of ["demoClientMasters", "clientKpis", "possibleDuplicate", "clientFiscalMissing", "simulateHoldedSync", "createDemoClient", "filterClientMasters", "holded_contact_id", "accepted_value", "payments_received"]) assert(clientMaster.includes(token), `Missing client master token: ${token}`);
@@ -103,7 +113,9 @@ const purchasesApi = read("app/api/routsify/expected-purchases/route.ts");
 for (const token of ["pagination", "kpis", "filterPurchases", "purchaseKpis"]) assert(purchasesApi.includes(token), `Missing purchases API token: ${token}`);
 
 const settingsMaster = read("lib/settings-master.ts");
-for (const token of ["SettingScope", "SettingValueType", "AppSetting", "settingsModules", "demoSettings", "demoSettingsAuditLog", "quickActions", "updateSettingsDemo", "resetModuleDemo", "exportDemoSettings", "importSettingsPreview", "testIntegration", "runSystemAction", "theme.updated", "margin_rules.updated", "fiscal_mode.updated", "report_config.updated", "roles.updated", "security_policy.updated", "manual_review", "proforma_on_payment", "invoice_on_advance", "final_invoice_after_trip"]) assert(settingsMaster.includes(token), `Missing settings token: ${token}`);
+for (const token of ["visibleNavigationModules", "SettingScope", "SettingValueType", "AppSetting", "settingsModules", "demoSettings", "demoSettingsAuditLog", "quickActions", "updateSettingsDemo", "resetModuleDemo", "exportDemoSettings", "importSettingsPreview", "testIntegration", "runSystemAction", "theme.updated", "margin_rules.updated", "fiscal_mode.updated", "report_config.updated", "roles.updated", "security_policy.updated", "manual_review", "proforma_on_payment", "invoice_on_advance", "final_invoice_after_trip"]) assert(settingsMaster.includes(token), `Missing settings token: ${token}`);
+assert(!settingsMaster.includes('"Viajeros y Documentos"'), "Removed module should not be in visible settings navigation");
+assert(!settingsMaster.includes('"Contrato, Firma y Pago"'), "Removed module should not be in visible settings navigation");
 
 const settingsManager = read("app/ajustes/SettingsManager.tsx");
 for (const token of ["Resumen de configuración", "Guardar todos los cambios", "Guardar cambios", "Restaurar módulo", "Acciones rápidas", "Información del sistema", "Auditoría reciente", "Retención", "Confianza OCR"]) assert(settingsManager.includes(token), `Missing setting token: ${token}`);
