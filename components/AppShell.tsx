@@ -3,24 +3,14 @@ import { AuthStatus } from "@/components/AuthStatus";
 import { Logo } from "@/components/Logo";
 
 const nav = [
-  ["/hoy", "Hoy"],
-  ["/solicitudes", "Solicitudes"],
+  ["/hoy", "Inicio / Dashboard"],
   ["/clientes", "Clientes"],
   ["/expedientes", "Expedientes"],
-  ["/tareas", "Tareas"],
-  ["/comunicaciones", "Comunicaciones"],
-  ["/documentos", "Documentos"],
-  ["/viajeros", "Viajeros"],
-  ["/propuestas", "Propuestas"],
-  ["/contratos", "Contratos"],
-  ["/proveedores", "Proveedores"],
-  ["/compras", "Compras"],
-  ["/facturacion", "Pagos y facturación"],
-  ["/integraciones", "Integraciones"],
-  ["/cierre", "Cierre operativo"],
+  ["/propuestas", "Presupuestos"],
+  ["/compras", "Compras / Proveedores"],
+  ["/viajeros", "Viajeros y Documentos"],
+  ["/contratos", "Contrato, Firma y Pago"],
   ["/informes", "Informes"],
-  ["/seguridad", "Seguridad"],
-  ["/ajustes/tipos-servicio", "Tipos de servicio"],
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -28,17 +18,33 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="shell">
       <aside className="sidebar">
         <Link className="brand" href="/hoy">
-          <Logo size={44} />
-          <span>routsify</span>
+          <Logo size={34} />
+          <span>Routsify</span>
         </Link>
         <nav className="nav">
-          {nav.map(([href, label]) => <Link key={href} href={href}>{label}</Link>)}
+          {nav.map(([href, label], index) => (
+            <Link key={href} href={href}>
+              <span className="nav-index">{index + 1}</span>
+              <span>{label}</span>
+            </Link>
+          ))}
         </nav>
-        <div style={{ marginTop: 28 }}>
-          <AuthStatus />
+        <div className="sidebar-footer">
+          <span>Ayuda</span>
+          <small>Operar mejor. Viajar más lejos.</small>
         </div>
       </aside>
-      <main className="main">{children}</main>
+      <main className="main">
+        <div className="topbar">
+          <div className="searchbox">Buscar expedientes, clientes, reservas...</div>
+          <div className="topbar-actions">
+            <span className="topbar-icon">⌁</span>
+            <span className="topbar-icon">◇</span>
+            <AuthStatus />
+          </div>
+        </div>
+        {children}
+      </main>
     </div>
   );
 }
