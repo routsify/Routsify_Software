@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase-admin";
 import { hashProposalToken, verifyProposalToken } from "@/lib/proposal-token";
+import { resolvePublicProposal } from "@/lib/proposal-public-server";
 
 export async function POST(_request: NextRequest, context: { params: Promise<{ token: string }> }) {
   const { token } = await context.params;
 
   if (!hasSupabaseAdminEnv() || !process.env.PROPOSAL_TOKEN_SECRET) {
-    return NextResponse.json({ ok: true, mode: "demo", message: "Aceptación demo registrada localmente." });
+    const resolved = resolvePublicProposal(token);
+    if (!resolved.ok) return NextResponse.json({ ok: false, error: resolved.reason }, { status: resolved.reason === "expired" ? 410 : 404 });
+    return NextResponse.json({ ok: true, mode: resolved.mode, message: "Aceptación demo registrada localmente." });
   }
 
   try {
