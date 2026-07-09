@@ -8,6 +8,8 @@ import { demoSettings, updateSettingsDemo, type AppSetting } from "@/lib/setting
 export type RepositoryMode = "demo" | "supabase";
 export type RepositoryResult<T> = { ok: true; mode: RepositoryMode; data: T } | { ok: false; mode: RepositoryMode; error: string };
 
+type ClientRepositoryInput = Partial<ClientMaster> & { organization_id?: string; name?: string };
+
 function canUseSupabase() {
   return !isDemoMode() && hasSupabaseAdminEnv();
 }
@@ -22,7 +24,7 @@ export async function listClientsRepository(): Promise<RepositoryResult<unknown[
   return error ? { ok: false, mode: "supabase", error: error.message } : { ok: true, mode: "supabase", data: data || [] };
 }
 
-export async function createClientRepository(input: Partial<ClientMaster>): Promise<RepositoryResult<unknown>> {
+export async function createClientRepository(input: ClientRepositoryInput): Promise<RepositoryResult<unknown>> {
   if (!canUseSupabase()) return { ok: true, mode: "demo", data: createDemoClient(input) };
   const email = String(input.email || "").trim().toLowerCase();
   const phone = String(input.phone || "").replace(/\D/g, "");
