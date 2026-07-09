@@ -11,7 +11,8 @@ export function isProductionRuntime() {
 }
 
 export function isPublicDemoAllowed() {
-  return process.env.ROUTSIFY_ALLOW_PUBLIC_DEMO === "true" || process.env.NEXT_PUBLIC_DEMO_MODE === "true";
+  if (!isDemoMode()) return false;
+  return process.env.ROUTSIFY_ALLOW_PUBLIC_DEMO !== "false";
 }
 
 export function shouldBlockDemoInProduction() {
