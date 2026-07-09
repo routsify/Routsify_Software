@@ -1,155 +1,135 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
-import { expectedPurchases as demoPurchases } from "@/lib/mock-data";
-import { bestHoldedCandidate, matchAction } from "@/lib/demo-holded-matching";
-import { formatMoney, invoiceDelta, needsReview, PurchaseItem, purchaseStatuses, purchaseTotals } from "@/lib/purchases";
-import { isDemoMode } from "@/lib/supabase-browser";
+import { useMemo, useState } from "react";
+import {
+  ExpectedPurchase,
+  approvePurchaseMatch,
+  confidenceBucket,
+  demoExpectedPurchases,
+  filterPurchases,
+  formatPurchaseMoney,
+  holdedCandidate,
+  markPurchaseNotRequired,
+  purchaseAlerts,
+  purchaseCaseFilters,
+  purchaseFlow,
+  purchaseKpis,
+  purchaseMatchFilters,
+  purchaseProviders,
+  purchaseStatusConfig,
+  purchaseStatuses,
+  requestPurchaseInvoice,
+} from "@/lib/purchase-master";
 
-function toPurchaseItems(): PurchaseItem[] {
-  return demoPurchases.map((item, index) => ({
-    id: `purchase-${index + 1}`,
-    case_code: item.case_code,
-    supplier: item.supplier,
-    service: item.service,
-    status: item.status as PurchaseItem["status"],
-    amount: item.amount,
-    currency: "EUR",
-  }));
+function toneClass(tone: string) {
+  if (tone === "green") return "status-progress";
+  if (tone === "blue") return "status-progress";
+  if (tone === "amber") return "priority-normal";
+  if (tone === "purple") return "status-pending";
+  return "status-pill";
+}
+
+function flowLabel(status: string) {
+  if (status === "completed") return "Completado";
+  if (status === "in_progress") return "En curso";
+  return "Pendiente";
 }
 
 export function PurchasesManager() {
-  const [items, setItems] = useState<PurchaseItem[]>(toPurchaseItems());
-  const [selectedId, setSelectedId] = useState(items[0]?.id ?? "");
-  const [invoiceNumber, setInvoiceNumber] = useState("");
-  const [invoiceDate, setInvoiceDate] = useState("");
-  const [base, setBase] = useState("");
-  const [tax, setTax] = useState("");
-  const [total, setTotal] = useState("");
-  const [fileName, setFileName] = useState("");
+  const [items, setItems] = useState<ExpectedPurchase[]>(demoExpectedPurchases);
+  const [selectedId, setSelectedId] = useState(demoExpectedPurchases[1].id);
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("Todos");
+  const [provider, setProvider] = useState("Todos");
+  const [caseCode, setCaseCode] = useState("Todos");
+  const [match, setMatch] = useState("Todos");
   const [notRequiredReason, setNotRequiredReason] = useState("");
-  const [notes, setNotes] = useState("");
   const [message, setMessage] = useState<string | null>(null);
 
-  const totals = useMemo(() => purchaseTotals(items), [items]);
-  const selected = items.find((item) => item.id === selectedId);
+  const kpis = useMemo(() => purchaseKpis(items), [items]);
+  const filtered = useMemo(() => filterPurchases(items, { search, status, provider, caseCode, match }), [items, search, status, provider, caseCode, match]);
+  const selected = items.find((item) => item.id === selectedId) || filtered[0] || items[0];
+  const selectedCandidate = holdedCandidate(selected);
+  const selectedFlow = purchaseFlow(selected);
+  const selectedAlerts = purchaseAlerts(selected);
 
-  function updateStatus(id: string, status: PurchaseItem["status"]) {
-    setItems((current) => current.map((item) => {
-      if (item.id !== id) return item;
-      const next: PurchaseItem = { ...item, status };
-      if (status === "not_required" && !item.not_required_reason) next.not_required_reason = "Motivo pendiente de completar";
-      return next;
-    }));
+  function updatePurchase(id: string, updater: (item: ExpectedPurchase) => ExpectedPurchase) {
+    setItems((current) => current.map((item) => item.id === id ? updater(item) : item));
   }
 
-  function approveBestMatch(id: string) {
-    const current = items.find((item) => item.id === id);
-    if (!current) return;
-    const candidate = bestHoldedCandidate(current);
-    if (!candidate) {
-      setMessage("No hay candidato Holded. Reclama la factura al proveedor.");
+  function approveMatch(id = selected.id) {
+    const item = items.find((purchase) => purchase.id === id);
+    if (!item) return;
+    if (!item.holdedPurchaseId) {
+      setMessage("No se puede aprobar: no hay documento Holded candidato.");
       return;
     }
-    const status: PurchaseItem["status"] = candidate.confidence === "alta" ? "matched" : "review_needed";
-    setItems((list) => list.map((item) => item.id === id ? {
-      ...item,
-      status,
-      invoice_number: candidate.id,
-      invoice_date: candidate.date,
-      invoice_total: candidate.amount,
-      invoice_file: `${candidate.id}.pdf`,
-      review_notes: `${candidate.confidence}: ${candidate.reasons.join(" · ")}`,
-    } : item));
-    setMessage(candidate.confidence === "alta" ? "Match Holded aprobado en demo. Revisa y cambia a approved cuando proceda." : "Match dudoso. Queda en revisión manual.");
+    updatePurchase(id, approvePurchaseMatch);
+    setMessage("Match aprobado en demo: coste real actualizado, margen recalculado, timeline y auditoría generados.");
   }
 
-  function attachInvoice(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const current = items.find((item) => item.id === selectedId);
-    if (!current) return;
-
-    const invoiceTotal = Number(total) || current.amount;
-    const fallbackFileName = `${current.case_code}-${current.supplier}`.replace(/\s+/g, "_") + ".pdf";
-    const delta = Math.abs(invoiceTotal - current.amount);
-    const status: PurchaseItem["status"] = delta > 1 ? "review_needed" : "uploaded";
-
-    setItems((list) => list.map((item) => item.id === selectedId ? {
-      ...item,
-      status,
-      invoice_file: fileName.trim() || fallbackFileName,
-      invoice_number: invoiceNumber.trim() || undefined,
-      invoice_date: invoiceDate || undefined,
-      invoice_base: Number(base) || undefined,
-      invoice_tax: Number(tax) || undefined,
-      invoice_total: invoiceTotal,
-      currency: "EUR",
-      review_notes: notes.trim() || (delta > 1 ? "Diferencia entre importe previsto y factura recibida." : undefined),
-    } : item));
-    setInvoiceNumber("");
-    setInvoiceDate("");
-    setBase("");
-    setTax("");
-    setTotal("");
-    setFileName("");
-    setNotes("");
-    setMessage(isDemoMode() ? "Factura registrada en modo demo. Si hay diferencia de importe, queda en revisión antes de aprobar." : "Factura vinculada a la compra esperada.");
+  function requestInvoice(id = selected.id) {
+    updatePurchase(id, requestPurchaseInvoice);
+    setMessage("Factura solicitada al proveedor. Se crea tarea de seguimiento y evento en timeline demo.");
   }
 
-  function markNotRequired(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const current = items.find((item) => item.id === selectedId);
-    if (!current) return;
+  function sendManualReview(id = selected.id) {
+    updatePurchase(id, (item) => ({ ...item, status: "review_needed", matchStatus: "issue", lastActivityAt: "Ahora" }));
+    setMessage("Compra enviada a revisión manual. El cierre queda bloqueado hasta resolver la decisión.");
+  }
+
+  function syncHolded() {
+    setItems((current) => current.map((item) => item.matchStatus === "none" ? { ...item, status: "holded_candidate", matchStatus: "candidate", holdedPurchaseId: `holded-${item.code}`, holdedDocumentNumber: `FAC-${item.code.replace("COMP-", "")}`, holdedAmount: item.expectedAmount, holdedDate: "Ahora", matchConfidence: 86, lastActivityAt: "Ahora" } : item));
+    setMessage("Sincronización Holded demo completada sin duplicar documentos ya vinculados.");
+  }
+
+  function markNotRequired() {
     if (!notRequiredReason.trim()) {
-      setMessage("Para marcar una compra como no requerida hace falta motivo obligatorio.");
+      setMessage("No se puede marcar como no requerida sin motivo obligatorio.");
       return;
     }
-    setItems((list) => list.map((item) => item.id === selectedId ? { ...item, status: "not_required", not_required_reason: notRequiredReason.trim() } : item));
+    updatePurchase(selected.id, (item) => markPurchaseNotRequired(item, notRequiredReason.trim()));
     setNotRequiredReason("");
-    setMessage("Compra marcada como no requerida con motivo. En real quedará auditado.");
+    setMessage("Compra marcada como not_required con motivo y auditoría demo. Ya no bloquea cierre.");
   }
 
   return (
-    <div className="grid">
-      <section className="grid grid-3">
-        <div className="card"><span className="badge">Compras esperadas</span><div className="metric">{totals.count}</div><p>Líneas de presupuesto que generan factura proveedor.</p></div>
-        <div className="card"><span className="badge">Pendiente de cerrar</span><div className="metric">{formatMoney(totals.pendingAmount)}</div><p>{totals.pendingCount} compras no aprobadas/no justificadas.</p></div>
-        <div className="card"><span className="badge">Revisión necesaria</span><div className="metric">{totals.reviewNeededCount}</div><p>Diferencias de importe, proveedor, fecha o evidencia.</p></div>
+    <div className="clients-page">
+      <section className="client-kpis">
+        <a className="kpi-card" href="#compras-listado"><span className="kpi-icon">🛒</span><span className="kpi-copy"><strong>Compras esperadas</strong><b>{kpis.expected}</b><small>+8 vs. semana anterior ↑</small></span></a>
+        <a className="kpi-card" href="#compras-listado"><span className="kpi-icon">!</span><span className="kpi-copy"><strong>Pendientes de conciliar</strong><b>{kpis.pending}</b><small>Requieren revisión</small></span></a>
+        <a className="kpi-card" href="#compras-listado"><span className="kpi-icon">⚠</span><span className="kpi-copy"><strong>Con incidencias</strong><b>{kpis.incidents}</b><small>Importe o proveedor no coincide</small></span></a>
+        <a className="kpi-card" href="#compras-listado"><span className="kpi-icon">€</span><span className="kpi-copy"><strong>Valor pendiente</strong><b>{formatPurchaseMoney(kpis.pendingValue)}</b><small>A la espera de factura</small></span></a>
       </section>
 
-      <section className="grid grid-2">
-        <div className="card">
-          <div className="eyebrow">Subida manual</div>
-          <h2>Registrar factura proveedor</h2>
-          <form className="form" onSubmit={attachInvoice}>
-            <label>Compra esperada<select value={selectedId} onChange={(event) => setSelectedId(event.target.value)}>{items.map((item) => <option key={item.id} value={item.id}>{item.case_code} · {item.supplier} · {formatMoney(item.amount)}</option>)}</select></label>
-            <div className="grid grid-2"><label>Número de factura<input className="input" value={invoiceNumber} onChange={(event) => setInvoiceNumber(event.target.value)} placeholder="FAC-2026-0001" /></label><label>Fecha factura<input className="input" type="date" value={invoiceDate} onChange={(event) => setInvoiceDate(event.target.value)} /></label></div>
-            <div className="grid grid-3"><label>Base<input className="input" type="number" step="0.01" value={base} onChange={(event) => setBase(event.target.value)} /></label><label>Impuestos<input className="input" type="number" step="0.01" value={tax} onChange={(event) => setTax(event.target.value)} /></label><label>Total<input className="input" type="number" step="0.01" value={total} onChange={(event) => setTotal(event.target.value)} placeholder={selected ? String(selected.amount) : "0"} /></label></div>
-            <label>Nombre de archivo<input className="input" value={fileName} onChange={(event) => setFileName(event.target.value)} placeholder="factura-proveedor.pdf" /></label>
-            <label>Notas de revisión<textarea className="input" rows={3} value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Diferencia con presupuesto, IVA, vencimiento, etc." /></label>
-            {message ? <p>{message}</p> : null}
-            <button className="btn" type="submit">Registrar factura</button>
-          </form>
+      <section className="clients-layout">
+        <div className="card clients-main" id="compras-listado">
+          <div className="client-filters">
+            <input className="input" placeholder="Buscar compra o proveedor..." value={search} onChange={(event) => setSearch(event.target.value)} />
+            <label>Estado<select value={status} onChange={(event) => setStatus(event.target.value)}><option>Todos</option>{purchaseStatuses.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+            <label>Proveedor<select value={provider} onChange={(event) => setProvider(event.target.value)}>{purchaseProviders.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+            <label>Expediente<select value={caseCode} onChange={(event) => setCaseCode(event.target.value)}>{purchaseCaseFilters.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+            <label>Prioridad / Match<select value={match} onChange={(event) => setMatch(event.target.value)}>{purchaseMatchFilters.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+            <button className="btn" type="button" onClick={syncHolded}>↻ Sincronizar Holded</button>
+          </div>
+          {message ? <p className="client-message">{message}</p> : null}
+
+          <table>
+            <thead><tr><th>Compra esperada / referencia</th><th>Proveedor</th><th>Expediente</th><th>Concepto</th><th>Importe esperado</th><th>Estado</th><th>Match Holded</th><th>Responsable</th><th>Última actividad</th><th></th></tr></thead>
+            <tbody>{filtered.map((item) => { const candidate = holdedCandidate(item); return <tr key={item.id} className={item.id === selected.id ? "selected-row" : ""}><td><button className="table-link" type="button" onClick={() => setSelectedId(item.id)}><strong>{item.code}</strong></button></td><td>{item.providerName}</td><td><a href={`/expedientes/${item.caseCode}`}>{item.caseCode}</a></td><td>{item.concept}</td><td>{formatPurchaseMoney(item.expectedAmount)}</td><td><span className={`status-pill ${toneClass(purchaseStatusConfig[item.status].tone)}`}>{item.status}</span></td><td>{candidate ? <span>{candidate.holdedDocumentNumber}<br/><small>Candidato {candidate.confidence}%</small></span> : "Sin documento"}</td><td>{item.responsibleName}</td><td>{item.lastActivityAt}</td><td><details><summary className="icon-button">⋮</summary><div className="card" style={{ position: "absolute", right: 24, zIndex: 10 }}><button className="table-link" type="button" onClick={() => setSelectedId(item.id)}>Ver detalle</button><br/><a href={`/expedientes/${item.caseCode}`}>Ver expediente</a><br/><a href="/propuestas">Ver presupuesto</a><br/><button className="table-link" type="button" onClick={() => requestInvoice(item.id)}>Solicitar factura</button><br/><button className="table-link" type="button" onClick={() => approveMatch(item.id)}>Aprobar match</button><br/><button className="table-link" type="button" onClick={() => sendManualReview(item.id)}>Revisar manualmente</button></div></details></td></tr>; })}</tbody>
+          </table>
+          <div className="table-pagination"><span>Mostrando 1 a {filtered.length} de {items.length} compras</span><span><button className="btn secondary">‹</button><button className="btn">1</button><button className="btn secondary">2</button><button className="btn secondary">3</button><button className="btn secondary">›</button></span></div>
         </div>
 
-        <div className="card">
-          <div className="eyebrow">Matching Holded demo</div>
-          <h2>Candidatos y excepción</h2>
-          <p>Routsify propone matches por EXP_CODE, budget_line_id, proveedor, importe, fecha y destino. Los matches dudosos quedan en revisión manual.</p>
-          <form className="form" onSubmit={markNotRequired}>
-            <label>Compra esperada<select value={selectedId} onChange={(event) => setSelectedId(event.target.value)}>{items.map((item) => <option key={item.id} value={item.id}>{item.case_code} · {item.supplier}</option>)}</select></label>
-            <label>Motivo obligatorio<textarea className="input" rows={3} value={notRequiredReason} onChange={(event) => setNotRequiredReason(event.target.value)} placeholder="Ej. servicio cancelado, coste incluido en otro proveedor, no procede factura separada..." /></label>
-            <button className="btn secondary" type="submit">Marcar no requerida</button>
-          </form>
-          <table><tbody><tr><th>Aprobadas</th><td>{totals.approvedCount}/{totals.count}</td></tr><tr><th>Cerradas o justificadas</th><td>{totals.closedCount}/{totals.count}</td></tr><tr><th>Modo actual</th><td>{isDemoMode() ? "Demo" : "Supabase"}</td></tr><tr><th>Cierre recomendado</th><td><span className="badge">{totals.pendingCount === 0 ? "ready_to_close" : "suppliers_pending"}</span></td></tr></tbody></table>
-        </div>
-      </section>
-
-      <section className="card">
-        <table>
-          <thead><tr><th>Expediente</th><th>Proveedor</th><th>Servicio</th><th>Estado</th><th>Previsto</th><th>Holded candidato</th><th>Diferencia</th><th>Acción</th></tr></thead>
-          <tbody>{items.map((item) => { const candidate = bestHoldedCandidate(item); return <tr key={item.id}><td><a href={`/expedientes/${item.case_code}`}><strong>{item.case_code}</strong></a></td><td>{item.supplier}</td><td>{item.service}</td><td><span className="badge">{item.status}</span></td><td>{formatMoney(item.amount, item.currency)}</td><td>{candidate ? <span>{candidate.id} · {candidate.confidence}<br/><small>{candidate.supplier} · {formatMoney(candidate.amount)} · {candidate.reasons.join(" · ")}</small></span> : "Sin candidato"}</td><td>{item.invoice_total ? <span>{formatMoney(invoiceDelta(item), item.currency)}{needsReview(item) ? <><br/><small>revisar</small></> : null}</span> : candidate ? <span>{formatMoney(candidate.amount - item.amount)}<br/><small>{matchAction(candidate)}</small></span> : "—"}</td><td><button className="btn secondary" type="button" onClick={() => approveBestMatch(item.id)}>Usar candidato</button><br/><select style={{ marginTop: 8 }} value={item.status} onChange={(event) => updateStatus(item.id, event.target.value as PurchaseItem["status"])}>{purchaseStatuses.map((status) => <option key={status} value={status}>{status}</option>)}</select></td></tr>; })}</tbody>
-        </table>
+        <aside className="client-side card">
+          <div className="client-side-header"><div><h2>{selected.code}</h2><p><strong>{selected.providerName}</strong><br/>{selected.caseCode} · {selected.clientName}<br/>{selected.destination}</p></div><span className={`status-pill ${toneClass(purchaseStatusConfig[selected.status].tone)}`}>{selected.status}</span></div>
+          <section className="side-section"><h3>Resumen</h3><table><tbody><tr><th>Importe esperado</th><td>{formatPurchaseMoney(selected.expectedAmount)}</td></tr><tr><th>Estado de compra</th><td>{selected.status}</td></tr><tr><th>Responsable</th><td>{selected.responsibleName}</td></tr><tr><th>Prioridad</th><td><span className={`status-pill priority-${selected.priority === "high" ? "high" : selected.priority === "medium" ? "normal" : "low"}`}>{selected.priority}</span></td></tr></tbody></table></section>
+          <section className="side-section"><h3>Sugerencia de matching</h3>{selectedCandidate ? <div className="card" style={{ boxShadow: "none" }}><strong>Factura candidata en Holded</strong><p>{selectedCandidate.holdedDocumentNumber}</p><table><tbody><tr><th>Importe</th><td>{formatPurchaseMoney(selectedCandidate.amount)}</td></tr><tr><th>Fecha</th><td>{selectedCandidate.date}</td></tr><tr><th>Confianza</th><td><span className="status-pill status-progress">{selectedCandidate.confidence}%</span></td></tr></tbody></table>{selectedCandidate.checks.map((check) => <p key={check}>✓ {check}</p>)}</div> : <p>No hay documento Holded vinculado todavía.</p>}</section>
+          <section className="side-section"><h3>Estado del flujo</h3>{selectedFlow.map((step) => <p key={step.label}><span className={`status-pill ${step.status === "completed" ? "status-progress" : step.status === "in_progress" ? "priority-normal" : ""}`}>{flowLabel(step.status)}</span> <strong>{step.label}</strong></p>)}</section>
+          <section className="side-section"><h3>Alertas</h3>{selectedAlerts.length ? selectedAlerts.map((alert) => <p key={alert} className="danger-text">⚠ {alert}</p>) : <p>Sin alertas críticas.</p>}<label>Motivo not_required<textarea className="input" rows={3} value={notRequiredReason} onChange={(event) => setNotRequiredReason(event.target.value)} placeholder="Motivo obligatorio si no se requiere factura" /></label></section>
+          <section className="side-actions"><h3>Acciones rápidas</h3><a className="quick-action" href={`/expedientes/${selected.caseCode}`}>Ver expediente <span>→</span></a><button className="quick-action primary" type="button" onClick={() => approveMatch()}>Aprobar match <span>→</span></button><button className="quick-action" type="button" onClick={() => sendManualReview()}>Revisar manualmente <span>→</span></button><a className="quick-action" href={selectedCandidate?.holdedUrl || "#"}>Abrir en Holded <span>→</span></a><button className="quick-action" type="button" onClick={markNotRequired}>Marcar not_required <span>→</span></button></section>
+          <div className="client-footnote">Routsify sabe qué facturas faltan y bloquea el cierre si las compras obligatorias no están aprobadas.</div>
+        </aside>
       </section>
     </div>
   );
