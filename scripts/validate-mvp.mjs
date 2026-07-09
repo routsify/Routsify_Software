@@ -11,6 +11,7 @@ const requiredFiles = [
   "lib/outbox-server.ts",
   "lib/storage-server.ts",
   "lib/holded-server.ts",
+  "app/api/health/route.ts",
   "app/api/propuestas/[token]/accept/route.ts",
   "app/api/webhooks/forms/route.ts",
   "app/api/webhooks/bookings/route.ts",
@@ -41,6 +42,16 @@ for (const route of requiredRoutes) {
   assert(existsSync(join(root, "app", route, "page.tsx")), `Missing route page: /${route}`);
 }
 
+const appShell = read("components/AppShell.tsx");
+assert(!appShell.includes('["/", "Dashboard"]'), "Redundant Dashboard navigation should not exist");
+assert(!appShell.includes("demo-public-token"), "Public proposal token should not appear in internal navigation");
+
+const home = read("app/page.tsx");
+assert(home.includes('redirect("/hoy")'), "Root route must redirect to daily workbench");
+
+const navigation = read("lib/navigation.ts");
+assert(!navigation.includes("Propuesta pública"), "Public proposal view should not be listed as an internal module");
+
 const migration1 = read("supabase/migrations/0001_routsify_mvp_schema.sql");
 for (const table of ["clients", "leads", "bookings", "cases", "proposals", "proposal_versions", "budget_lines", "expected_purchases", "supplier_invoices", "suppliers", "travelers", "documents", "contracts", "payments", "billing_documents", "integration_outbox", "audit_log"]) {
   assert(migration1.includes(`public.${table}`), `Missing schema table: ${table}`);
@@ -60,6 +71,10 @@ assert(migration3.includes("confirm_manual_payment"), "Manual payment RPC missin
 const publicAcceptance = read("app/api/propuestas/[token]/accept/route.ts");
 assert(publicAcceptance.includes("verifyProposalToken"), "Proposal token is not verified in API route");
 assert(publicAcceptance.includes("accept_proposal_version"), "Acceptance route does not call RPC");
+
+const health = read("app/api/health/route.ts");
+assert(health.includes("demoMode"), "Health endpoint must expose demo mode");
+assert(health.includes("supabaseAdminConfigured"), "Health endpoint must expose server configuration status");
 
 const outboxServer = read("lib/outbox-server.ts");
 assert(outboxServer.includes("upsert"), "Outbox helper must be idempotent");
