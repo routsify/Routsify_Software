@@ -1,6 +1,6 @@
 import { getSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase-admin";
 import { isDemoMode } from "@/lib/runtime-mode";
-import { demoClientMasters, createDemoClient, type ClientMaster } from "@/lib/client-master";
+import { demoClientMasters, createDemoClient, type ClientMaster, type ClientOrigin } from "@/lib/client-master";
 import { cases } from "@/lib/mock-data";
 import { demoExpectedPurchases } from "@/lib/purchase-master";
 import { demoSettings, updateSettingsDemo, type AppSetting } from "@/lib/settings-master";
@@ -14,6 +14,10 @@ function canUseSupabase() {
   return !isDemoMode() && hasSupabaseAdminEnv();
 }
 
+function originFrom(value: unknown): ClientOrigin {
+  return ["Web", "Fillout", "Booking", "Referral", "Agencia", "Manual"].includes(String(value)) ? String(value) as ClientOrigin : "Manual";
+}
+
 export function repositoryMode(): RepositoryMode {
   return canUseSupabase() ? "supabase" : "demo";
 }
@@ -25,7 +29,7 @@ export async function listClientsRepository(): Promise<RepositoryResult<unknown[
 }
 
 export async function createClientRepository(input: ClientRepositoryInput): Promise<RepositoryResult<unknown>> {
-  if (!canUseSupabase()) return { ok: true, mode: "demo", data: createDemoClient(input) };
+  if (!canUseSupabase()) return { ok: true, mode: "demo", data: createDemoClient({ display_name: input.display_name || input.name || "Cliente sin nombre", email: input.email || "", phone: input.phone || "", origin: originFrom(input.origin || input.source), owner: input.owner || "Equipo", tax_id: input.tax_id || "", billing_address: String(input.billing_address || ""), fiscal_email: input.fiscal_email || input.email || "" }) };
   const email = String(input.email || "").trim().toLowerCase();
   const phone = String(input.phone || "").replace(/\D/g, "");
   const payload = {
