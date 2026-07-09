@@ -8,24 +8,14 @@ export type AppModule = {
 };
 
 export const appModules: AppModule[] = [
-  { href: "/hoy", label: "Hoy", stage: "00", owner: "Equipo", description: "Centro operativo diario que prioriza bloqueos y acciones de todos los módulos.", status: "ready_demo" },
-  { href: "/solicitudes", label: "Solicitudes", stage: "01", owner: "Ventas", description: "Entrada comercial desde Fillout, Booking API, email o alta manual.", status: "ready_demo" },
-  { href: "/clientes", label: "Clientes", stage: "02", owner: "Ventas", description: "CRM operativo con campos base, fuente y datos de facturación.", status: "ready_demo" },
-  { href: "/expedientes", label: "Expedientes", stage: "03", owner: "Operaciones", description: "Casos con estado, destino, fechas, próxima acción y bloqueos.", status: "ready_demo" },
-  { href: "/tareas", label: "Tareas", stage: "04", owner: "Equipo", description: "Cola diaria de acciones por expediente, prioridad, vencimiento y responsable.", status: "ready_demo" },
-  { href: "/comunicaciones", label: "Comunicaciones", stage: "05", owner: "Equipo", description: "Historial de contacto por expediente, canal, responsable y seguimiento.", status: "ready_demo" },
-  { href: "/documentos", label: "Documentos", stage: "06", owner: "Operaciones", description: "Registro documental por expediente, tipo, archivo, estado y responsable.", status: "ready_demo" },
-  { href: "/viajeros", label: "Viajeros", stage: "07", owner: "Operaciones", description: "Documentación mínima, caducidades y bloqueo antes de contrato.", status: "ready_demo" },
-  { href: "/propuestas", label: "Propuestas", stage: "08", owner: "Ventas", description: "Presupuesto nativo, versión, token público y compras esperadas.", status: "ready_demo" },
-  { href: "/contratos", label: "Contratos", stage: "09", owner: "Operaciones", description: "Contrato operativo desde propuesta aceptada con bloqueos documentales.", status: "ready_demo" },
-  { href: "/proveedores", label: "Proveedores", stage: "10", owner: "Operaciones", description: "Base de proveedores por destino, contacto, condiciones, estado y riesgo.", status: "ready_demo" },
-  { href: "/compras", label: "Compras", stage: "11", owner: "Operaciones", description: "Facturas proveedor, revisión manual y conciliación operativa.", status: "ready_demo" },
-  { href: "/facturacion", label: "Pagos y facturación", stage: "12", owner: "Facturación", description: "Cobros manuales y borradores fiscales para sincronización conservadora.", status: "ready_demo" },
-  { href: "/integraciones", label: "Integraciones", stage: "13", owner: "Admin", description: "Outbox, reintentos, entradas externas y tareas programadas.", status: "prepared" },
-  { href: "/cierre", label: "Cierre operativo", stage: "14", owner: "Dirección", description: "Checklist final de contrato, pago, proveedores y notas.", status: "ready_demo" },
-  { href: "/informes", label: "Informes", stage: "15", owner: "Dirección", description: "KPIs mínimos de origen, conversión, margen y proveedores problemáticos.", status: "ready_demo" },
-  { href: "/seguridad", label: "Seguridad", stage: "16", owner: "Admin", description: "Roles, permisos y auditoría antes de activar datos reales.", status: "prepared" },
-  { href: "/ajustes/tipos-servicio", label: "Tipos de servicio", stage: "17", owner: "Admin", description: "Catálogo ampliable de servicios para presupuestos.", status: "ready_demo" },
+  { href: "/hoy", label: "Inicio / Dashboard", stage: "01", owner: "Equipo", description: "KPIs, alertas, tareas urgentes, expedientes activos y acciones del día.", status: "ready_demo" },
+  { href: "/clientes", label: "Clientes", stage: "02", owner: "Ventas", description: "CRM operativo con origen, valor aceptado, estado fiscal/Holded, responsable e historial resumido.", status: "ready_demo" },
+  { href: "/expedientes", label: "Expedientes", stage: "03", owner: "Operaciones", description: "Vista 360 del viaje con estado, cliente, destino, fechas, timeline, resumen financiero y módulos relacionados.", status: "ready_demo" },
+  { href: "/propuestas", label: "Presupuestos", stage: "04", owner: "Ventas", description: "Presupuesto nativo versionado con costes, margen, venta, compras esperadas y aceptación pública.", status: "ready_demo" },
+  { href: "/compras", label: "Compras / Proveedores", stage: "05", owner: "Operaciones", description: "Compras esperadas, facturas proveedor, matching manual, revisión y base de proveedores validados.", status: "ready_demo" },
+  { href: "/viajeros", label: "Viajeros y Documentos", stage: "06", owner: "Operaciones", description: "Viajeros, documentos cargados, caducidades, validaciones y repositorio documental privado.", status: "ready_demo" },
+  { href: "/contratos", label: "Contrato, Firma y Pago", stage: "07", owner: "Operaciones", description: "Preflight, contrato, firma, pago confirmado y línea de tiempo hasta desbloquear cierre.", status: "ready_demo" },
+  { href: "/informes", label: "Informes", stage: "08", owner: "Dirección", description: "Resumen ejecutivo, embudo, tiempos, margen previsto/real, desviaciones y proveedores problemáticos.", status: "ready_demo" },
 ];
 
 export function moduleSummary(modules: AppModule[]) {
