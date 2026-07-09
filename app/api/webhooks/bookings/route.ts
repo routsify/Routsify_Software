@@ -17,8 +17,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: verification.error }, { status: verification.status });
   }
 
-  const payload = JSON.parse(rawBody || "null") as Record<string, unknown> | null;
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+  let payload: Record<string, unknown> | null = null;
+  try {
+    const parsed = JSON.parse(rawBody || "null");
+    payload = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
+  } catch {
+    payload = null;
+  }
+  if (!payload) {
     return NextResponse.json({ ok: false, error: "invalid_payload" }, { status: 400 });
   }
 
