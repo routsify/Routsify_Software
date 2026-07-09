@@ -11,6 +11,10 @@ const requiredFiles = [
   "lib/outbox-server.ts",
   "lib/storage-server.ts",
   "lib/holded-server.ts",
+  "lib/demo-expedition-engine.ts",
+  "lib/demo-holded-matching.ts",
+  "lib/demo-ocr.ts",
+  "app/ajustes/SettingsManager.tsx",
   "app/api/health/route.ts",
   "app/api/propuestas/[token]/accept/route.ts",
   "app/api/webhooks/forms/route.ts",
@@ -67,6 +71,18 @@ assert(home.includes('redirect("/hoy")'), "Root must redirect to /hoy");
 const navigation = read("lib/navigation.ts");
 assert(countCanonicalHrefRows(navigation) === 9, "There must be exactly 9 canonical pages including Ajustes");
 assert(!navigation.includes("Propuesta pública"), "Public proposal must not be an internal module");
+
+const demoEngine = read("lib/demo-expedition-engine.ts");
+for (const token of ["getDemoExpeditionState", "buildDemoExpectedPurchasesFromBudget", "blockers", "timeline", "stageOrder"]) assert(demoEngine.includes(token), `Missing demo engine token: ${token}`);
+
+const holdedMatching = read("lib/demo-holded-matching.ts");
+for (const token of ["EXP_CODE", "confidence", "matchAction", "bestHoldedCandidate"]) assert(holdedMatching.includes(token), `Missing matching token: ${token}`);
+
+const ocrDemo = read("lib/demo-ocr.ts");
+for (const token of ["confidence", "revision_requerida", "aprobado", "reviewed_at"]) assert(ocrDemo.includes(token), `Missing OCR token: ${token}`);
+
+const settingsManager = read("app/ajustes/SettingsManager.tsx");
+for (const token of ["manual_review", "proforma_on_payment", "invoice_on_advance", "final_invoice_after_trip", "Retención", "Confianza OCR"]) assert(settingsManager.includes(token), `Missing setting token: ${token}`);
 
 const migration1 = read("supabase/migrations/0001_routsify_mvp_schema.sql");
 for (const table of ["clients", "leads", "bookings", "cases", "proposals", "proposal_versions", "budget_lines", "expected_purchases", "supplier_invoices", "suppliers", "travelers", "documents", "contracts", "payments", "billing_documents", "integration_outbox", "audit_log"]) assert(migration1.includes(`public.${table}`), `Missing schema table: ${table}`);
