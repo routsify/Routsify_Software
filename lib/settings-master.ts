@@ -1,30 +1,7 @@
 export type SettingScope = "global" | "module" | "user" | "role";
 export type SettingValueType = "string" | "number" | "boolean" | "select" | "multi_select" | "json" | "color" | "file" | "date" | "time";
 
-export type AppSetting = {
-  id: string;
-  key: string;
-  module: string;
-  label: string;
-  description?: string;
-  value: string | number | boolean | string[] | Record<string, unknown>;
-  defaultValue: string | number | boolean | string[] | Record<string, unknown>;
-  valueType: SettingValueType;
-  scope: SettingScope;
-  editable: boolean;
-  options?: string[];
-  isSensitive?: boolean;
-  isEncrypted?: boolean;
-  requiresReload?: boolean;
-  requiresRecalculation?: boolean;
-  requiresPermission?: string;
-  validationRules?: Record<string, unknown>;
-  affectedModules?: string[];
-  eventName?: string;
-  updatedBy?: string;
-  updatedAt?: string;
-};
-
+export type AppSetting = { id: string; key: string; module: string; label: string; description?: string; value: string | number | boolean | string[] | Record<string, unknown>; defaultValue: string | number | boolean | string[] | Record<string, unknown>; valueType: SettingValueType; scope: SettingScope; editable: boolean; options?: string[]; isSensitive?: boolean; isEncrypted?: boolean; requiresReload?: boolean; requiresRecalculation?: boolean; requiresPermission?: string; validationRules?: Record<string, unknown>; affectedModules?: string[]; eventName?: string; updatedBy?: string; updatedAt?: string };
 export type SettingsModule = { id: string; label: string; description: string; icon: string; eventName: string };
 export type SettingsAuditLog = { id: string; settingKey: string; module: string; oldValue: string; newValue: string; userName: string; level: "info" | "warning" | "error" | "critical"; eventName: string; createdAt: string; applied: boolean; requiresRecalculation: boolean };
 export type SettingsAction = { id: string; label: string; description: string; category: "sync" | "recalculate" | "system" | "security" | "backup"; requiresConfirmation: boolean; eventName: string };
@@ -40,11 +17,11 @@ export const settingsModules: SettingsModule[] = [
   { id: "budgets", label: "Presupuestos", description: "Versiones, snapshots, validez, landing y revisión interna.", icon: "📄", eventName: "budget_settings.updated" },
   { id: "margins", label: "Márgenes y precios", description: "Fórmula activa, jerarquía de margen, límites y redondeos.", icon: "%", eventName: "margin_rules.updated" },
   { id: "purchases", label: "Compras / Proveedores", description: "Compras esperadas, matching Holded, tolerancias y not_required.", icon: "🛒", eventName: "purchase_settings.updated" },
-  { id: "documents", label: "Documentación e IA", description: "OCR, documentos permitidos, confianza, revisión humana y retención dentro del expediente.", icon: "🤖", eventName: "document_settings.updated" },
+  { id: "documents", label: "Documentación e IA", description: "Retención documental y OCR aislado como capacidad futura, no crítica del MVP.", icon: "🤖", eventName: "document_settings.updated" },
   { id: "contracts", label: "Contrato y pago integrado", description: "Plantillas, firma, pago externo, bloqueo y evidencia dentro del expediente.", icon: "✍", eventName: "contract_payment_settings.updated" },
   { id: "reports", label: "Informes y KPIs", description: "KPIs visibles, gráficos Apache ECharts, objetivos y exportación.", icon: "📊", eventName: "report_config.updated" },
   { id: "automations", label: "Automatizaciones", description: "Triggers, condiciones, responsables, vencimientos y errores.", icon: "⚡", eventName: "automation_settings.updated" },
-  { id: "integrations", label: "Integraciones", description: "Holded, Fillout, Booking, pagos, IA/OCR, email, storage y calendario.", icon: "🔌", eventName: "integration.updated" },
+  { id: "integrations", label: "Integraciones", description: "Holded, Fillout, Booking, pagos, email, storage y calendario.", icon: "🔌", eventName: "integration.updated" },
   { id: "fiscal", label: "Fiscal y contabilidad", description: "Fiscal mode, documentos, IVA, series y revisión de asesoría.", icon: "€", eventName: "fiscal_mode.updated" },
   { id: "notifications", label: "Notificaciones", description: "Eventos, canales, destinatarios, ventanas horarias y resúmenes.", icon: "🔔", eventName: "notification_settings.updated" },
   { id: "roles", label: "Usuarios y roles", description: "Roles, permisos por módulo y acceso a costes/documentos/logs.", icon: "🔐", eventName: "roles.updated" },
@@ -71,7 +48,7 @@ export const demoSettings: AppSetting[] = [
   { id: "minimum_margin", key: "margins.minimum", module: "margins", label: "Margen mínimo global", value: 12, defaultValue: 12, valueType: "number", scope: "global", editable: true, requiresRecalculation: true, eventName: "margin_rules.updated", affectedModules: ["budgets", "reports"] },
   { id: "purchase_auto_create", key: "purchases.auto_create", module: "purchases", label: "Generar compras esperadas automáticamente", value: true, defaultValue: true, valueType: "boolean", scope: "global", editable: true, affectedModules: ["budgets", "purchases"] },
   { id: "purchase_confidence", key: "purchases.match.min_confidence", module: "purchases", label: "Confianza mínima para sugerir match", value: 70, defaultValue: 70, valueType: "number", scope: "global", editable: true, affectedModules: ["purchases", "reports"] },
-  { id: "ocr_enabled", key: "documents.ocr.enabled", module: "documents", label: "OCR activo", value: true, defaultValue: true, valueType: "boolean", scope: "global", editable: true, affectedModules: ["documents", "travelers", "security"] },
+  { id: "ocr_enabled", key: "documents.ocr.enabled", module: "documents", label: "OCR futuro", value: false, defaultValue: false, valueType: "boolean", scope: "global", editable: true, affectedModules: ["documents", "travelers", "security"] },
   { id: "ocr_confidence", key: "documents.ocr.confidence", module: "documents", label: "Confianza OCR", value: "media", defaultValue: "media", valueType: "select", options: ["alta", "media", "baja"], scope: "global", editable: true, affectedModules: ["documents", "travelers"] },
   { id: "document_retention", key: "documents.retention", module: "documents", label: "Retención documentos", value: "60 días", defaultValue: "60 días", valueType: "select", options: ["30 días", "60 días", "90 días"], scope: "global", editable: true, affectedModules: ["documents", "security"] },
   { id: "contract_block_fiscal", key: "contracts.block_missing_fiscal", module: "contracts", label: "Bloquear contrato si faltan datos fiscales", value: true, defaultValue: true, valueType: "boolean", scope: "global", editable: true, affectedModules: ["contracts", "clients"] },
@@ -94,7 +71,7 @@ export const quickActions: SettingsAction[] = [
   { id: "clear-cache", label: "Limpiar caché del sistema", description: "Libera configuración y métricas cacheadas.", category: "system", requiresConfirmation: true, eventName: "system_cache_cleared" },
   { id: "export-config", label: "Exportar configuración", description: "Descarga copia JSON de seguridad.", category: "backup", requiresConfirmation: false, eventName: "settings.exported" },
   { id: "view-audit", label: "Ver auditoría de ajustes", description: "Historial de cambios realizados.", category: "security", requiresConfirmation: false, eventName: "settings.updated" },
-  { id: "test-integrations", label: "Probar integraciones", description: "Holded, Fillout, Booking, OCR, pagos y email.", category: "sync", requiresConfirmation: false, eventName: "integration.connected" },
+  { id: "test-integrations", label: "Probar integraciones", description: "Holded, Fillout, Booking, pagos y email.", category: "sync", requiresConfirmation: false, eventName: "integration.connected" },
   { id: "restore-defaults", label: "Restaurar valores por defecto", description: "Requiere confirmación; no borra credenciales reales.", category: "backup", requiresConfirmation: true, eventName: "settings.reset" },
 ];
 
@@ -108,7 +85,7 @@ export function moduleFor(id: string) { return settingsModules.find((module) => 
 export function settingsForModule(moduleId: string, settings = demoSettings) { return settings.filter((setting) => setting.module === moduleId); }
 export function filterSettings(settings: AppSetting[], query: string) { const term = query.trim().toLowerCase(); if (!term) return settings; return settings.filter((setting) => [setting.key, setting.module, setting.label, setting.description, String(setting.value)].some((value) => String(value || "").toLowerCase().includes(term))); }
 export function settingValueToText(value: AppSetting["value"]) { return Array.isArray(value) ? value.join(", ") : typeof value === "object" ? JSON.stringify(value) : String(value); }
-export function settingsSummary(settings = demoSettings) { return { clients: 1248, activeCases: 64, monthlyBudgets: 156, pendingPurchases: 23, holdedStatus: "Sincronizado", ocrStatus: "Activo", totalSettings: settings.length, sensitive: settings.filter((setting) => setting.isSensitive).length, recalculations: settings.filter((setting) => setting.requiresRecalculation).length, editable: settings.filter((setting) => setting.editable).length }; }
+export function settingsSummary(settings = demoSettings) { return { clients: 1248, activeCases: 64, monthlyBudgets: 156, pendingPurchases: 23, holdedStatus: "Sincronizado", ocrStatus: "Futuro", totalSettings: settings.length, sensitive: settings.filter((setting) => setting.isSensitive).length, recalculations: settings.filter((setting) => setting.requiresRecalculation).length, editable: settings.filter((setting) => setting.editable).length }; }
 export function changedSettings(current: AppSetting[], baseline = demoSettings) { return current.filter((setting) => settingValueToText(setting.value) !== settingValueToText(baseline.find((item) => item.id === setting.id)?.value ?? setting.defaultValue)); }
 export function validateSetting(setting: AppSetting) { if (setting.valueType === "number" && Number.isNaN(Number(setting.value))) return `${setting.label} debe ser numérico`; if (setting.valueType === "string" && String(setting.value).trim().length === 0) return `${setting.label} no puede estar vacío`; if (setting.key === "fiscal.mode" && setting.value !== "manual_review") return "No activar fiscalidad automática sin validación de asesoría"; return null; }
 export function buildAuditFromChange(setting: AppSetting, oldValue: AppSetting["value"], userName = "María García"): SettingsAuditLog { return { id: `audit-${Date.now()}-${setting.id}`, settingKey: setting.key, module: setting.module, oldValue: settingValueToText(oldValue), newValue: settingValueToText(setting.value), userName, level: setting.requiresRecalculation || setting.isSensitive ? "warning" : "info", eventName: setting.eventName || moduleFor(setting.module).eventName || "settings.updated", createdAt: "Ahora", applied: true, requiresRecalculation: Boolean(setting.requiresRecalculation) }; }
