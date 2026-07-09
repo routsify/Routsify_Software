@@ -6,10 +6,9 @@ export default function ProposalsPage() {
   return (
     <AppShell>
       <PageHeader
-        eyebrow="Propuestas y presupuesto"
-        title="Presupuesto nativo versionado"
-        description="Aquí se toca el margen desde cada presupuesto. Cada línea calcula coste, margen, venta y si genera compra esperada de proveedor."
-        action={<a className="btn" href="/propuestas/demo-public-token">Abrir propuesta pública</a>}
+        eyebrow="Presupuestos"
+        title="Motor económico versionado"
+        description="Presupuestos conectados a cliente y expediente: líneas, margen, versiones, envío, aceptación, compras esperadas, tareas, Holded e informes."
       />
       <BudgetManager />
     </AppShell>
