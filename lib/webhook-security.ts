@@ -12,7 +12,9 @@ function safeEqual(left: string, right: string) {
 }
 
 function normalizeSignature(value: string) {
-  return value.startsWith("sha256=") ? value.slice("sha256=".length) : value;
+  if (value.startsWith("sha256=")) return value.slice("sha256=".length);
+  if (value.startsWith("sha256:")) return value.slice("sha256:".length);
+  return value;
 }
 
 export function canonicalJsonStringify(value: unknown): string {
