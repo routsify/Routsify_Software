@@ -19,8 +19,6 @@ export const filters = {
 export function money(value: number) { return new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(value); }
 export function percent(value: number) { return `${value.toLocaleString("es-ES", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`; }
 
-export function reportUrl(base: string, params: Record<string, string | number | boolean>) { const query = new URLSearchParams(Object.entries(params).map(([key, value]) => [key, String(value)])); return `${base}?${query.toString()}`; }
-
 export function summaryMetrics() {
   const accepted = demoBudgets.filter((budget) => budget.status === "accepted" || budget.status === "sent");
   const acceptedValue = accepted.reduce((sum, budget) => sum + budget.totalSalePrice, 0);
@@ -29,20 +27,7 @@ export function summaryMetrics() {
   const realCost = accepted.reduce((sum, budget) => sum + (budget.realCost || budget.totalCostBudget), 0);
   const estimatedProfit = acceptedValue - budgetedCost;
   const realProfit = acceptedValue - realCost;
-  return {
-    acceptedValue,
-    confirmedRevenue,
-    averageMarginPct: acceptedValue ? (estimatedProfit / acceptedValue) * 100 : 0,
-    realMarginPct: acceptedValue ? (realProfit / acceptedValue) * 100 : 0,
-    estimatedProfit,
-    realProfit,
-    activeCases: demoExpedientes.filter((item) => item.status !== "cerrado").length,
-    pendingTasks: painPoints().reduce((sum, point) => sum + point.count, 0),
-    budgetedCost,
-    realCost,
-    costDeviation: realCost - budgetedCost,
-    pendingCollection: acceptedValue - confirmedRevenue,
-  };
+  return { acceptedValue, confirmedRevenue, averageMarginPct: acceptedValue ? (estimatedProfit / acceptedValue) * 100 : 0, realMarginPct: acceptedValue ? (realProfit / acceptedValue) * 100 : 0, estimatedProfit, realProfit, activeCases: demoExpedientes.filter((item) => item.status !== "cerrado").length, pendingTasks: painPoints().reduce((sum, point) => sum + point.count, 0), budgetedCost, realCost, costDeviation: realCost - budgetedCost, pendingCollection: acceptedValue - confirmedRevenue };
 }
 
 export function timeSeries() { return [
@@ -83,23 +68,15 @@ export function timingMetrics() { return [
 export function painPoints() { return [
   { key: "sent_without_followup", title: "Presupuestos enviados sin seguimiento (>7 días)", count: 14, economicImpact: 42800, severity: "high", actionLabel: "Crear tareas", url: "/propuestas?pain=sent_without_followup" },
   { key: "supplier_pending", title: "Compras proveedor pendientes de factura (>10 días)", count: 11, economicImpact: demoExpectedPurchases.filter((item) => !isPurchaseClosed(item)).reduce((sum, item) => sum + item.expectedAmount, 0), severity: "high", actionLabel: "Abrir compras", url: "/compras?blocksCaseClosing=true" },
-  { key: "documentation_pending", title: "Documentación viajeros pendiente (>5 días)", count: 9, severity: "medium", actionLabel: "Abrir viajeros", url: "/viajeros?status=pending" },
-  { key: "contracts_pending", title: "Contratos pendientes de firma (>7 días)", count: 8, severity: "medium", actionLabel: "Abrir contratos", url: "/contratos?status=pending" },
-  { key: "payments_pending", title: "Pagos pendientes de confirmar (>3 días)", count: 6, severity: "medium", actionLabel: "Abrir pagos", url: "/contratos?payment=pending" },
+  { key: "documentation_pending", title: "Documentación viajeros pendiente (>5 días)", count: 9, economicImpact: 0, severity: "medium", actionLabel: "Abrir viajeros", url: "/viajeros?status=pending" },
+  { key: "contracts_pending", title: "Contratos pendientes de firma (>7 días)", count: 8, economicImpact: 0, severity: "medium", actionLabel: "Abrir contratos", url: "/contratos?status=pending" },
+  { key: "payments_pending", title: "Pagos pendientes de confirmar (>3 días)", count: 6, economicImpact: 0, severity: "medium", actionLabel: "Abrir pagos", url: "/contratos?payment=pending" },
   { key: "holded_errors", title: "Errores Holded pendientes", count: 3, economicImpact: 24700, severity: "high", actionLabel: "Reintentar sync", url: "/ajustes?tab=integrations" },
-] as const; }
-
-export function profitabilityRows() { return demoBudgets.map((budget) => { const realCost = budget.realCost || Math.round(budget.totalCostBudget * (budget.status === "accepted" ? 0.98 : 1)); const realProfit = budget.totalSalePrice - realCost; return { caseCode: budget.caseCode, clientName: budget.clientName, destination: budget.destination, salePrice: budget.totalSalePrice, budgetedCost: budget.totalCostBudget, realCost, expectedProfit: budget.expectedProfit, realProfit, expectedMarginPct: budget.expectedMarginPct, realMarginPct: budget.totalSalePrice ? (realProfit / budget.totalSalePrice) * 100 : 0, costDeviation: realCost - budget.totalCostBudget, status: budget.status }; }); }
-
-export function supplierRows() { return demoExpectedPurchases.reduce((acc, item) => { const row = acc.find((entry) => entry.providerName === item.providerName); const pending = isPurchaseClosed(item) ? 0 : 1; const deviation = (item.holdedAmount || item.expectedAmount) - item.expectedAmount; if (row) { row.expected += 1; row.pending += pending; row.pendingValue += pending ? item.expectedAmount : 0; row.incidents += item.status === "review_needed" ? 1 : 0; row.costDeviation += deviation; row.blockedCases += item.blocksCaseClosing ? 1 : 0; return acc; } acc.push({ providerName: item.providerName, expected: 1, received: isPurchaseClosed(item) ? 1 : 0, pending, incidents: item.status === "review_needed" ? 1 : 0, pendingValue: pending ? item.expectedAmount : 0, averageDelayDays: item.status === "expected" ? 12 : 4, costDeviation: deviation, blockedCases: item.blocksCaseClosing ? 1 : 0 }); return acc; }, [] as { providerName: string; expected: number; received: number; pending: number; incidents: number; pendingValue: number; averageDelayDays: number; costDeviation: number; blockedCases: number }[]); }
-
-export function clientRows() { return demoClientMasters.map((client) => ({ clientId: client.id, clientName: client.display_name, origin: client.origin, activeCases: client.active_cases, acceptedValue: client.accepted_value, acceptedProposals: client.accepted_proposals, fiscalValidated: client.fiscal_validated, duplicateStatus: client.duplicate_status, ticketAvg: client.accepted_proposals > 0 ? client.accepted_value / client.accepted_proposals : 0 })); }
-export function budgetRows() { return demoBudgets.map((budget) => ({ code: budget.code, clientName: budget.clientName, caseCode: budget.caseCode, status: budget.status, responsibleName: budget.responsibleName, totalSalePrice: budget.totalSalePrice, marginPct: budget.expectedMarginPct, createdDays: 3.1, sendDays: budget.status === "draft" ? 0 : 2.8, acceptDays: budget.status === "accepted" ? 6.4 : 0, lowMargin: budget.expectedMarginPct < 16 })); }
-export function teamRows() { return [
-  { userId: "maria", userName: "María Gómez", activeCases: 12, budgetsCreated: 18, budgetsSent: 16, budgetsAccepted: 9, completedTasks: 32, overdueTasks: 2, acceptedValue: 68400, averageMarginPct: 23.2, averageBudgetCreationDays: 2.4, blockers: 3 },
-  { userId: "carlos", userName: "Carlos Ruiz", activeCases: 9, budgetsCreated: 14, budgetsSent: 12, budgetsAccepted: 7, completedTasks: 28, overdueTasks: 4, acceptedValue: 45700, averageMarginPct: 19.8, averageBudgetCreationDays: 3.0, blockers: 5 },
-  { userId: "laura", userName: "Laura Sánchez", activeCases: 11, budgetsCreated: 16, budgetsSent: 15, budgetsAccepted: 6, completedTasks: 24, overdueTasks: 5, acceptedValue: 39200, averageMarginPct: 18.6, averageBudgetCreationDays: 3.8, blockers: 6 },
-  { userId: "juan", userName: "Juan Pérez", activeCases: 8, budgetsCreated: 12, budgetsSent: 10, budgetsAccepted: 5, completedTasks: 19, overdueTasks: 3, acceptedValue: 31900, averageMarginPct: 21.0, averageBudgetCreationDays: 2.9, blockers: 2 },
 ]; }
 
+export function profitabilityRows() { return demoBudgets.map((budget) => { const realCost = budget.realCost || Math.round(budget.totalCostBudget * (budget.status === "accepted" ? 0.98 : 1)); const realProfit = budget.totalSalePrice - realCost; return { caseCode: budget.caseCode, clientName: budget.clientName, destination: budget.destination, salePrice: budget.totalSalePrice, budgetedCost: budget.totalCostBudget, realCost, expectedProfit: budget.expectedProfit, realProfit, expectedMarginPct: budget.expectedMarginPct, realMarginPct: budget.totalSalePrice ? (realProfit / budget.totalSalePrice) * 100 : 0, costDeviation: realCost - budget.totalCostBudget, status: budget.status }; }); }
+export function supplierRows() { return demoExpectedPurchases.reduce((acc, item) => { const row = acc.find((entry) => entry.providerName === item.providerName); const pending = isPurchaseClosed(item) ? 0 : 1; const deviation = (item.holdedAmount || item.expectedAmount) - item.expectedAmount; if (row) { row.expected += 1; row.pending += pending; row.pendingValue += pending ? item.expectedAmount : 0; row.incidents += item.status === "review_needed" ? 1 : 0; row.costDeviation += deviation; row.blockedCases += item.blocksCaseClosing ? 1 : 0; return acc; } acc.push({ providerName: item.providerName, expected: 1, received: isPurchaseClosed(item) ? 1 : 0, pending, incidents: item.status === "review_needed" ? 1 : 0, pendingValue: pending ? item.expectedAmount : 0, averageDelayDays: item.status === "expected" ? 12 : 4, costDeviation: deviation, blockedCases: item.blocksCaseClosing ? 1 : 0 }); return acc; }, [] as { providerName: string; expected: number; received: number; pending: number; incidents: number; pendingValue: number; averageDelayDays: number; costDeviation: number; blockedCases: number }[]); }
+export function clientRows() { return demoClientMasters.map((client) => ({ clientId: client.id, clientName: client.display_name, origin: client.origin, activeCases: client.active_cases, acceptedValue: client.accepted_value, acceptedProposals: client.accepted_proposals, fiscalValidated: client.fiscal_validated, duplicateStatus: client.duplicate_status, ticketAvg: client.accepted_proposals > 0 ? client.accepted_value / client.accepted_proposals : 0 })); }
+export function budgetRows() { return demoBudgets.map((budget) => ({ code: budget.code, clientName: budget.clientName, caseCode: budget.caseCode, status: budget.status, responsibleName: budget.responsibleName, totalSalePrice: budget.totalSalePrice, marginPct: budget.expectedMarginPct, createdDays: 3.1, sendDays: budget.status === "draft" ? 0 : 2.8, acceptDays: budget.status === "accepted" ? 6.4 : 0, lowMargin: budget.expectedMarginPct < 16 })); }
+export function teamRows() { return [{ userId: "maria", userName: "María Gómez", activeCases: 12, budgetsCreated: 18, budgetsSent: 16, budgetsAccepted: 9, completedTasks: 32, overdueTasks: 2, acceptedValue: 68400, averageMarginPct: 23.2, averageBudgetCreationDays: 2.4, blockers: 3 }, { userId: "carlos", userName: "Carlos Ruiz", activeCases: 9, budgetsCreated: 14, budgetsSent: 12, budgetsAccepted: 7, completedTasks: 28, overdueTasks: 4, acceptedValue: 45700, averageMarginPct: 19.8, averageBudgetCreationDays: 3.0, blockers: 5 }, { userId: "laura", userName: "Laura Sánchez", activeCases: 11, budgetsCreated: 16, budgetsSent: 15, budgetsAccepted: 6, completedTasks: 24, overdueTasks: 5, acceptedValue: 39200, averageMarginPct: 18.6, averageBudgetCreationDays: 3.8, blockers: 6 }, { userId: "juan", userName: "Juan Pérez", activeCases: 8, budgetsCreated: 12, budgetsSent: 10, budgetsAccepted: 5, completedTasks: 19, overdueTasks: 3, acceptedValue: 31900, averageMarginPct: 21.0, averageBudgetCreationDays: 2.9, blockers: 2 }]; }
 export function reportPayload() { return { summary: summaryMetrics(), timeSeries: timeSeries(), funnel: funnelSteps(), destinations: destinations(), timing: timingMetrics(), painPoints: painPoints(), profitability: profitabilityRows(), suppliers: supplierRows(), clients: clientRows(), budgets: budgetRows(), team: teamRows(), filters }; }
