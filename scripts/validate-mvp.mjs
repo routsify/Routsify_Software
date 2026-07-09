@@ -46,6 +46,9 @@ function read(path) {
 function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
+function countCanonicalHrefRows(source) {
+  return (source.match(/\{ href: "\//g) || []).length;
+}
 
 for (const file of requiredFiles) assert(existsSync(join(root, file)), `Missing required file: ${file}`);
 for (const [path, target] of Object.entries(redirectRoutes)) {
@@ -62,7 +65,7 @@ const home = read("app/page.tsx");
 assert(home.includes('redirect("/hoy")'), "Root must redirect to /hoy");
 
 const navigation = read("lib/navigation.ts");
-assert((navigation.match(/href:/g) || []).length === 9, "There must be exactly 9 canonical pages including Ajustes");
+assert(countCanonicalHrefRows(navigation) === 9, "There must be exactly 9 canonical pages including Ajustes");
 assert(!navigation.includes("Propuesta pública"), "Public proposal must not be an internal module");
 
 const migration1 = read("supabase/migrations/0001_routsify_mvp_schema.sql");
