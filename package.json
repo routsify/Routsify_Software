@@ -15,21 +15,21 @@
     "smoke:netlify": "node scripts/smoke-netlify.mjs"
   },
   "dependencies": {
-    "@supabase/ssr": "latest",
-    "@supabase/supabase-js": "latest",
-    "echarts": "latest",
-    "lucide-react": "latest",
-    "next": "latest",
-    "react": "latest",
-    "react-dom": "latest"
+    "@supabase/ssr": "0.7.0",
+    "@supabase/supabase-js": "2.48.1",
+    "echarts": "5.6.0",
+    "lucide-react": "0.468.0",
+    "next": "16.2.1",
+    "react": "19.2.1",
+    "react-dom": "19.2.1"
   },
   "devDependencies": {
-    "@netlify/plugin-nextjs": "latest",
-    "@types/node": "latest",
-    "@types/react": "latest",
-    "@types/react-dom": "latest",
-    "eslint": "latest",
-    "eslint-config-next": "latest",
-    "typescript": "latest"
+    "@netlify/plugin-nextjs": "5.15.12",
+    "@types/node": "22.10.5",
+    "@types/react": "19.0.8",
+    "@types/react-dom": "19.0.3",
+    "eslint": "9.17.0",
+    "eslint-config-next": "16.2.1",
+    "typescript": "5.7.3"
   }
 }
