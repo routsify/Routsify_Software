@@ -5,7 +5,7 @@ import { AcceptProposalBox } from "./AcceptProposalBox";
 
 export default async function PublicProposalPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
-  const resolved = resolvePublicProposal(token);
+  const resolved = await resolvePublicProposal(token);
   if (!resolved.ok) notFound();
   const { proposal } = resolved;
 
