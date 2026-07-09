@@ -1,198 +1,151 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
-import { budgetLines as demoBudgetLines, serviceTypes } from "@/lib/mock-data";
-import { buildDemoExpectedPurchasesFromBudget } from "@/lib/demo-expedition-engine";
 import {
-  BudgetLine,
-  calculateBudgetTotals,
-  calculateSalePriceFromMargin,
-  formatCurrency,
-  formatPercent,
-  roundMoney,
-} from "@/lib/budget";
-import { canEditVersion, demoProposalVersions, ProposalVersion, proposalStatuses, proposalVersionSummary } from "@/lib/proposal-versioning";
-import { isDemoMode } from "@/lib/supabase-browser";
+  BudgetMaster,
+  BudgetStatus,
+  budgetAlerts,
+  budgetKpis,
+  budgetOwners,
+  budgetStatusConfig,
+  budgetStatuses,
+  buildBudgetFlow,
+  calculateSalePrice,
+  createDemoBudget,
+  demoBudgetLines,
+  demoBudgetVersions,
+  demoBudgets,
+  filterBudgets,
+  formatBudgetMoney,
+  formatBudgetPercent,
+  marginFilters,
+} from "@/lib/budget-master";
 
-type DraftLine = {
-  service_type_code: string;
-  description_public: string;
-  description_internal: string;
-  supplier_name: string;
-  destination_segment: string;
-  cost_budget: string;
-  margin_percent: string;
-  creates_expected_purchase: boolean;
+const emptyDraft = {
+  clientName: "",
+  caseCode: "",
+  destination: "",
+  responsibleName: "Laura Pérez",
+  marginPct: 20,
 };
 
-const initialDraft: DraftLine = {
-  service_type_code: "hotel",
-  description_public: "",
-  description_internal: "",
-  supplier_name: "",
-  destination_segment: "",
-  cost_budget: "0",
-  margin_percent: "25",
-  creates_expected_purchase: true,
-};
+function toneClass(tone: string) {
+  if (tone === "green") return "status-progress";
+  if (tone === "blue") return "status-progress";
+  if (tone === "red") return "priority-urgent";
+  return "status-pill";
+}
+
+function flowLabel(status: string) {
+  if (status === "completed") return "Completado";
+  if (status === "blocked") return "Bloqueado";
+  return "Pendiente";
+}
 
 export function BudgetManager() {
-  const [lines, setLines] = useState<BudgetLine[]>(demoBudgetLines as BudgetLine[]);
-  const [versions, setVersions] = useState<ProposalVersion[]>(demoProposalVersions);
-  const [activeVersionId, setActiveVersionId] = useState(demoProposalVersions[0].id);
-  const [draft, setDraft] = useState<DraftLine>(initialDraft);
+  const [budgets, setBudgets] = useState<BudgetMaster[]>(demoBudgets);
+  const [selectedId, setSelectedId] = useState(demoBudgets[0].id);
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("Todos");
+  const [owner, setOwner] = useState("Todos");
+  const [margin, setMargin] = useState("Todos");
+  const [draft, setDraft] = useState(emptyDraft);
   const [message, setMessage] = useState<string | null>(null);
 
-  const activeVersion = versions.find((version) => version.id === activeVersionId) || versions[0];
-  const isEditable = canEditVersion(activeVersion);
-  const totals = useMemo(() => calculateBudgetTotals(lines), [lines]);
-  const generatedPurchases = useMemo(() => buildDemoExpectedPurchasesFromBudget("EXP-2026-0001"), []);
-  const previewSale = useMemo(() => {
-    const cost = Number(draft.cost_budget) || 0;
-    const margin = (Number(draft.margin_percent) || 0) / 100;
-    return calculateSalePriceFromMargin(cost, margin);
-  }, [draft.cost_budget, draft.margin_percent]);
+  const kpis = useMemo(() => budgetKpis(budgets), [budgets]);
+  const filtered = useMemo(() => filterBudgets(budgets, { search, status, owner, margin }), [budgets, search, status, owner, margin]);
+  const selected = budgets.find((item) => item.id === selectedId) || filtered[0] || budgets[0];
+  const flow = useMemo(() => buildBudgetFlow(selected), [selected]);
+  const alerts = useMemo(() => budgetAlerts(selected), [selected]);
 
-  function updateDraft<K extends keyof DraftLine>(key: K, value: DraftLine[K]) {
-    setDraft((current) => ({ ...current, [key]: value }));
+  function updateSelected<K extends keyof BudgetMaster>(key: K, value: BudgetMaster[K]) {
+    setBudgets((current) => current.map((item) => item.id === selected.id ? { ...item, [key]: value, lastActivityAt: "Ahora" } : item));
+    setMessage(`Cambio demo guardado: ${String(key)}. En real genera auditoría económica.`);
   }
 
-  function updateVersion(status: ProposalVersion["status"]) {
-    const snapshot = `Snapshot demo: venta ${formatCurrency(totals.totalSale)}, coste ${formatCurrency(totals.totalCost)}, margen ${formatPercent(totals.margin)}, ${totals.expectedPurchases} compras esperadas e idempotencia por línea.`;
-    setVersions((current) => current.map((version) => version.id === activeVersion.id ? {
-      ...version,
-      status,
-      locked: status === "accepted" || status === "sent",
-      sent_at: status === "sent" ? new Date().toISOString().slice(0, 10) : version.sent_at,
-      accepted_at: status === "accepted" ? new Date().toISOString().slice(0, 10) : version.accepted_at,
-      snapshot_note: status === "accepted" ? snapshot : proposalVersionSummary({ ...version, status }),
-    } : version));
-    setMessage(status === "accepted" ? "Versión aceptada: se bloquea snapshot y se generan compras esperadas demo. Holded solo recibe evento de negocio, no cada cambio." : "Estado de versión actualizado.");
-  }
-
-  function createRevision() {
-    const nextNumber = Math.max(...versions.map((version) => version.version_number)) + 1;
-    const revision: ProposalVersion = {
-      id: `proposal-version-${Date.now()}`,
-      version_number: nextNumber,
-      status: "draft",
-      created_at: new Date().toISOString().slice(0, 10),
-      expires_at: "",
-      locked: false,
-      snapshot_note: "Nueva versión editable creada desde la versión anterior.",
-    };
-    setVersions((current) => [revision, ...current]);
-    setActiveVersionId(revision.id);
-    setMessage("Nueva versión creada. Las versiones enviadas o aceptadas quedan como histórico auditable.");
-  }
-
-  function addLine(event: FormEvent<HTMLFormElement>) {
+  function createBudget(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-
-    if (!isEditable) {
-      setMessage("Esta versión está bloqueada. Crea una nueva versión para cambiar importes, margen o condiciones.");
+    if (!draft.clientName.trim() || !draft.caseCode.trim()) {
+      setMessage("Para crear presupuesto hacen falta cliente y expediente.");
       return;
     }
-
-    const cost = roundMoney(Number(draft.cost_budget) || 0);
-    const margin = Math.min(Math.max((Number(draft.margin_percent) || 0) / 100, 0), 0.95);
-    const description = draft.description_public.trim();
-
-    if (!description) {
-      setMessage("Añade una descripción pública para que pueda aparecer en la propuesta.");
-      return;
-    }
-
-    const salePrice = calculateSalePriceFromMargin(cost, margin);
-    const line: BudgetLine = {
-      id: `demo-budget-${Date.now()}`,
-      service_type_code: draft.service_type_code,
-      description_public: description,
-      description_internal: draft.description_internal.trim() || description,
-      supplier_name: draft.supplier_name.trim() || "Pendiente de proveedor",
-      destination_segment: draft.destination_segment.trim(),
-      start_date: "",
-      end_date: "",
-      cost_budget: cost,
-      margin_applied: margin,
-      sale_price: salePrice,
-      creates_expected_purchase: draft.creates_expected_purchase,
-    };
-
-    setLines((current) => [...current, line]);
-    setDraft(initialDraft);
-    setMessage(isDemoMode() ? "Línea añadida en modo demo. Al aceptar, si tiene proveedor externo, generará compra esperada única por budget_line_id." : "Línea preparada contra versión de propuesta real.");
+    const result = createDemoBudget(draft, budgets);
+    setBudgets((current) => [result.budget, ...current]);
+    setSelectedId(result.budget.id);
+    setDraft(emptyDraft);
+    setMessage(`Presupuesto ${result.budget.code} creado. Evento ${result.event}; tarea: ${result.task}.`);
   }
 
-  function removeLine(id: string) {
-    if (!isEditable) {
-      setMessage("No se puede quitar una línea de una versión enviada o aceptada. Crea una nueva versión.");
+  function sendBudget() {
+    if (selected.totalSalePrice <= 0) {
+      setMessage("No se puede enviar: el total de venta debe ser mayor que 0.");
       return;
     }
-    setLines((current) => current.filter((line) => line.id !== id));
+    updateSelected("status", "sent");
+    setMessage("Presupuesto enviado en demo: expediente pasa a seguimiento, se crea tarea y se prepara evento Holded.");
+  }
+
+  function acceptBudget() {
+    if (!["sent", "internal_review"].includes(selected.status)) {
+      setMessage("Solo se puede aceptar un presupuesto enviado o aprobado internamente.");
+      return;
+    }
+    setBudgets((current) => current.map((item) => item.id === selected.id ? { ...item, status: "accepted", acceptedAt: "Ahora", lastActivityAt: "Ahora" } : item));
+    setMessage("Presupuesto aceptado: versión bloqueada, compras esperadas generadas, viajeros activados y expediente actualizado.");
+  }
+
+  function createVersion() {
+    setBudgets((current) => current.map((item) => item.id === selected.id ? { ...item, currentVersion: item.currentVersion + 1, status: "draft", lastActivityAt: "Ahora" } : item));
+    setMessage("Nueva versión demo creada. Las versiones enviadas/aceptadas quedan como snapshot histórico.");
   }
 
   return (
-    <div className="grid">
-      <section className="grid grid-3">
-        <div className="card"><span className="badge">Venta propuesta</span><div className="metric">{formatCurrency(totals.totalSale)}</div><p>Precio total calculado desde coste y margen por línea.</p></div>
-        <div className="card"><span className="badge">Coste previsto</span><div className="metric">{formatCurrency(totals.totalCost)}</div><p>Base para compras esperadas y control de facturas proveedor.</p></div>
-        <div className="card"><span className="badge">Margen global</span><div className="metric">{formatPercent(totals.margin)}</div><p>Beneficio previsto: {formatCurrency(totals.profit)}.</p></div>
+    <div className="clients-page">
+      <section className="client-kpis">
+        <a className="kpi-card" href="#presupuestos-listado"><span className="kpi-icon">▣</span><span className="kpi-copy"><strong>Presupuestos activos</strong><b>{kpis.active}</b><small>+6 vs. mes anterior ↑</small></span></a>
+        <a className="kpi-card" href="#presupuestos-listado"><span className="kpi-icon">□</span><span className="kpi-copy"><strong>Borradores</strong><b>{kpis.drafts}</b><small>Pendientes de revisión</small></span></a>
+        <a className="kpi-card" href="#presupuestos-listado"><span className="kpi-icon">✈</span><span className="kpi-copy"><strong>Enviados / pendientes</strong><b>{kpis.sentPending}</b><small>A la espera de respuesta</small></span></a>
+        <a className="kpi-card" href="#presupuestos-listado"><span className="kpi-icon">€</span><span className="kpi-copy"><strong>Valor presupuestado</strong><b>{formatBudgetMoney(kpis.budgetedValue)}</b><small>Pipeline económico ↑</small></span></a>
       </section>
 
-      <section className="grid grid-2">
-        <div className="card">
-          <div className="eyebrow">Versión económica</div>
-          <h2>v{activeVersion.version_number} · {activeVersion.status}</h2>
-          <p>{proposalVersionSummary(activeVersion)}</p>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
-            <select value={activeVersionId} onChange={(event) => setActiveVersionId(event.target.value)}>{versions.map((version) => <option key={version.id} value={version.id}>v{version.version_number} · {version.status}</option>)}</select>
-            <button className="btn secondary" type="button" onClick={createRevision}>Nueva versión</button>
+      <section className="clients-layout">
+        <div className="card clients-main" id="presupuestos-listado">
+          <div className="client-filters">
+            <input className="input" placeholder="Buscar presupuesto..." value={search} onChange={(event) => setSearch(event.target.value)} />
+            <label>Estado<select value={status} onChange={(event) => setStatus(event.target.value)}><option>Todos</option>{budgetStatuses.map((item) => <option key={item} value={item}>{budgetStatusConfig[item].label}</option>)}</select></label>
+            <label>Responsable<select value={owner} onChange={(event) => setOwner(event.target.value)}><option>Todos</option>{budgetOwners.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+            <label>Margen<select value={margin} onChange={(event) => setMargin(event.target.value)}>{marginFilters.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+            <details className="new-client-drawer">
+              <summary className="btn">+ Nuevo presupuesto</summary>
+              <form className="form" onSubmit={createBudget}>
+                <label>Cliente<input className="input" value={draft.clientName} onChange={(event) => setDraft((current) => ({ ...current, clientName: event.target.value }))} placeholder="Juan Pérez" /></label>
+                <label>Expediente<input className="input" value={draft.caseCode} onChange={(event) => setDraft((current) => ({ ...current, caseCode: event.target.value }))} placeholder="EXP-2026-0001" /></label>
+                <label>Destino<input className="input" value={draft.destination} onChange={(event) => setDraft((current) => ({ ...current, destination: event.target.value }))} placeholder="Japón" /></label>
+                <div className="grid grid-2"><label>Responsable<select value={draft.responsibleName} onChange={(event) => setDraft((current) => ({ ...current, responsibleName: event.target.value }))}>{budgetOwners.map((item) => <option key={item} value={item}>{item}</option>)}</select></label><label>Margen inicial %<input className="input" type="number" value={draft.marginPct} onChange={(event) => setDraft((current) => ({ ...current, marginPct: Number(event.target.value) }))} /></label></div>
+                <button className="btn" type="submit">Crear presupuesto</button>
+              </form>
+            </details>
           </div>
-          <table><tbody><tr><th>Estado</th><td><select value={activeVersion.status} onChange={(event) => updateVersion(event.target.value as ProposalVersion["status"])}>{proposalStatuses.map((status) => <option key={status} value={status}>{status}</option>)}</select></td></tr><tr><th>Bloqueada</th><td>{activeVersion.locked ? "Sí" : "No"}</td></tr><tr><th>Creada</th><td>{activeVersion.created_at}</td></tr><tr><th>Enviada</th><td>{activeVersion.sent_at || "—"}</td></tr><tr><th>Aceptada</th><td>{activeVersion.accepted_at || "—"}</td></tr><tr><th>Snapshot</th><td>{activeVersion.snapshot_note}</td></tr></tbody></table>
+          {message ? <p className="client-message">{message}</p> : null}
+
+          <table>
+            <thead><tr><th>Presupuesto</th><th>Cliente</th><th>Expediente</th><th>Estado</th><th>Margen</th><th>Venta</th><th>Responsable</th><th>Última actividad</th><th></th></tr></thead>
+            <tbody>{filtered.map((item) => <tr key={item.id} className={item.id === selected.id ? "selected-row" : ""}><td><button className="table-link" type="button" onClick={() => setSelectedId(item.id)}><strong>{item.code}</strong></button></td><td>{item.clientName}</td><td><a href={`/expedientes/${item.caseCode}`}>{item.caseCode}</a></td><td><span className={`status-pill ${toneClass(budgetStatusConfig[item.status].tone)}`}>{budgetStatusConfig[item.status].label}</span></td><td>{formatBudgetPercent(item.expectedMarginPct)}</td><td>{formatBudgetMoney(item.totalSalePrice)}</td><td>{item.responsibleName}</td><td>{item.lastActivityAt}</td><td><details><summary className="icon-button">⋮</summary><div className="card" style={{ position: "absolute", right: 24, zIndex: 10 }}><a href="/propuestas/demo-public-token">Ver landing privada</a><br/><button className="table-link" type="button" onClick={createVersion}>Crear nueva versión</button><br/><button className="table-link" type="button" onClick={sendBudget}>Enviar al cliente</button><br/><button className="table-link" type="button" onClick={acceptBudget}>Marcar aceptado</button><br/><a href="/compras">Ver compras esperadas</a></div></details></td></tr>)}</tbody>
+          </table>
+          <div className="table-pagination"><span>Mostrando 1 a {filtered.length} de {budgets.length} presupuestos</span><span><button className="btn secondary">‹</button><button className="btn">1</button><button className="btn secondary">2</button><button className="btn secondary">3</button><button className="btn secondary">›</button></span></div>
         </div>
 
-        <div className="card">
-          <div className="eyebrow">Control operativo</div>
-          <h2>Qué se congela al aceptar</h2>
-          <p>La versión aceptada bloquea venta, fórmulas, condiciones y conjunto de compras esperadas. Holded solo recibe eventos de negocio.</p>
-          <table><tbody><tr><th>Líneas</th><td>{lines.length}</td></tr><tr><th>Compras esperadas</th><td>{totals.expectedPurchases}</td></tr><tr><th>Idempotencia</th><td>EXP_CODE + budget_line_id + proveedor</td></tr><tr><th>Edición</th><td>{isEditable ? "Permitida" : "Bloqueada"}</td></tr></tbody></table>
-        </div>
-      </section>
-
-      <section className="grid grid-2">
-        <div className="card">
-          <div className="eyebrow">Nueva línea de presupuesto</div>
-          <h2>Margen por línea</h2>
-          <form className="form" onSubmit={addLine}>
-            <label>Tipo de servicio<select disabled={!isEditable} value={draft.service_type_code} onChange={(event) => updateDraft("service_type_code", event.target.value)}>{serviceTypes.map((type) => <option key={type.code} value={type.code}>{type.name}</option>)}</select></label>
-            <label>Descripción pública<textarea disabled={!isEditable} className="input" rows={4} value={draft.description_public} onChange={(event) => updateDraft("description_public", event.target.value)} placeholder="Texto comercial que verá el cliente" /></label>
-            <label>Descripción interna<textarea disabled={!isEditable} className="input" rows={3} value={draft.description_internal} onChange={(event) => updateDraft("description_internal", event.target.value)} placeholder="Notas operativas que no verá el cliente" /></label>
-            <div className="grid grid-2"><label>Proveedor<input disabled={!isEditable} className="input" value={draft.supplier_name} onChange={(event) => updateDraft("supplier_name", event.target.value)} placeholder="Proveedor externo o Routsify" /></label><label>Destino/tramo<input disabled={!isEditable} className="input" value={draft.destination_segment} onChange={(event) => updateDraft("destination_segment", event.target.value)} placeholder="Kioto, Tokio, etapa..." /></label></div>
-            <div className="grid grid-2"><label>Coste previsto<input disabled={!isEditable} className="input" type="number" min="0" step="0.01" value={draft.cost_budget} onChange={(event) => updateDraft("cost_budget", event.target.value)} /></label><label>Margen %<input disabled={!isEditable} className="input" type="number" min="0" max="95" step="0.1" value={draft.margin_percent} onChange={(event) => updateDraft("margin_percent", event.target.value)} /></label></div>
-            <label style={{ display: "flex", gap: 10, alignItems: "center" }}><input disabled={!isEditable} type="checkbox" checked={draft.creates_expected_purchase} onChange={(event) => updateDraft("creates_expected_purchase", event.target.checked)} />Genera compra esperada de proveedor</label>
-            <div className="card" style={{ boxShadow: "none" }}><span className="badge">Precio de venta estimado</span><div className="metric">{formatCurrency(previewSale)}</div></div>
-            {message ? <p>{message}</p> : null}
-            <button className="btn" type="submit" disabled={!isEditable}>Añadir línea</button>
-          </form>
-        </div>
-
-        <div className="card">
-          <div className="eyebrow">Compras que generará</div>
-          <h2>Vista previa por línea</h2>
-          <table><thead><tr><th>budget_line_id</th><th>Proveedor</th><th>Importe</th><th>Idempotencia</th></tr></thead><tbody>{generatedPurchases.map((item) => <tr key={item.idempotency_key}><td>{item.budget_line_id}</td><td>{item.supplier}</td><td>{formatCurrency(item.amount)}</td><td>{item.idempotency_key}</td></tr>)}</tbody></table>
-        </div>
-      </section>
-
-      <section className="card">
-        <div className="header" style={{ marginBottom: 0 }}>
-          <div><div className="eyebrow">Presupuesto nativo</div><h2>Líneas de la versión {activeVersion.version_number}</h2></div>
-          <a className="btn secondary" href="/propuestas/demo-public-token">Vista pública</a>
-        </div>
-        <table>
-          <thead><tr><th>Servicio</th><th>Descripción pública</th><th>Proveedor</th><th>Tramo</th><th>Coste</th><th>Margen</th><th>Venta</th><th>Compra</th><th></th></tr></thead>
-          <tbody>{lines.map((line) => <tr key={line.id}><td><span className="badge">{line.service_type_code}</span></td><td>{line.description_public}</td><td>{line.supplier_name || "—"}</td><td>{line.destination_segment || "—"}</td><td>{formatCurrency(line.cost_budget)}</td><td>{formatPercent(line.margin_applied)}</td><td><strong>{formatCurrency(line.sale_price)}</strong></td><td>{line.creates_expected_purchase ? "Sí" : "No"}</td><td><button className="btn secondary" type="button" onClick={() => removeLine(line.id)} disabled={!isEditable}>Quitar</button></td></tr>)}</tbody>
-        </table>
+        <aside className="client-side card">
+          <div className="client-side-header"><div><h2>{selected.code}</h2><p><strong>{selected.clientName}</strong> · {selected.caseCode}<br/>{selected.destination}{selected.startDate ? ` · ${selected.startDate} → ${selected.endDate}` : ""}</p></div><span className={`status-pill ${toneClass(budgetStatusConfig[selected.status].tone)}`}>{budgetStatusConfig[selected.status].label}</span></div>
+          <section className="side-section"><h3>Datos rápidos</h3><table><tbody><tr><th>Versión</th><td>v{selected.currentVersion}</td></tr><tr><th>Responsable</th><td>{selected.responsibleName}</td></tr><tr><th>Margen</th><td>{formatBudgetPercent(selected.expectedMarginPct)}</td></tr><tr><th>Venta</th><td>{formatBudgetMoney(selected.totalSalePrice)}</td></tr></tbody></table></section>
+          <section className="side-section"><h3>Resumen financiero</h3><table><tbody><tr><th>Coste previsto</th><td>{formatBudgetMoney(selected.totalCostBudget)}</td></tr><tr><th>Venta</th><td>{formatBudgetMoney(selected.totalSalePrice)}</td></tr><tr><th>Beneficio previsto</th><td>{formatBudgetMoney(selected.expectedProfit)}</td></tr><tr><th>Coste real</th><td>{formatBudgetMoney(selected.realCost || 0)}</td></tr><tr><th>Desviación</th><td>{formatBudgetMoney((selected.realCost || selected.totalCostBudget) - selected.totalCostBudget)}</td></tr></tbody></table></section>
+          <section className="side-section"><h3>Líneas principales</h3>{demoBudgetLines.map((line) => <p key={line.id}><strong>{line.description}</strong><br/><small>{line.providerName} · coste {formatBudgetMoney(line.costBudget)} · venta {formatBudgetMoney(line.salePrice)}</small></p>)}</section>
+          <section className="side-section"><h3>Versiones snapshots</h3>{demoBudgetVersions.map((version) => <p key={version.id}><span className={`status-pill ${toneClass(budgetStatusConfig[version.status as BudgetStatus].tone)}`}>v{version.versionNumber} · {budgetStatusConfig[version.status as BudgetStatus].label}</span><br/><small>{version.createdAt} · {version.summary}</small></p>)}</section>
+          <section className="side-section"><h3>Estado del flujo</h3>{flow.map((step) => <p key={step.label}><span className={`status-pill ${step.status === "completed" ? "status-progress" : step.status === "blocked" ? "priority-urgent" : ""}`}>{flowLabel(step.status)}</span> <strong>{step.label}</strong></p>)}</section>
+          <section className="side-section"><h3>Alertas</h3>{alerts.length ? alerts.map((alert) => <p key={alert} className="danger-text">⚠ {alert}</p>) : <p>Sin alertas críticas.</p>}</section>
+          <section className="side-actions"><h3>Acciones rápidas</h3><a className="quick-action" href="/propuestas/demo-public-token">Ver presupuesto completo <span>→</span></a><button className="quick-action" type="button" onClick={() => selected.status === "accepted" ? setMessage("La versión aceptada no se edita: crea nueva versión o revisión controlada.") : setMessage(`Editor de líneas listo. Precio ejemplo: ${formatBudgetMoney(calculateSalePrice(100, selected.expectedMarginPct))}`)}>Editar líneas <span>→</span></button><button className="quick-action" type="button" onClick={createVersion}>Ver versiones <span>→</span></button><button className="quick-action primary" type="button" onClick={sendBudget}>Enviar al cliente <span>→</span></button><button className="quick-action" type="button" onClick={acceptBudget}>Marcar aceptado <span>→</span></button></section>
+          <div className="client-footnote">Cada presupuesto se versiona. La versión aceptada bloquea fórmula, precio y condiciones.</div>
+        </aside>
       </section>
     </div>
   );
