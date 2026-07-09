@@ -5,7 +5,11 @@ import { ClientsManager } from "./ClientsManager";
 export default function ClientsPage() {
   return (
     <AppShell>
-      <PageHeader eyebrow="CRM operativo" title="Clientes" description="Vista completa de campos de cliente según el modelo MVP: fiscal/comercial, deduplicación por email/teléfono y referencia Holded." action={<button className="btn">Nuevo cliente</button>} />
+      <PageHeader
+        eyebrow="Clientes"
+        title="Ficha maestra de clientes"
+        description="Cliente único, deduplicación por email/teléfono, fiscalidad mínima, estado Holded, historial y acciones rápidas conectadas con expedientes y presupuestos."
+      />
       <ClientsManager />
     </AppShell>
   );
