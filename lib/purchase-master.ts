@@ -26,20 +26,11 @@ export type ExpectedPurchase = {
   holdedAmount?: number;
   holdedDate?: string;
   matchConfidence?: number;
+  notRequiredReason?: string;
   lastActivityAt: string;
 };
 
-export type HoldedPurchaseCandidate = {
-  id: string;
-  holdedPurchaseId: string;
-  holdedDocumentNumber: string;
-  providerName: string;
-  amount: number;
-  date: string;
-  confidence: number;
-  checks: string[];
-  holdedUrl: string;
-};
+export type HoldedPurchaseCandidate = { id: string; holdedPurchaseId: string; holdedDocumentNumber: string; providerName: string; amount: number; date: string; confidence: number; checks: string[]; holdedUrl: string };
 
 export const purchaseStatuses: ExpectedPurchaseStatus[] = ["expected", "requested", "holded_candidate", "matched", "review_needed", "approved", "not_required", "cancelled"];
 export const purchaseProviders = ["Todos", "Emirates", "Booking.com", "Japan Experience", "IATI", "Welcome Pickups", "JR Pass", "Hotel Glacier", "Nile Cruises"];
@@ -70,4 +61,13 @@ export const demoExpectedPurchases: ExpectedPurchase[] = [
 
 export function formatPurchaseMoney(value: number) { return new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(value); }
 export function isPurchaseClosed(item: ExpectedPurchase) { return ["approved", "not_required", "cancelled"].includes(item.status); }
-export function purchaseKpis(items = demoExpectedPurchases) { return { expected: items.length, pending: items.filter((item) => !isPurchaseClosed(item)).length, incidents: items.filter((item) => item.status === "review_needed" || item.matchStatus === "issue" || item.holdedSyncStatus === "error").length, pendingValue: items.filter((item) => !isPurchaseClosed(item)).reduce((sum, item) => sum + item.expectedAmount, 0) }; }
+export function purchaseKpis(items = demoExpectedPurchases) { return { expected: items.length, pending: items.filter((item) => !isPurchaseClosed(item)).length, incidents: items.filter((item) => item.status === "review_needed" || item.matchStatus === "issue").length, pendingValue: items.filter((item) => !isPurchaseClosed(item)).reduce((sum, item) => sum + item.expectedAmount, 0) }; }
+export function confidenceBucket(item: ExpectedPurchase) { const confidence = item.matchConfidence || 0; if (!item.holdedPurchaseId) return "Sin documento"; if (item.matchStatus === "issue" || item.status === "review_needed") return "Incidencia"; if (confidence >= 90) return "Alta"; if (confidence >= 70) return "Media"; return "Baja"; }
+export function filterPurchases(items: ExpectedPurchase[], filters: { search: string; status: string; provider: string; caseCode: string; match: string }) { const search = filters.search.trim().toLowerCase(); return items.filter((item) => (!search || [item.code, item.providerName, item.caseCode, item.clientName, item.destination, item.concept, item.holdedDocumentNumber, item.responsibleName].some((value) => String(value || "").toLowerCase().includes(search))) && (filters.status === "Todos" || item.status === filters.status) && (filters.provider === "Todos" || item.providerName === filters.provider) && (filters.caseCode === "Todos" || item.caseCode === filters.caseCode) && (filters.match === "Todos" || confidenceBucket(item) === filters.match)); }
+export function holdedCandidate(item: ExpectedPurchase): HoldedPurchaseCandidate | null { if (!item.holdedPurchaseId || !item.holdedDocumentNumber) return null; const amountMatches = item.holdedAmount === item.expectedAmount; const providerMatches = true; const dateNear = Boolean(item.holdedDate); return { id: `${item.id}-candidate`, holdedPurchaseId: item.holdedPurchaseId, holdedDocumentNumber: item.holdedDocumentNumber, providerName: item.providerName, amount: item.holdedAmount || item.expectedAmount, date: item.holdedDate || "Pendiente", confidence: item.matchConfidence || 0, checks: [amountMatches ? "Importe coincide" : "Diferencia de importe", providerMatches ? "Proveedor coincide" : "Proveedor distinto", dateNear ? "Fecha cercana" : "Fecha pendiente"], holdedUrl: "https://app.holded.com" }; }
+export function purchaseFlow(item: ExpectedPurchase) { return [{ label: "Compra esperada creada", status: "completed" }, { label: "Solicitud al proveedor", status: ["requested", "holded_candidate", "matched", "review_needed", "approved"].includes(item.status) ? "completed" : "pending" }, { label: "Documento candidato Holded", status: item.holdedPurchaseId ? "completed" : "pending" }, { label: "Revisión manual", status: item.status === "review_needed" ? "in_progress" : ["approved", "not_required"].includes(item.status) ? "completed" : "pending" }, { label: "Aprobación final", status: item.status === "approved" || item.status === "not_required" ? "completed" : "pending" }]; }
+export function purchaseAlerts(item: ExpectedPurchase) { const alerts: string[] = []; if (purchaseStatusConfig[item.status].blocks) alerts.push("Bloquea cierre hasta aprobar o justificar"); if (!item.holdedPurchaseId) alerts.push("Sin documento Holded vinculado"); if (item.status === "review_needed") alerts.push("Revisión manual obligatoria"); if ((item.holdedAmount || item.expectedAmount) !== item.expectedAmount) alerts.push("Diferencia de importe"); return alerts; }
+export function approvePurchaseMatch(item: ExpectedPurchase) { return { ...item, status: "approved" as ExpectedPurchaseStatus, matchStatus: "linked" as const, blocksCaseClosing: false, lastActivityAt: "Ahora" }; }
+export function requestPurchaseInvoice(item: ExpectedPurchase) { return { ...item, status: "requested" as ExpectedPurchaseStatus, lastActivityAt: "Ahora" }; }
+export function markPurchaseNotRequired(item: ExpectedPurchase, reason: string) { return { ...item, status: "not_required" as ExpectedPurchaseStatus, notRequiredReason: reason, blocksCaseClosing: false, lastActivityAt: "Ahora" }; }
+export function getPurchaseDetail(purchaseId: string) { const purchase = demoExpectedPurchases.find((item) => item.id === purchaseId || item.code === purchaseId); return purchase ? { purchase, candidate: holdedCandidate(purchase), flow: purchaseFlow(purchase), alerts: purchaseAlerts(purchase), timeline: [{ title: "Compra esperada creada", createdAt: "12/05/2026", userName: "Sistema" }, { title: purchase.holdedPurchaseId ? "Documento candidato encontrado en Holded" : "Factura pendiente", createdAt: purchase.lastActivityAt, userName: purchase.responsibleName }], tasks: purchaseAlerts(purchase).map((alert) => ({ title: alert, assignedTo: purchase.responsibleName, status: "open" })), audit: [{ action: "expected_purchase.created", userName: "Sistema", createdAt: "12/05/2026" }] } : null; }
