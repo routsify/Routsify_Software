@@ -6,10 +6,9 @@ export default function PurchasesPage() {
   return (
     <AppShell>
       <PageHeader
-        eyebrow="Compras y proveedores"
-        title="Facturas proveedor pendientes"
-        description="Seguimiento de compras esperadas, subida manual de facturas proveedor, revisión humana y criterio de cierre operativo. Sin OCR en el MVP."
-        action={<a className="btn" href="/propuestas">Ver presupuesto</a>}
+        eyebrow="Compras / Proveedores"
+        title="Conciliación de compras esperadas"
+        description="Routsify controla qué facturas proveedor se esperan; Holded aporta compras reales; esta pantalla propone matches, aprueba costes reales y bloquea el cierre si falta algo obligatorio."
       />
       <PurchasesManager />
     </AppShell>
