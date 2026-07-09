@@ -2,6 +2,7 @@
 
 import { FormEvent, useMemo, useState } from "react";
 import { cases } from "@/lib/mock-data";
+import { demoOcrForTraveler, ocrSummary } from "@/lib/demo-ocr";
 import { demoTravelers, documentStatuses, travelerSummary, Traveler } from "@/lib/travelers";
 import { caseTravelerReadiness, documentExpiresSoon, inferTravelerStatus, travelerBlockers, travelerNextAction } from "@/lib/traveler-rules";
 import { isDemoMode } from "@/lib/supabase-browser";
@@ -53,6 +54,7 @@ export function TravelersManager() {
   const [caseCode, setCaseCode] = useState("EXP-2026-0001");
   const [message, setMessage] = useState<string | null>(null);
   const summary = useMemo(() => travelerSummary(items), [items]);
+  const ocr = useMemo(() => ocrSummary(items), [items]);
   const selectedCaseItems = useMemo(() => items.filter((item) => item.case_code === caseCode), [items, caseCode]);
   const readiness = useMemo(() => caseTravelerReadiness(selectedCaseItems), [selectedCaseItems]);
 
@@ -71,7 +73,7 @@ export function TravelersManager() {
     setItems((current) => [item, ...current]);
     setDraft({ ...emptyDraft, case_code: draft.case_code });
     setCaseCode(item.case_code);
-    setMessage(isDemoMode() ? "Viajero añadido en modo demo con validación mínima. La revisión final sigue siendo manual." : "Viajero preparado para guardado real.");
+    setMessage(isDemoMode() ? "Viajero añadido en modo demo. OCR simulado y revisión humana siguen siendo obligatorios si hay baja confianza." : "Viajero preparado para guardado real.");
   }
 
   function updateStatus(id: string, status: Traveler["status"]) {
@@ -82,26 +84,28 @@ export function TravelersManager() {
     const current = items.find((item) => item.id === id);
     if (!current) return;
     const blockers = travelerBlockers(current);
+    const ocrResult = demoOcrForTraveler(current);
+    if (ocrResult.status === "revision_requerida") blockers.push("OCR con confianza baja/media");
     if (blockers.length > 0) {
       setItems((list) => list.map((item) => item.id === id ? { ...item, status: inferTravelerStatus(item), notes: blockers.join(" · ") } : item));
       setMessage("No se puede verificar: " + blockers.join(" · "));
       return;
     }
-    setItems((list) => list.map((item) => item.id === id ? { ...item, status: "verified", notes: "Verificado manualmente por operaciones." } : item));
+    setItems((list) => list.map((item) => item.id === id ? { ...item, status: "verified", notes: "OCR revisado y aprobado manualmente por operaciones." } : item));
     setMessage("Viajero verificado. Ya cuenta para contrato y cierre.");
   }
 
   function refreshStatuses() {
     setItems((list) => list.map((item) => ({ ...item, status: inferTravelerStatus(item), notes: documentExpiresSoon(item.document_expiry) ? "Documento caduca en menos de 180 días." : item.notes })));
-    setMessage("Estados recalculados según datos mínimos, archivo y caducidad.");
+    setMessage("Estados recalculados según datos mínimos, archivo, OCR demo y caducidad.");
   }
 
   return (
     <div className="grid">
       <section className="grid grid-3">
         <div className="card"><span className="badge">Viajeros</span><div className="metric">{summary.total}</div><p>Personas asociadas a expedientes activos.</p></div>
-        <div className="card"><span className="badge">Faltan documentos</span><div className="metric">{summary.missing}</div><p>{summary.expired} documentos caducados.</p></div>
-        <div className="card"><span className="badge">Estado contrato</span><div className="metric">{summary.ready ? "ready" : "blocked"}</div><p>El contrato no debería avanzar si falta documentación mínima.</p></div>
+        <div className="card"><span className="badge">OCR / revisión</span><div className="metric">{ocr.done}/{ocr.total}</div><p>{ocr.review} requieren revisión humana.</p></div>
+        <div className="card"><span className="badge">Estado contrato</span><div className="metric">{summary.ready ? "ready" : "blocked"}</div><p>El contrato no avanza si falta aprobación documental.</p></div>
       </section>
 
       <section className="card">
@@ -128,16 +132,16 @@ export function TravelersManager() {
 
         <div className="card">
           <div className="eyebrow">Regla MVP</div>
-          <h2>Documentación mínima</h2>
-          <p>No se automatiza lectura de documentos en el MVP. Operaciones verifica manualmente nombre, número, caducidad, archivo y coherencia antes de contrato.</p>
-          <table><tbody><tr><th>Subida real</th><td>Almacenamiento privado</td></tr><tr><th>Acceso público</th><td>No permitido</td></tr><tr><th>Lectura automática</th><td>Fuera del MVP</td></tr><tr><th>Revisión</th><td>Manual por operaciones</td></tr></tbody></table>
+          <h2>OCR asistido, revisión humana</h2>
+          <p>El OCR demo prellena campos y marca confianza por campo. La aprobación final siempre requiere revisión humana si hay confianza media/baja.</p>
+          <table><tbody><tr><th>Formatos</th><td>JPG, PNG, PDF, WEBP</td></tr><tr><th>No se envía a Holded</th><td>DNI/pasaporte nunca se sincroniza como copia fiscal.</td></tr><tr><th>Retención</th><td>Corta, privada y auditada cuando haya datos reales.</td></tr><tr><th>Revisión</th><td>Usuario revisor + timestamp.</td></tr></tbody></table>
         </div>
       </section>
 
       <section className="card">
         <table>
-          <thead><tr><th>Expediente</th><th>Viajero</th><th>Documento</th><th>Caducidad</th><th>Archivo</th><th>Estado</th><th>Siguiente acción</th><th>Acción</th></tr></thead>
-          <tbody>{items.map((item) => { const blockers = travelerBlockers(item); return <tr key={item.id}><td><a href={`/expedientes/${item.case_code}`}><strong>{item.case_code}</strong></a></td><td>{item.full_name}<br/><small>{item.date_of_birth || "sin nacimiento"} · {item.nationality}</small></td><td>{item.document_type}<br/><small>{item.document_number || "sin número"}</small></td><td>{item.document_expiry || "—"}</td><td>{item.document_file || "—"}</td><td><select value={item.status} onChange={(event) => updateStatus(item.id, event.target.value as Traveler["status"])}>{documentStatuses.map((status) => <option key={status} value={status}>{status}</option>)}</select></td><td>{travelerNextAction(item)}<br/><small>{blockers.length ? blockers.join(" · ") : item.notes || "—"}</small></td><td><button className="btn secondary" type="button" onClick={() => validateTraveler(item.id)}>Verificar</button></td></tr>; })}</tbody>
+          <thead><tr><th>Expediente</th><th>Viajero</th><th>Documento</th><th>OCR</th><th>Confianza campos</th><th>Estado</th><th>Siguiente acción</th><th>Acción</th></tr></thead>
+          <tbody>{items.map((item) => { const blockers = travelerBlockers(item); const ocrResult = demoOcrForTraveler(item); return <tr key={item.id}><td><a href={`/expedientes/${item.case_code}`}><strong>{item.case_code}</strong></a></td><td>{item.full_name}<br/><small>{item.date_of_birth || "sin nacimiento"} · {item.nationality}</small></td><td>{item.document_type}<br/><small>{item.document_number || "sin número"} · {item.document_file || "sin archivo"}</small></td><td><span className="badge">{ocrResult.status}</span><br/><small>{ocrResult.reviewer}{ocrResult.reviewed_at ? ` · ${ocrResult.reviewed_at}` : ""}</small></td><td>{ocrResult.fields.length ? ocrResult.fields.map((field) => <span key={field.field}>{field.field}: {field.confidence}<br/></span>) : "—"}</td><td><select value={item.status} onChange={(event) => updateStatus(item.id, event.target.value as Traveler["status"])}>{documentStatuses.map((status) => <option key={status} value={status}>{status}</option>)}</select></td><td>{travelerNextAction(item)}<br/><small>{ocrResult.alert || blockers.join(" · ") || item.notes || "—"}</small></td><td><button className="btn secondary" type="button" onClick={() => validateTraveler(item.id)}>Verificar</button></td></tr>; })}</tbody>
         </table>
       </section>
     </div>
