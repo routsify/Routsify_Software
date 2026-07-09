@@ -2,6 +2,7 @@
 
 import { FormEvent, useMemo, useState } from "react";
 import { expectedPurchases as demoPurchases } from "@/lib/mock-data";
+import { bestHoldedCandidate, matchAction } from "@/lib/demo-holded-matching";
 import { formatMoney, invoiceDelta, needsReview, PurchaseItem, purchaseStatuses, purchaseTotals } from "@/lib/purchases";
 import { isDemoMode } from "@/lib/supabase-browser";
 
@@ -40,6 +41,27 @@ export function PurchasesManager() {
       if (status === "not_required" && !item.not_required_reason) next.not_required_reason = "Motivo pendiente de completar";
       return next;
     }));
+  }
+
+  function approveBestMatch(id: string) {
+    const current = items.find((item) => item.id === id);
+    if (!current) return;
+    const candidate = bestHoldedCandidate(current);
+    if (!candidate) {
+      setMessage("No hay candidato Holded. Reclama la factura al proveedor.");
+      return;
+    }
+    const status: PurchaseItem["status"] = candidate.confidence === "alta" ? "matched" : "review_needed";
+    setItems((list) => list.map((item) => item.id === id ? {
+      ...item,
+      status,
+      invoice_number: candidate.id,
+      invoice_date: candidate.date,
+      invoice_total: candidate.amount,
+      invoice_file: `${candidate.id}.pdf`,
+      review_notes: `${candidate.confidence}: ${candidate.reasons.join(" · ")}`,
+    } : item));
+    setMessage(candidate.confidence === "alta" ? "Match Holded aprobado en demo. Revisa y cambia a approved cuando proceda." : "Match dudoso. Queda en revisión manual.");
   }
 
   function attachInvoice(event: FormEvent<HTMLFormElement>) {
@@ -111,12 +133,12 @@ export function PurchasesManager() {
         </div>
 
         <div className="card">
-          <div className="eyebrow">No requerida</div>
-          <h2>Justificar excepción</h2>
-          <p>Solo se debe usar cuando una compra esperada no necesita factura. El motivo es obligatorio para poder cerrar el expediente.</p>
+          <div className="eyebrow">Matching Holded demo</div>
+          <h2>Candidatos y excepción</h2>
+          <p>Routsify propone matches por EXP_CODE, budget_line_id, proveedor, importe, fecha y destino. Los matches dudosos quedan en revisión manual.</p>
           <form className="form" onSubmit={markNotRequired}>
             <label>Compra esperada<select value={selectedId} onChange={(event) => setSelectedId(event.target.value)}>{items.map((item) => <option key={item.id} value={item.id}>{item.case_code} · {item.supplier}</option>)}</select></label>
-            <label>Motivo obligatorio<textarea className="input" rows={4} value={notRequiredReason} onChange={(event) => setNotRequiredReason(event.target.value)} placeholder="Ej. servicio cancelado, coste incluido en otro proveedor, no procede factura separada..." /></label>
+            <label>Motivo obligatorio<textarea className="input" rows={3} value={notRequiredReason} onChange={(event) => setNotRequiredReason(event.target.value)} placeholder="Ej. servicio cancelado, coste incluido en otro proveedor, no procede factura separada..." /></label>
             <button className="btn secondary" type="submit">Marcar no requerida</button>
           </form>
           <table><tbody><tr><th>Aprobadas</th><td>{totals.approvedCount}/{totals.count}</td></tr><tr><th>Cerradas o justificadas</th><td>{totals.closedCount}/{totals.count}</td></tr><tr><th>Modo actual</th><td>{isDemoMode() ? "Demo" : "Supabase"}</td></tr><tr><th>Cierre recomendado</th><td><span className="badge">{totals.pendingCount === 0 ? "ready_to_close" : "suppliers_pending"}</span></td></tr></tbody></table>
@@ -125,8 +147,8 @@ export function PurchasesManager() {
 
       <section className="card">
         <table>
-          <thead><tr><th>Expediente</th><th>Proveedor</th><th>Servicio</th><th>Estado</th><th>Previsto</th><th>Factura</th><th>Diferencia</th><th>Acción</th></tr></thead>
-          <tbody>{items.map((item) => <tr key={item.id}><td><a href={`/expedientes/${item.case_code}`}><strong>{item.case_code}</strong></a></td><td>{item.supplier}</td><td>{item.service}</td><td><span className="badge">{item.status}</span></td><td>{formatMoney(item.amount, item.currency)}</td><td>{item.invoice_file ? <span>{item.invoice_file}<br/><small>{item.invoice_number || "sin número"} · {item.invoice_date || "sin fecha"} · {item.invoice_total ? formatMoney(item.invoice_total, item.currency) : "sin total"}</small></span> : (item.not_required_reason || "—")}</td><td>{item.invoice_total ? <span>{formatMoney(invoiceDelta(item), item.currency)}{needsReview(item) ? <><br/><small>revisar</small></> : null}</span> : "—"}</td><td><select value={item.status} onChange={(event) => updateStatus(item.id, event.target.value as PurchaseItem["status"])}>{purchaseStatuses.map((status) => <option key={status} value={status}>{status}</option>)}</select></td></tr>)}</tbody>
+          <thead><tr><th>Expediente</th><th>Proveedor</th><th>Servicio</th><th>Estado</th><th>Previsto</th><th>Holded candidato</th><th>Diferencia</th><th>Acción</th></tr></thead>
+          <tbody>{items.map((item) => { const candidate = bestHoldedCandidate(item); return <tr key={item.id}><td><a href={`/expedientes/${item.case_code}`}><strong>{item.case_code}</strong></a></td><td>{item.supplier}</td><td>{item.service}</td><td><span className="badge">{item.status}</span></td><td>{formatMoney(item.amount, item.currency)}</td><td>{candidate ? <span>{candidate.id} · {candidate.confidence}<br/><small>{candidate.supplier} · {formatMoney(candidate.amount)} · {candidate.reasons.join(" · ")}</small></span> : "Sin candidato"}</td><td>{item.invoice_total ? <span>{formatMoney(invoiceDelta(item), item.currency)}{needsReview(item) ? <><br/><small>revisar</small></> : null}</span> : candidate ? <span>{formatMoney(candidate.amount - item.amount)}<br/><small>{matchAction(candidate)}</small></span> : "—"}</td><td><button className="btn secondary" type="button" onClick={() => approveBestMatch(item.id)}>Usar candidato</button><br/><select style={{ marginTop: 8 }} value={item.status} onChange={(event) => updateStatus(item.id, event.target.value as PurchaseItem["status"])}>{purchaseStatuses.map((status) => <option key={status} value={status}>{status}</option>)}</select></td></tr>; })}</tbody>
         </table>
       </section>
     </div>
