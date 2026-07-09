@@ -9,8 +9,6 @@ const nav = [
   ["/expedientes", "Expedientes"],
   ["/propuestas", "Presupuestos"],
   ["/compras", "Compras / Proveedores"],
-  ["/viajeros", "Viajeros y Documentos"],
-  ["/contratos", "Contrato, Firma y Pago"],
   ["/informes", "Informes"],
   ["/ajustes", "Ajustes"],
 ];
