@@ -59,7 +59,7 @@ export function SettingsManager() {
         <a className="kpi-card" href="/propuestas"><span className="kpi-icon">📄</span><span className="kpi-copy"><strong>Presupuestos mes</strong><b>{summary.monthlyBudgets}</b><small>Sin incidencias</small></span></a>
         <a className="kpi-card" href="/compras"><span className="kpi-icon">🛒</span><span className="kpi-copy"><strong>Compras pendientes</strong><b>{summary.pendingPurchases}</b><small>6 requieren atención</small></span></a>
         <a className="kpi-card" href="/ajustes?search=Holded"><span className="kpi-icon">☁</span><span className="kpi-copy"><strong>Holded</strong><b>{summary.holdedStatus}</b><small>Última sync: hace 12 min</small></span></a>
-        <a className="kpi-card" href="/ajustes?search=OCR"><span className="kpi-icon">🤖</span><span className="kpi-copy"><strong>IA / OCR</strong><b>{summary.ocrStatus}</b><small>Confianza OCR media</small></span></a>
+        <a className="kpi-card" href="/ajustes?search=OCR"><span className="kpi-icon">🤖</span><span className="kpi-copy"><strong>IA / OCR</strong><b>{summary.ocrStatus}</b><small>Confianza OCR media · Retención controlada</small></span></a>
       </div>
     </section>
     <section className="card" style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 12 }}><input className="input" placeholder="Buscar margen, Holded, color, informes, OCR..." value={query} onChange={(event) => setQuery(event.target.value)} /><button className="btn" type="button" onClick={saveAll}>Guardar todos los cambios</button></section>
