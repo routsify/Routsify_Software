@@ -46,9 +46,16 @@ export function DestinationDonut({ data = destinations() }: { data?: ReturnType<
     tooltip: { trigger: "item" },
     legend: { orient: "vertical", right: 0, top: "center" },
     series: [{ name: "Valor aceptado", type: "pie", radius: ["48%", "74%"], center: ["34%", "50%"], avoidLabelOverlap: true, label: { formatter: "{b}" }, data: data.map((item) => ({ name: item.destination, value: item.value })) }],
-    graphic: [{ type: "text", left: "27%", top: "45%", style: { text: `${money(total)}\nTotal`, textAlign: "center", fill: "#102f3c", fontSize: 14, fontWeight: 800 } }],
   };
-  return <ApacheEChart option={option} height={286} />;
+  return (
+    <div style={{ position: "relative" }}>
+      <ApacheEChart option={option} height={286} />
+      <div aria-hidden="true" style={{ position: "absolute", left: "34%", top: "50%", transform: "translate(-50%, -50%)", textAlign: "center", color: "#102f3c", fontWeight: 800, pointerEvents: "none", lineHeight: 1.25 }}>
+        <div>{money(total)}</div>
+        <small style={{ color: "#6c7f89", fontWeight: 600 }}>Total</small>
+      </div>
+    </div>
+  );
 }
 
 export function TimingBars({ data = timingMetrics() }: { data?: ReturnType<typeof timingMetrics> }) {
