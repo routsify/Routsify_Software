@@ -22,7 +22,7 @@ const env = read(".env.example");
 assert(netlify.includes('command = "npm run netlify:build"'), "Netlify build command must run netlify:build");
 assert(netlify.includes('publish = ".next"'), "Netlify publish directory must be .next for Next.js runtime");
 assert(netlify.includes('@netlify/plugin-nextjs'), "Netlify Next.js plugin missing");
-assert(netlify.includes('NODE_VERSION = "20"'), "Node 20 must be pinned for deploy parity");
+assert(netlify.includes('NODE_VERSION = "22"'), "Node 22 must be pinned for Netlify Next.js runtime parity");
 
 assert(pkg.scripts?.["netlify:build"], "Missing netlify:build script");
 assert(pkg.scripts?.["validate:deploy"], "Missing validate:deploy script");
