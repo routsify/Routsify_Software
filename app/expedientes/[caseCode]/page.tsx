@@ -1,14 +1,10 @@
 import { notFound } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
-import { cases, budgetLines, expectedPurchases } from "@/lib/mock-data";
-import { demoTravelers, travelerSummary } from "@/lib/travelers";
-import { demoContracts, contractSummary, formatContractMoney } from "@/lib/contracts";
-import { demoPayments, demoBillingDocuments, billingSummary, formatBillingMoney } from "@/lib/billing";
-import { demoTasks } from "@/lib/tasks";
-import { demoDocuments } from "@/lib/documents";
-import { demoCommunications } from "@/lib/communications";
-import { calculateBudgetTotals, formatCurrency, formatPercent } from "@/lib/budget";
+import { cases } from "@/lib/mock-data";
+import { getDemoExpeditionState } from "@/lib/demo-expedition-engine";
+import { formatCurrency, formatPercent } from "@/lib/budget";
+import { formatBillingMoney } from "@/lib/billing";
 
 export function generateStaticParams() {
   return cases.map((item) => ({ caseCode: item.case_code }));
@@ -16,95 +12,78 @@ export function generateStaticParams() {
 
 export default async function CaseDetailPage({ params }: { params: Promise<{ caseCode: string }> }) {
   const { caseCode } = await params;
-  const currentCase = cases.find((item) => item.case_code === decodeURIComponent(caseCode));
-  if (!currentCase) notFound();
+  const state = getDemoExpeditionState(decodeURIComponent(caseCode));
+  if (!state) notFound();
 
-  const casePurchases = expectedPurchases.filter((item) => item.case_code === currentCase.case_code);
-  const caseTravelers = demoTravelers.filter((item) => item.case_code === currentCase.case_code);
-  const caseContracts = demoContracts.filter((item) => item.case_code === currentCase.case_code);
-  const casePayments = demoPayments.filter((item) => item.case_code === currentCase.case_code);
-  const caseBillingDocs = demoBillingDocuments.filter((item) => item.case_code === currentCase.case_code);
-  const caseTasks = demoTasks.filter((item) => item.case_code === currentCase.case_code && item.status !== "done");
-  const caseFiles = demoDocuments.filter((item) => item.case_code === currentCase.case_code);
-  const caseComms = demoCommunications.filter((item) => item.case_code === currentCase.case_code);
-
-  const travelerStats = travelerSummary(caseTravelers);
-  const contractStats = contractSummary(caseContracts);
-  const billingStats = billingSummary(casePayments, caseBillingDocs);
-  const budgetTotals = calculateBudgetTotals(budgetLines);
-  const purchasePending = casePurchases.filter((item) => item.status !== "approved").length;
-  const docsPending = caseFiles.filter((item) => item.status === "missing" || item.status === "expired" || item.status === "reviewing").length;
-  const openComms = caseComms.filter((item) => item.status === "open" || item.status === "waiting").length;
-  const saleValue = currentCase.accepted_value || budgetTotals.totalSale;
-  const canClose = travelerStats.ready && contractStats.blocked === 0 && purchasePending === 0 && billingStats.pending === 0 && docsPending === 0;
-  const latestEvent = caseComms[0]?.subject || currentCase.next_action || "Sin evento reciente";
+  const latestEvent = state.timeline[state.timeline.length - 1];
 
   return (
     <AppShell>
       <PageHeader
-        eyebrow={`Expediente ${currentCase.case_code}`}
-        title={currentCase.title}
-        description="Vista 360 para operar el expediente desde un solo lugar: estado, tarea, comunicación, documentación, presupuesto, compras, contrato, pagos y cierre."
-        action={<a className="btn" href="/hoy">Volver a Hoy</a>}
+        eyebrow={`Expediente ${state.case.case_code}`}
+        title={state.case.title}
+        description="Pantalla central del viaje: estado, bloqueos, próxima acción, timeline, presupuesto, compras, viajeros, contrato, pago, documentos y cierre."
+        action={<a className="btn" href="/hoy">Volver a Inicio</a>}
       />
 
       <section className="grid grid-3">
-        <div className="card"><span className="badge">Estado</span><div className="metric">{currentCase.status}</div><p>{currentCase.next_action}</p></div>
-        <div className="card"><span className="badge">Cliente</span><div className="metric">{currentCase.client}</div><p>{currentCase.destination} · {currentCase.trip_start} → {currentCase.trip_end}</p></div>
-        <div className="card"><span className="badge">Cierre</span><div className="metric">{canClose ? "ready" : "blocked"}</div><p>{currentCase.blocker || "Sin bloqueo comercial visible."}</p></div>
+        <div className="card"><span className="badge">Estado actual</span><div className="metric">{state.case.status}</div><p>{state.nextAction}</p></div>
+        <div className="card"><span className="badge">Cliente</span><div className="metric">{state.case.client}</div><p>{state.case.destination} · {state.case.trip_start} → {state.case.trip_end}</p></div>
+        <div className="card"><span className="badge">Cierre</span><div className="metric">{state.canClose ? "ready" : "blocked"}</div><p>{state.blockers[0] || "Sin bloqueos operativos."}</p></div>
       </section>
 
       <section className="grid grid-3" style={{ marginTop: 18 }}>
-        <div className="card"><span className="badge">Venta propuesta</span><div className="metric">{formatCurrency(saleValue)}</div><p>Margen demo: {formatPercent(budgetTotals.margin)}</p></div>
-        <div className="card"><span className="badge">Trabajo abierto</span><div className="metric">{caseTasks.length + docsPending + purchasePending + openComms}</div><p>{caseTasks.length} tareas · {docsPending} documentos · {purchasePending} compras · {openComms} seguimientos.</p></div>
-        <div className="card"><span className="badge">Último evento</span><div className="metric">{latestEvent}</div><p>Referencia rápida para saber por dónde retomar el expediente.</p></div>
+        <div className="card"><span className="badge">Venta</span><div className="metric">{formatCurrency(state.sale)}</div><p>Margen previsto: {formatPercent(state.budgetTotals.margin)} · coste {formatCurrency(state.budgetTotals.totalCost)}.</p></div>
+        <div className="card"><span className="badge">Pendiente de acción</span><div className="metric">{state.blockers.length}</div><p>{state.tasks.length} tareas · {state.docsPending} documentos · {state.purchasePending} compras.</p></div>
+        <div className="card"><span className="badge">Último evento</span><div className="metric">{latestEvent.title}</div><p>{latestEvent.detail}</p></div>
       </section>
 
       <section className="card" style={{ marginTop: 18 }}>
-        <div className="eyebrow">Operativa integrada</div>
-        <h2>Qué hacer ahora en este expediente</h2>
+        <div className="eyebrow">Flujo de estados</div>
+        <h2>Qué se ha completado y qué bloquea el avance</h2>
+        <div className="workflow-steps">
+          {state.stages.map((stage) => <div key={stage.key} className={`workflow-step ${stage.done ? "done" : ""} ${stage.blocked ? "blocked" : ""}`}><strong>{stage.label}</strong><small>{stage.action}</small></div>)}
+        </div>
+      </section>
+
+      <section className="grid grid-2" style={{ marginTop: 18 }}>
+        <div className="card">
+          <div className="eyebrow">Bloqueos</div>
+          <h2>Qué impide avanzar</h2>
+          <table><thead><tr><th>Bloqueo</th><th>Acción</th></tr></thead><tbody>{state.blockers.length ? state.blockers.map((blocker) => <tr key={blocker}><td><strong>{blocker}</strong></td><td>Resolver desde el módulo relacionado y volver al expediente.</td></tr>) : <tr><td colSpan={2}>Sin bloqueos. Puede revisarse cierre operativo.</td></tr>}</tbody></table>
+        </div>
+        <div className="card">
+          <div className="eyebrow">Timeline</div>
+          <h2>Historial visible</h2>
+          <div className="timeline">{state.timeline.map((item) => <div key={`${item.when}-${item.title}`}><strong>{item.when} · {item.title}</strong><p>{item.detail}</p></div>)}</div>
+        </div>
+      </section>
+
+      <section className="card" style={{ marginTop: 18 }}>
+        <div className="eyebrow">Tabs operativos del expediente</div>
+        <h2>Todo cuelga del expediente</h2>
         <table>
-          <thead><tr><th>Área</th><th>Situación</th><th>Acción sugerida</th><th>Ir</th></tr></thead>
+          <thead><tr><th>Área</th><th>Situación</th><th>Próxima acción</th><th>Ir</th></tr></thead>
           <tbody>
-            <tr><td>Presupuesto</td><td>{formatCurrency(budgetTotals.totalSale)} venta demo · {formatCurrency(budgetTotals.totalCost)} coste</td><td>Revisar margen y versión antes de enviar o aceptar.</td><td><a href="/propuestas">Abrir</a></td></tr>
-            <tr><td>Viajeros</td><td>{travelerStats.ready ? "Documentación lista" : `${travelerStats.missing} faltan · ${travelerStats.expired} caducados`}</td><td>{travelerStats.ready ? "Puede avanzar a contrato." : "Solicitar documentación antes de contrato."}</td><td><a href="/viajeros">Abrir</a></td></tr>
-            <tr><td>Contrato</td><td>{caseContracts[0]?.status || "pendiente"}</td><td>{contractStats.blocked ? "Resolver bloqueos documentales antes de firma." : "Preparar o marcar firma."}</td><td><a href="/contratos">Abrir</a></td></tr>
-            <tr><td>Pagos</td><td>{formatBillingMoney(billingStats.received)} cobrado · {formatBillingMoney(billingStats.pending)} pendiente</td><td>Confirmar pago antes de fiscalidad y cierre.</td><td><a href="/facturacion">Abrir</a></td></tr>
-            <tr><td>Compras</td><td>{purchasePending} pendientes de aprobar</td><td>Reclamar, subir o validar factura proveedor.</td><td><a href="/compras">Abrir</a></td></tr>
+            <tr><td>Presupuesto</td><td>{formatCurrency(state.budgetTotals.totalSale)} venta · {formatCurrency(state.budgetTotals.totalCost)} coste</td><td>Versionar, enviar, aceptar o bloquear snapshot.</td><td><a href="/propuestas">Abrir</a></td></tr>
+            <tr><td>Compras</td><td>{state.purchasePending} compras pendientes</td><td>Reclamar proveedor, match Holded o justificar no requerida.</td><td><a href="/compras">Abrir</a></td></tr>
+            <tr><td>Viajeros</td><td>{state.travelerStats.ready ? "Documentación aprobada" : `${state.travelerStats.missing} faltan · ${state.travelerStats.expired} caducados`}</td><td>OCR demo, revisión humana y aprobación documental.</td><td><a href="/viajeros">Abrir</a></td></tr>
+            <tr><td>Contrato</td><td>{state.signed ? "Firmado" : "Sin firma"}</td><td>Preflight, generar/enviar contrato y guardar evidencia de firma.</td><td><a href="/contratos">Abrir</a></td></tr>
+            <tr><td>Pago</td><td>{formatBillingMoney(state.received)} cobrado · {formatBillingMoney(state.pendingPayment)} pendiente</td><td>Confirmar cobro con referencia única y disparar fiscalidad demo.</td><td><a href="/contratos">Abrir</a></td></tr>
+            <tr><td>Documentos</td><td>{state.docsPending} documentos requieren acción</td><td>Aprobar, rechazar o solicitar archivo privado.</td><td><a href="/viajeros">Abrir</a></td></tr>
+            <tr><td>Notas</td><td>{state.communications.length} comunicaciones registradas</td><td>Mantener el histórico dentro del expediente.</td><td><a href="/expedientes">Abrir</a></td></tr>
           </tbody>
         </table>
       </section>
 
       <section className="grid grid-2" style={{ marginTop: 18 }}>
         <div className="card">
-          <div className="eyebrow">Tareas abiertas</div>
-          <table><thead><tr><th>Tarea</th><th>Responsable</th><th>Prioridad</th><th>Vence</th></tr></thead><tbody>{caseTasks.length ? caseTasks.map((item) => <tr key={item.id}><td>{item.title}<br/><small>{item.blocker || item.notes || item.status}</small></td><td>{item.owner}</td><td><span className="badge">{item.priority}</span></td><td>{item.due_date || "—"}</td></tr>) : <tr><td colSpan={4}>Sin tareas abiertas.</td></tr>}</tbody></table>
+          <div className="eyebrow">Tareas y comunicaciones</div>
+          <table><thead><tr><th>Tipo</th><th>Detalle</th><th>Responsable</th></tr></thead><tbody>{state.tasks.map((item) => <tr key={item.id}><td>Tarea</td><td>{item.title}<br/><small>{item.blocker || item.notes || item.status}</small></td><td>{item.owner}</td></tr>)}{state.communications.map((item) => <tr key={item.id}><td>{item.channel}</td><td>{item.subject}<br/><small>{item.summary}</small></td><td>{item.owner}</td></tr>)}</tbody></table>
         </div>
         <div className="card">
-          <div className="eyebrow">Comunicaciones</div>
-          <table><thead><tr><th>Contacto</th><th>Asunto</th><th>Estado</th><th>Seguimiento</th></tr></thead><tbody>{caseComms.length ? caseComms.map((item) => <tr key={item.id}><td>{item.contact}<br/><small>{item.channel}</small></td><td>{item.subject}<br/><small>{item.summary}</small></td><td><span className="badge">{item.status}</span></td><td>{item.follow_up_at || item.created_at}</td></tr>) : <tr><td colSpan={4}>Sin comunicaciones registradas.</td></tr>}</tbody></table>
-        </div>
-      </section>
-
-      <section className="grid grid-2" style={{ marginTop: 18 }}>
-        <div className="card">
-          <div className="eyebrow">Documentos</div>
-          <table><thead><tr><th>Tipo</th><th>Documento</th><th>Archivo</th><th>Estado</th></tr></thead><tbody>{caseFiles.length ? caseFiles.map((item) => <tr key={item.id}><td><span className="badge">{item.type}</span></td><td>{item.title}<br/><small>{item.expires_at ? `Caduca ${item.expires_at}` : item.uploaded_at || "sin subida"}</small></td><td>{item.file_name || "—"}</td><td><span className="badge">{item.status}</span></td></tr>) : <tr><td colSpan={4}>Sin documentos registrados.</td></tr>}</tbody></table>
-        </div>
-        <div className="card">
-          <div className="eyebrow">Viajeros</div>
-          <table><thead><tr><th>Nombre</th><th>Documento</th><th>Estado</th></tr></thead><tbody>{caseTravelers.length ? caseTravelers.map((item) => <tr key={item.id}><td>{item.full_name}</td><td>{item.document_type}<br/><small>{item.document_expiry || "sin caducidad"}</small></td><td><span className="badge">{item.status}</span></td></tr>) : <tr><td colSpan={3}>Sin viajeros registrados.</td></tr>}</tbody></table>
-        </div>
-      </section>
-
-      <section className="grid grid-2" style={{ marginTop: 18 }}>
-        <div className="card">
-          <div className="eyebrow">Compras proveedor</div>
-          <table><thead><tr><th>Proveedor</th><th>Servicio</th><th>Estado</th><th>Importe</th></tr></thead><tbody>{casePurchases.length ? casePurchases.map((item) => <tr key={`${item.supplier}-${item.service}`}><td>{item.supplier}</td><td>{item.service}</td><td><span className="badge">{item.status}</span></td><td>{item.amount.toLocaleString("es-ES")} €</td></tr>) : <tr><td colSpan={4}>Sin compras esperadas para este expediente.</td></tr>}</tbody></table>
-        </div>
-        <div className="card">
-          <div className="eyebrow">Contrato, pagos y documentos fiscales</div>
-          <table><tbody><tr><th>Contrato</th><td>{caseContracts[0] ? `${caseContracts[0].status} · ${formatContractMoney(caseContracts[0].amount, caseContracts[0].currency)}` : "pendiente"}</td></tr><tr><th>Cobrado</th><td>{formatBillingMoney(billingStats.received)}</td></tr><tr><th>Pendiente</th><td>{formatBillingMoney(billingStats.pending)}</td></tr><tr><th>Documentos fiscales</th><td>{caseBillingDocs.length} · {billingStats.documentsSynced} sincronizados</td></tr></tbody></table>
+          <div className="eyebrow">Resumen económico</div>
+          <table><tbody><tr><th>Venta</th><td>{formatCurrency(state.sale)}</td></tr><tr><th>Coste previsto</th><td>{formatCurrency(state.budgetTotals.totalCost)}</td></tr><tr><th>Margen previsto</th><td>{formatPercent(state.budgetTotals.margin)}</td></tr><tr><th>Cobrado</th><td>{formatBillingMoney(state.received)}</td></tr><tr><th>Pendiente</th><td>{formatBillingMoney(state.pendingPayment)}</td></tr></tbody></table>
         </div>
       </section>
     </AppShell>
