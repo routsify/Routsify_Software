@@ -1,5 +1,6 @@
 import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
+import { SettingsManager } from "./SettingsManager";
 
 const settings = [
   { area: "Fillout", status: "prepared", purpose: "Webhook, token, mapeo de campos y deduplicación por payload_hash/submission_id.", action: "Validar secreto y mapeo antes de activar datos reales." },
@@ -40,6 +41,8 @@ export default function SettingsPage() {
         <div className="card"><span className="badge">Fuente operativa</span><div className="metric">Routsify</div><p>Holded queda fiscal/financiero, no operativo.</p></div>
         <div className="card"><span className="badge">Regla base</span><div className="metric">EXP</div><p>Todo cuelga del expediente.</p></div>
       </section>
+
+      <SettingsManager />
 
       <section className="grid grid-2" style={{ marginTop: 18 }}>
         <div className="card">
