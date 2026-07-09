@@ -4,7 +4,6 @@ import { Logo } from "@/components/Logo";
 
 const nav = [
   ["/hoy", "Hoy"],
-  ["/", "Dashboard"],
   ["/solicitudes", "Solicitudes"],
   ["/clientes", "Clientes"],
   ["/expedientes", "Expedientes"],
