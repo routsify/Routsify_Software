@@ -2,6 +2,7 @@
 
 import { FormEvent, useMemo, useState } from "react";
 import { budgetLines as demoBudgetLines, serviceTypes } from "@/lib/mock-data";
+import { buildDemoExpectedPurchasesFromBudget } from "@/lib/demo-expedition-engine";
 import {
   BudgetLine,
   calculateBudgetTotals,
@@ -45,6 +46,7 @@ export function BudgetManager() {
   const activeVersion = versions.find((version) => version.id === activeVersionId) || versions[0];
   const isEditable = canEditVersion(activeVersion);
   const totals = useMemo(() => calculateBudgetTotals(lines), [lines]);
+  const generatedPurchases = useMemo(() => buildDemoExpectedPurchasesFromBudget("EXP-2026-0001"), []);
   const previewSale = useMemo(() => {
     const cost = Number(draft.cost_budget) || 0;
     const margin = (Number(draft.margin_percent) || 0) / 100;
@@ -56,15 +58,16 @@ export function BudgetManager() {
   }
 
   function updateVersion(status: ProposalVersion["status"]) {
+    const snapshot = `Snapshot demo: venta ${formatCurrency(totals.totalSale)}, coste ${formatCurrency(totals.totalCost)}, margen ${formatPercent(totals.margin)}, ${totals.expectedPurchases} compras esperadas e idempotencia por línea.`;
     setVersions((current) => current.map((version) => version.id === activeVersion.id ? {
       ...version,
       status,
       locked: status === "accepted" || status === "sent",
       sent_at: status === "sent" ? new Date().toISOString().slice(0, 10) : version.sent_at,
       accepted_at: status === "accepted" ? new Date().toISOString().slice(0, 10) : version.accepted_at,
-      snapshot_note: status === "accepted" ? "Snapshot aceptado: venta, fórmulas, condiciones y compras esperadas quedan bloqueadas." : proposalVersionSummary({ ...version, status }),
+      snapshot_note: status === "accepted" ? snapshot : proposalVersionSummary({ ...version, status }),
     } : version));
-    setMessage(status === "accepted" ? "Versión aceptada y bloqueada en modo demo. Cualquier cambio económico debe crear nueva versión." : "Estado de versión actualizado.");
+    setMessage(status === "accepted" ? "Versión aceptada: se bloquea snapshot y se generan compras esperadas demo. Holded solo recibe evento de negocio, no cada cambio." : "Estado de versión actualizado.");
   }
 
   function createRevision() {
@@ -118,7 +121,7 @@ export function BudgetManager() {
 
     setLines((current) => [...current, line]);
     setDraft(initialDraft);
-    setMessage(isDemoMode() ? "Línea añadida en modo demo. Al aceptar, si tiene proveedor externo, generará compra esperada." : "Línea preparada contra versión de propuesta real.");
+    setMessage(isDemoMode() ? "Línea añadida en modo demo. Al aceptar, si tiene proveedor externo, generará compra esperada única por budget_line_id." : "Línea preparada contra versión de propuesta real.");
   }
 
   function removeLine(id: string) {
@@ -152,8 +155,8 @@ export function BudgetManager() {
         <div className="card">
           <div className="eyebrow">Control operativo</div>
           <h2>Qué se congela al aceptar</h2>
-          <p>La versión aceptada bloquea venta, fórmulas, condiciones y conjunto de compras esperadas. Los cambios económicos posteriores deben vivir en una nueva versión.</p>
-          <table><tbody><tr><th>Líneas</th><td>{lines.length}</td></tr><tr><th>Compras esperadas</th><td>{totals.expectedPurchases}</td></tr><tr><th>Modo actual</th><td>{isDemoMode() ? "Demo" : "Supabase"}</td></tr><tr><th>Edición</th><td>{isEditable ? "Permitida" : "Bloqueada"}</td></tr></tbody></table>
+          <p>La versión aceptada bloquea venta, fórmulas, condiciones y conjunto de compras esperadas. Holded solo recibe eventos de negocio.</p>
+          <table><tbody><tr><th>Líneas</th><td>{lines.length}</td></tr><tr><th>Compras esperadas</th><td>{totals.expectedPurchases}</td></tr><tr><th>Idempotencia</th><td>EXP_CODE + budget_line_id + proveedor</td></tr><tr><th>Edición</th><td>{isEditable ? "Permitida" : "Bloqueada"}</td></tr></tbody></table>
         </div>
       </section>
 
@@ -175,9 +178,9 @@ export function BudgetManager() {
         </div>
 
         <div className="card">
-          <div className="eyebrow">Reglas MVP</div>
-          <h2>Versionado y trazabilidad</h2>
-          <table><tbody><tr><th>Borrador</th><td>Editable libremente.</td></tr><tr><th>Enviada</th><td>Cualquier cambio económico requiere nueva versión.</td></tr><tr><th>Aceptada</th><td>Bloquea venta, condiciones, fórmulas y compras esperadas.</td></tr><tr><th>Revisión interna</th><td>Permite revisar coste real sin cambiar venta aceptada.</td></tr><tr><th>Perdida/caducada</th><td>Conserva histórico y no genera compras activas.</td></tr></tbody></table>
+          <div className="eyebrow">Compras que generará</div>
+          <h2>Vista previa por línea</h2>
+          <table><thead><tr><th>budget_line_id</th><th>Proveedor</th><th>Importe</th><th>Idempotencia</th></tr></thead><tbody>{generatedPurchases.map((item) => <tr key={item.idempotency_key}><td>{item.budget_line_id}</td><td>{item.supplier}</td><td>{formatCurrency(item.amount)}</td><td>{item.idempotency_key}</td></tr>)}</tbody></table>
         </div>
       </section>
 
