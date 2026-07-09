@@ -11,6 +11,7 @@ const requiredFiles = [
   "lib/outbox-server.ts",
   "lib/storage-server.ts",
   "lib/holded-server.ts",
+  "lib/client-master.ts",
   "lib/demo-expedition-engine.ts",
   "lib/demo-holded-matching.ts",
   "lib/demo-ocr.ts",
@@ -23,6 +24,7 @@ const requiredFiles = [
   "app/api/documentos/upload-url/route.ts",
   "app/hoy/page.tsx",
   "app/clientes/page.tsx",
+  "app/clientes/ClientsManager.tsx",
   "app/expedientes/page.tsx",
   "app/propuestas/page.tsx",
   "app/compras/page.tsx",
@@ -71,6 +73,12 @@ assert(home.includes('redirect("/hoy")'), "Root must redirect to /hoy");
 const navigation = read("lib/navigation.ts");
 assert(countCanonicalHrefRows(navigation) === 9, "There must be exactly 9 canonical pages including Ajustes");
 assert(!navigation.includes("Propuesta pública"), "Public proposal must not be an internal module");
+
+const clientMaster = read("lib/client-master.ts");
+for (const token of ["demoClientMasters", "clientKpis", "possibleDuplicate", "clientFiscalMissing", "simulateHoldedSync", "createDemoClient", "filterClientMasters", "holded_contact_id", "accepted_value", "payments_received"]) assert(clientMaster.includes(token), `Missing client master token: ${token}`);
+
+const clientsManager = read("app/clientes/ClientsManager.tsx");
+for (const token of ["Clientes activos", "Pendientes de sync", "Valor aceptado", "Duplicados por revisar", "Estado Holded", "Datos fiscales", "Historial resumido", "Acciones rápidas", "Sincronizar Holded", "Revisar duplicados", "Nuevo presupuesto"]) assert(clientsManager.includes(token), `Missing clients UI token: ${token}`);
 
 const demoEngine = read("lib/demo-expedition-engine.ts");
 for (const token of ["getDemoExpeditionState", "buildDemoExpectedPurchasesFromBudget", "blockers", "timeline", "stageOrder"]) assert(demoEngine.includes(token), `Missing demo engine token: ${token}`);
