@@ -17,6 +17,7 @@
   "dependencies": {
     "@supabase/ssr": "latest",
     "@supabase/supabase-js": "latest",
+    "echarts": "latest",
     "lucide-react": "latest",
     "next": "latest",
     "react": "latest",
