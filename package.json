@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "validate:mvp": "node scripts/validate-mvp.mjs",
     "validate:netlify": "node scripts/validate-netlify.mjs",
-    "validate:deploy": "npm run validate:mvp && npm run validate:netlify"
+    "validate:deploy": "npm run validate:mvp && npm run validate:netlify",
+    "smoke:netlify": "node scripts/smoke-netlify.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "latest",
