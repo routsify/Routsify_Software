@@ -1,7 +1,13 @@
-import type { ReactNode } from "react";
-import { destinations, funnelSteps, money, percent, teamRows, timeSeries, timingMetrics } from "@/lib/report-decision";
+"use client";
 
-const colors = ["#0c7a43", "#39a86b", "#6aa9ff", "#9b7cf4", "#f6b24b", "#e86161", "#91a5b1"];
+import type { ReactNode } from "react";
+import type { EChartsOption } from "echarts";
+import { destinations, funnelSteps, money, percent, teamRows, timeSeries, timingMetrics } from "@/lib/report-decision";
+import { ApacheEChart } from "./ApacheEChart";
+
+const palette = ["#0c7a43", "#39a86b", "#6aa9ff", "#9b7cf4", "#f6b24b", "#e86161", "#91a5b1"];
+
+const baseGrid = { left: 42, right: 18, top: 28, bottom: 34 };
 
 export function ReportCard({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
   return (
@@ -13,85 +19,88 @@ export function ReportCard({ title, action, children }: { title: string; action?
 }
 
 export function ValueLineChart({ data = timeSeries() }: { data?: ReturnType<typeof timeSeries> }) {
-  const max = Math.max(...data.map((item) => item.acceptedValue), 1);
-  const points = data.map((item, index) => `${40 + index * 82},${210 - (item.acceptedValue / max) * 170}`).join(" ");
-  const area = `40,220 ${points} ${40 + (data.length - 1) * 82},220`;
-  return (
-    <svg viewBox="0 0 420 250" role="img" aria-label="Evolución del valor aceptado" style={{ width: "100%", minHeight: 250 }}>
-      {[0, 1, 2, 3].map((row) => <line key={row} x1="34" x2="390" y1={50 + row * 45} y2={50 + row * 45} stroke="#e8f1f4" />)}
-      <polygon points={area} fill="#dff6e9" opacity="0.9" />
-      <polyline points={points} fill="none" stroke="#0c7a43" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-      {data.map((item, index) => <g key={item.date}><circle cx={40 + index * 82} cy={210 - (item.acceptedValue / max) * 170} r="5" fill="#0c7a43" /><text x={40 + index * 82} y="238" fontSize="11" textAnchor="middle" fill="#607480">{item.date}</text></g>)}
-      <text x="36" y="36" fontSize="18" fontWeight="800" fill="#102f3c">{money(data[data.length - 1].acceptedValue)}</text>
-    </svg>
-  );
+  const option: EChartsOption = {
+    color: [palette[0]],
+    tooltip: { trigger: "axis" },
+    grid: baseGrid,
+    xAxis: { type: "category", boundaryGap: false, data: data.map((item) => item.date) },
+    yAxis: { type: "value", axisLabel: { formatter: (value: number) => `${Math.round(value / 1000)}k` }, splitLine: { lineStyle: { color: "#e8f1f4" } } },
+    series: [{ name: "Valor aceptado", type: "line", smooth: true, symbolSize: 8, lineStyle: { width: 4 }, areaStyle: { opacity: 0.22 }, data: data.map((item) => item.acceptedValue) }],
+  };
+  return <ApacheEChart option={option} height={286} />;
 }
 
 export function FunnelVisual({ data = funnelSteps() }: { data?: ReturnType<typeof funnelSteps> }) {
-  const max = data[0]?.count || 1;
-  return (
-    <div style={{ display: "grid", gap: 8 }}>
-      {data.map((step, index) => (
-        <a key={step.key} href={step.url} style={{ display: "grid", gridTemplateColumns: "170px 1fr 54px 58px", gap: 10, alignItems: "center" }}>
-          <strong style={{ fontSize: 12 }}>{step.label}</strong>
-          <span style={{ height: 26, borderRadius: 8, background: "#eef5f6", overflow: "hidden" }}>
-            <span style={{ display: "block", width: `${Math.max(8, (step.count / max) * 100)}%`, height: "100%", borderRadius: 8, background: colors[index % colors.length], opacity: 0.72 }} />
-          </span>
-          <b>{step.count}</b>
-          <small>{percent(step.conversionFromLeadPct)}</small>
-        </a>
-      ))}
-    </div>
-  );
+  const option: EChartsOption = {
+    color: palette,
+    tooltip: { trigger: "item", formatter: "{b}: {c}" },
+    series: [{ name: "Embudo", type: "funnel", left: "8%", top: 10, bottom: 10, width: "84%", sort: "none", gap: 3, label: { position: "inside", formatter: "{b}\n{c}" }, data: data.map((step) => ({ name: step.label, value: step.count })) }],
+  };
+  return <ApacheEChart option={option} height={286} />;
 }
 
 export function DestinationDonut({ data = destinations() }: { data?: ReturnType<typeof destinations> }) {
   const total = data.reduce((sum, item) => sum + item.value, 0);
-  let current = 0;
-  const radius = 58;
-  const circumference = 2 * Math.PI * radius;
-  return (
-    <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", gap: 18, alignItems: "center" }}>
-      <svg viewBox="0 0 180 180" style={{ width: "100%", maxWidth: 220 }}>
-        <circle cx="90" cy="90" r={radius} fill="none" stroke="#eef5f6" strokeWidth="28" />
-        {data.map((item, index) => {
-          const dash = (item.value / total) * circumference;
-          const offset = -current;
-          current += dash;
-          return <circle key={item.destination} cx="90" cy="90" r={radius} fill="none" stroke={colors[index % colors.length]} strokeWidth="28" strokeDasharray={`${dash} ${circumference - dash}`} strokeDashoffset={offset} transform="rotate(-90 90 90)" />;
-        })}
-        <text x="90" y="88" textAnchor="middle" fontSize="18" fontWeight="900" fill="#102f3c">{money(total)}</text>
-        <text x="90" y="108" textAnchor="middle" fontSize="11" fill="#6c7f89">Total</text>
-      </svg>
-      <div className="donut-list">{data.map((item) => <a key={item.destination} href={`/expedientes?destination=${item.destination}`}><strong>{item.destination}</strong><span>{money(item.value)} · {percent(item.sharePct)}</span></a>)}</div>
-    </div>
-  );
+  const option: EChartsOption = {
+    color: palette,
+    tooltip: { trigger: "item" },
+    legend: { orient: "vertical", right: 0, top: "center" },
+    series: [{ name: "Valor aceptado", type: "pie", radius: ["48%", "74%"], center: ["34%", "50%"], avoidLabelOverlap: true, label: { formatter: "{b}" }, data: data.map((item) => ({ name: item.destination, value: item.value })) }],
+    graphic: [{ type: "text", left: "27%", top: "45%", style: { text: `${money(total)}\nTotal`, textAlign: "center", fill: "#102f3c", fontSize: 14, fontWeight: 800 } }],
+  };
+  return <ApacheEChart option={option} height={286} />;
 }
 
 export function TimingBars({ data = timingMetrics() }: { data?: ReturnType<typeof timingMetrics> }) {
-  const max = Math.max(...data.map((item) => item.averageDays), 1);
-  return <div style={{ display: "grid", gap: 12 }}>{data.map((item) => <a key={item.key} href={item.url} style={{ display: "grid", gridTemplateColumns: "220px 1fr 70px", gap: 10, alignItems: "center" }}><span style={{ fontSize: 12 }}>{item.label}</span><span className="progress-track"><span style={{ width: `${(item.averageDays / max) * 100}%` }} /></span><strong>{item.averageDays} días</strong></a>)}</div>;
+  const option: EChartsOption = {
+    color: [palette[2]],
+    tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
+    grid: { left: 165, right: 18, top: 12, bottom: 20 },
+    xAxis: { type: "value", splitLine: { lineStyle: { color: "#e8f1f4" } } },
+    yAxis: { type: "category", data: data.map((item) => item.label), axisLabel: { width: 150, overflow: "truncate" } },
+    series: [{ name: "Días promedio", type: "bar", barWidth: 12, itemStyle: { borderRadius: [0, 8, 8, 0] }, data: data.map((item) => item.averageDays) }],
+  };
+  return <ApacheEChart option={option} height={286} />;
 }
 
 export function FinanceLines({ data = timeSeries() }: { data?: ReturnType<typeof timeSeries> }) {
-  const max = Math.max(...data.flatMap((item) => [item.confirmedRevenue, item.estimatedProfit, item.realProfit]), 1);
-  const points = (key: "confirmedRevenue" | "estimatedProfit" | "realProfit") => data.map((item, index) => `${36 + index * 82},${210 - (item[key] / max) * 170}`).join(" ");
-  return (
-    <svg viewBox="0 0 420 250" role="img" aria-label="Ingresos costes beneficio" style={{ width: "100%", minHeight: 250 }}>
-      {[0, 1, 2, 3].map((row) => <line key={row} x1="30" x2="390" y1={50 + row * 45} y2={50 + row * 45} stroke="#e8f1f4" />)}
-      <polyline points={points("confirmedRevenue")} fill="none" stroke="#0c7a43" strokeWidth="4" strokeLinecap="round" />
-      <polyline points={points("estimatedProfit")} fill="none" stroke="#f6b24b" strokeWidth="4" strokeLinecap="round" />
-      <polyline points={points("realProfit")} fill="none" stroke="#6aa9ff" strokeWidth="4" strokeLinecap="round" />
-      {data.map((item, index) => <text key={item.date} x={36 + index * 82} y="238" fontSize="11" textAnchor="middle" fill="#607480">{item.date}</text>)}
-    </svg>
-  );
+  const option: EChartsOption = {
+    color: [palette[0], palette[4], palette[2]],
+    tooltip: { trigger: "axis" },
+    legend: { top: 0 },
+    grid: { left: 42, right: 18, top: 48, bottom: 34 },
+    xAxis: { type: "category", boundaryGap: false, data: data.map((item) => item.date) },
+    yAxis: { type: "value", axisLabel: { formatter: (value: number) => `${Math.round(value / 1000)}k` }, splitLine: { lineStyle: { color: "#e8f1f4" } } },
+    series: [
+      { name: "Ingresos", type: "line", smooth: true, lineStyle: { width: 3 }, data: data.map((item) => item.confirmedRevenue) },
+      { name: "Beneficio previsto", type: "line", smooth: true, lineStyle: { width: 3 }, data: data.map((item) => item.estimatedProfit) },
+      { name: "Beneficio real", type: "line", smooth: true, lineStyle: { width: 3 }, data: data.map((item) => item.realProfit) },
+    ],
+  };
+  return <ApacheEChart option={option} height={286} />;
 }
 
 export function MiniTimingCards({ data = timingMetrics() }: { data?: ReturnType<typeof timingMetrics> }) {
-  return <div className="mini-kpis">{data.map((item) => <a key={item.key} className={`mini-kpi ${item.status}`} href={item.url}><strong>{item.averageDays} días</strong><span>{item.label}</span><small>Objetivo {item.targetDays} · P90 {item.p90Days}</small></a>)}</div>;
+  const option: EChartsOption = {
+    color: [palette[3], palette[0], palette[4], palette[2]],
+    tooltip: { trigger: "axis" },
+    legend: { top: 0 },
+    grid: { left: 36, right: 18, top: 48, bottom: 34 },
+    xAxis: { type: "category", data: ["1 May", "8 May", "15 May", "22 May", "31 May"] },
+    yAxis: { type: "value", splitLine: { lineStyle: { color: "#e8f1f4" } } },
+    series: data.slice(0, 4).map((item) => ({ name: item.label, type: "line", smooth: true, data: [item.averageDays + 1, item.averageDays + 0.2, item.averageDays + 0.8, item.averageDays - 0.3, item.averageDays] })),
+  };
+  return <ApacheEChart option={option} height={286} />;
 }
 
 export function TeamBars({ data = teamRows() }: { data?: ReturnType<typeof teamRows> }) {
-  const max = Math.max(...data.map((item) => item.acceptedValue), 1);
-  return <div style={{ display: "grid", gap: 12 }}>{data.map((item) => <div key={item.userId} style={{ display: "grid", gridTemplateColumns: "130px 1fr 90px", gap: 10, alignItems: "center" }}><strong>{item.userName}</strong><span className="progress-track"><span style={{ width: `${(item.acceptedValue / max) * 100}%` }} /></span><b>{money(item.acceptedValue)}</b></div>)}</div>;
+  const option: EChartsOption = {
+    color: [palette[0]],
+    tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
+    grid: { left: 110, right: 20, top: 16, bottom: 24 },
+    xAxis: { type: "value", axisLabel: { formatter: (value: number) => `${Math.round(value / 1000)}k` }, splitLine: { lineStyle: { color: "#e8f1f4" } } },
+    yAxis: { type: "category", data: data.map((item) => item.userName) },
+    series: [{ name: "Valor aceptado", type: "bar", barWidth: 18, itemStyle: { borderRadius: [0, 8, 8, 0] }, data: data.map((item) => item.acceptedValue) }],
+  };
+  return <ApacheEChart option={option} height={286} />;
 }
