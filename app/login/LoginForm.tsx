@@ -16,7 +16,7 @@ export function LoginForm() {
     event.preventDefault();
 
     if (!canUseAuth) {
-      setMessage("Faltan las variables públicas de Supabase en Vercel. La app está funcionando en modo demo.");
+      setMessage("Modo demo activo. Puedes entrar sin usuario con el botón Entrar en demo.");
       return;
     }
 
@@ -39,23 +39,29 @@ export function LoginForm() {
       return;
     }
 
-    router.push("/");
+    router.push("/hoy");
+    router.refresh();
+  }
+
+  function enterDemo() {
+    router.push("/hoy");
     router.refresh();
   }
 
   return (
     <form className="form" onSubmit={onSubmit}>
-      {!canUseAuth ? <p style={{ color: "var(--warning)" }}>Modo demo activo: configura las variables públicas de Supabase en Vercel para activar login real.</p> : null}
+      {!canUseAuth ? <p style={{ color: "var(--warning)" }}>Modo demo activo: no necesitas usuario. El login real se activará al configurar Supabase.</p> : null}
       <label>
         Email
-        <input className="input" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required disabled={!canUseAuth} />
+        <input className="input" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required={canUseAuth} disabled={!canUseAuth} />
       </label>
       <label>
         Contraseña
-        <input className="input" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required disabled={!canUseAuth} />
+        <input className="input" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required={canUseAuth} disabled={!canUseAuth} />
       </label>
       {message ? <p style={{ color: canUseAuth ? "var(--danger)" : "var(--warning)" }}>{message}</p> : null}
       <button className="btn" type="submit" disabled={loading || !canUseAuth}>{loading ? "Entrando..." : "Entrar"}</button>
+      {!canUseAuth ? <button className="btn secondary" type="button" onClick={enterDemo}>Entrar en demo</button> : null}
     </form>
   );
 }
