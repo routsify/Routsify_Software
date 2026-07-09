@@ -1,51 +1,105 @@
 import { AppShell } from "@/components/AppShell";
-import { PageHeader } from "@/components/PageHeader";
+import { cases } from "@/lib/mock-data";
+import { demoTasks } from "@/lib/tasks";
+import { demoDocuments } from "@/lib/documents";
+import { demoPayments, demoBillingDocuments } from "@/lib/billing";
+import { demoCommunications } from "@/lib/communications";
+import { demoOutbox } from "@/lib/integrations";
+import { demoSuppliers } from "@/lib/suppliers";
 import { buildOperationalInbox, workbenchSummary } from "@/lib/workbench";
 
+function priorityLabel(priority: string) {
+  if (priority === "urgent") return "Alta";
+  if (priority === "high") return "Alta";
+  if (priority === "normal") return "Media";
+  return "Baja";
+}
+
+function caseStatusLabel(status: string) {
+  if (status === "proposal_sent") return "En progreso";
+  if (status === "budget_draft") return "Pendiente";
+  if (status === "closed") return "Cerrado";
+  return status.replaceAll("_", " ");
+}
+
 export default function TodayWorkbenchPage() {
-  const items = buildOperationalInbox();
-  const summary = workbenchSummary(items);
-  const topItems = items.slice(0, 12);
-  const areaRows = Object.entries(summary.byArea).sort((a, b) => b[1] - a[1]);
+  const inbox = buildOperationalInbox();
+  const summary = workbenchSummary(inbox);
+  const openTasks = demoTasks.filter((item) => item.status !== "done");
+  const activeCases = cases.filter((item) => item.status !== "closed");
+  const pendingDocuments = demoDocuments.filter((item) => item.status === "missing" || item.status === "reviewing" || item.status === "expired").length;
+  const todayCalls = demoCommunications.filter((item) => item.channel === "phone" || item.channel === "meeting").length;
+  const pendingBudgets = cases.filter((item) => item.status === "budget_draft" || item.status === "proposal_sent").length;
+  const pendingPayments = demoPayments.filter((item) => item.status === "pending" || item.status === "failed").length;
+  const activeSuppliers = demoSuppliers.filter((item) => item.status === "active").length;
+  const holdedIssues = demoBillingDocuments.filter((item) => item.status === "blocked" || item.status === "error").length + demoOutbox.filter((item) => item.channel === "fiscal" && item.status !== "done").length;
+
+  const kpis = [
+    { label: "Urgente", value: summary.critical, note: "Requieren atención", icon: "!", href: "/hoy" },
+    { label: "Llamadas de hoy", value: todayCalls, note: "+ reuniones y seguimientos", icon: "☎", href: "/comunicaciones" },
+    { label: "Presupuestos pendientes", value: pendingBudgets, note: "A la espera de respuesta", icon: "€", href: "/propuestas" },
+    { label: "Documentos", value: pendingDocuments, note: "Pendientes de gestionar", icon: "□", href: "/documentos" },
+    { label: "Pagos", value: pendingPayments, note: "Vencen o faltan confirmar", icon: "▭", href: "/facturacion" },
+    { label: "Proveedores", value: activeSuppliers, note: "Activos", icon: "👥", href: "/compras" },
+    { label: "Errores Holded", value: holdedIssues, note: "Por revisar", icon: "!", href: "/integraciones" },
+  ];
 
   return (
     <AppShell>
-      <PageHeader
-        eyebrow="Hoy"
-        title="Centro operativo diario"
-        description="Una única cola priorizada que cruza expedientes, tareas, documentos, compras, pagos, comunicaciones e integraciones para ahorrar saltos entre pantallas."
-        action={<a className="btn" href="/expedientes">Ver expedientes</a>}
-      />
-
-      <section className="grid grid-3">
-        <div className="card"><span className="badge">Acciones abiertas</span><div className="metric">{summary.total}</div><p>Todo lo que requiere seguimiento operativo.</p></div>
-        <div className="card"><span className="badge">Críticas</span><div className="metric">{summary.critical}</div><p>Bloquean contrato, pago, proveedor, integración o cierre.</p></div>
-        <div className="card"><span className="badge">Alta prioridad</span><div className="metric">{summary.high}</div><p>Conviene resolver antes de avanzar nuevas propuestas.</p></div>
+      <section className="home-title">
+        <h1>Inicio / Dashboard</h1>
       </section>
 
-      <section className="grid grid-2" style={{ marginTop: 18 }}>
-        <div className="card">
-          <div className="eyebrow">Atender primero</div>
-          <h2>Cola priorizada</h2>
-          <p>La prioridad combina bloqueos de expediente, tareas urgentes, documentos faltantes, compras proveedor, cobros y errores de integración.</p>
+      <section className="home-kpis">
+        {kpis.map((item) => (
+          <a className="kpi-card" href={item.href} key={item.label}>
+            <span className="kpi-icon">{item.icon}</span>
+            <span className="kpi-copy"><strong>{item.label}</strong><b>{item.value}</b><small>{item.note}</small></span>
+          </a>
+        ))}
+      </section>
+
+      <section className="dashboard-panels">
+        <div className="card dashboard-table-card">
+          <div className="panel-head">
+            <h2>Tareas</h2>
+            <a className="btn secondary" href="/tareas">Ver todas las tareas</a>
+          </div>
           <table>
-            <thead><tr><th>Prioridad</th><th>Área</th><th>Acción</th><th>Responsable</th><th>Seguimiento</th></tr></thead>
-            <tbody>{topItems.map((item) => <tr key={`${item.source}-${item.id}`}><td><span className="badge">{item.urgency}</span></td><td>{item.area}</td><td><a href={item.href}><strong>{item.title}</strong></a><br/><small>{item.case_code || "general"} · {item.reason}</small></td><td>{item.owner}</td><td>{item.due_at || "sin fecha"}</td></tr>)}</tbody>
+            <thead><tr><th>Tarea</th><th>Prioridad</th><th>Responsable</th><th>Vence</th></tr></thead>
+            <tbody>
+              {openTasks.slice(0, 7).map((task) => (
+                <tr key={task.id}>
+                  <td><a href={`/expedientes/${task.case_code}`}><strong>{task.title}</strong></a><br/><small>{task.case_code} · {task.area}</small></td>
+                  <td><span className={`status-pill priority-${task.priority}`}>{priorityLabel(task.priority)}</span></td>
+                  <td>{task.owner}</td>
+                  <td>{task.due_date}</td>
+                </tr>
+              ))}
+            </tbody>
           </table>
+          <a className="table-footer-link" href="/tareas">Ver todas las tareas →</a>
         </div>
 
-        <div className="card">
-          <div className="eyebrow">Dónde está el trabajo</div>
-          <h2>Distribución por área</h2>
-          <table>
-            <thead><tr><th>Área</th><th>Abiertas</th><th>Ir</th></tr></thead>
-            <tbody>{areaRows.map(([area, count]) => <tr key={area}><td>{area}</td><td>{count}</td><td><a href={area === "Documentos" ? "/documentos" : area === "Comunicaciones" ? "/comunicaciones" : area === "Compras" ? "/compras" : area === "Pagos" ? "/facturacion" : area === "Integraciones" ? "/integraciones" : "/tareas"}>Abrir</a></td></tr>)}</tbody>
-          </table>
-          <div style={{ marginTop: 18 }}>
-            <div className="eyebrow">Regla de uso</div>
-            <h2>Trabajar desde aquí</h2>
-            <p>El equipo debería empezar el día en esta pantalla. Los módulos especializados quedan para editar datos, pero la decisión diaria sale de esta cola.</p>
+        <div className="card dashboard-table-card">
+          <div className="panel-head">
+            <h2>Expedientes activos</h2>
+            <a className="btn secondary" href="/expedientes">Ver todos los expedientes</a>
           </div>
+          <table>
+            <thead><tr><th>Expediente</th><th>Cliente</th><th>Estado</th><th>Próxima acción</th></tr></thead>
+            <tbody>
+              {activeCases.map((item) => (
+                <tr key={item.case_code}>
+                  <td><a href={`/expedientes/${item.case_code}`}><strong>{item.case_code}</strong></a></td>
+                  <td>{item.client}</td>
+                  <td><span className={`status-pill ${item.blocker ? "status-pending" : "status-progress"}`}>{caseStatusLabel(item.status)}</span></td>
+                  <td>{item.next_action}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <a className="table-footer-link" href="/expedientes">Ver todos los expedientes →</a>
         </div>
       </section>
     </AppShell>
