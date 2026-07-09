@@ -43,6 +43,14 @@ function flowLabel(status: string) {
   return "Pendiente";
 }
 
+function toneClass(tone: string) {
+  if (tone === "green") return "status-progress";
+  if (tone === "amber") return "priority-normal";
+  if (tone === "purple") return "status-pending";
+  if (tone === "blue") return "status-progress";
+  return "status-pill";
+}
+
 export function CasesManager() {
   const [items, setItems] = useState<Expediente[]>(demoExpedientes);
   const [selectedId, setSelectedId] = useState(demoExpedientes[0].id);
@@ -88,17 +96,17 @@ export function CasesManager() {
   }
 
   return (
-    <div className="cases-page">
-      <section className="case-kpis">
+    <div className="clients-page">
+      <section className="client-kpis">
         <a className="kpi-card" href="#expedientes-listado"><span className="kpi-icon">▣</span><span className="kpi-copy"><strong>Expedientes activos</strong><b>{kpis.activeCases}</b><small>+12 vs. mes anterior ↑</small></span></a>
         <a className="kpi-card" href="#expedientes-listado"><span className="kpi-icon">!</span><span className="kpi-copy"><strong>Pendientes de acción</strong><b>{kpis.pendingActionCases}</b><small>Requieren atención</small></span></a>
         <a className="kpi-card" href="/compras"><span className="kpi-icon">👥</span><span className="kpi-copy"><strong>Proveedores pendientes</strong><b>{kpis.supplierPendingCases}</b><small>A la espera de respuesta</small></span></a>
         <a className="kpi-card" href="/propuestas"><span className="kpi-icon">€</span><span className="kpi-copy"><strong>Valor aceptado</strong><b>{formatCaseMoney(kpis.acceptedValueTotal)}</b><small>Presupuestos aceptados ↑</small></span></a>
       </section>
 
-      <section className="cases-layout">
-        <div className="card cases-main" id="expedientes-listado">
-          <div className="case-filters">
+      <section className="clients-layout">
+        <div className="card clients-main" id="expedientes-listado">
+          <div className="client-filters">
             <input className="input" placeholder="Buscar expediente..." value={search} onChange={(event) => setSearch(event.target.value)} />
             <label>Estado<select value={status} onChange={(event) => setStatus(event.target.value)}><option>Todos</option>{expedienteStatuses.map((item) => <option key={item} value={item}>{statusConfig[item].label}</option>)}</select></label>
             <label>Responsable<select value={owner} onChange={(event) => setOwner(event.target.value)}><option>Todos</option>{expedienteOwners.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
@@ -120,25 +128,19 @@ export function CasesManager() {
 
           <table>
             <thead><tr><th>Expediente</th><th>Cliente</th><th>Destino</th><th>Estado</th><th>Próxima acción</th><th>Responsable</th><th>Última actividad</th><th></th></tr></thead>
-            <tbody>{filtered.map((item) => <tr key={item.id} className={item.id === selected.id ? "selected-row" : ""}><td><button className="table-link" type="button" onClick={() => setSelectedId(item.id)}><strong>{item.code}</strong></button></td><td>{item.clientName}</td><td>{item.destination}</td><td><span className={`case-status case-status-${statusConfig[item.status].tone}`}>{statusConfig[item.status].label}</span></td><td>{item.nextAction}</td><td>{item.responsibleName}</td><td>{item.lastActivityAt}</td><td><details className="row-menu"><summary>⋮</summary><div><a href={`/expedientes/${item.code}`}>Ver expediente</a><button type="button" onClick={() => setSelectedId(item.id)}>Ver timeline</button><a href="/propuestas">Abrir presupuesto</a><a href="/compras">Ver compras</a><button type="button" onClick={() => updateSelected("priority", item.priority === "alta" ? "media" : "alta")}>Cambiar prioridad</button></div></details></td></tr>)}</tbody>
+            <tbody>{filtered.map((item) => <tr key={item.id} className={item.id === selected.id ? "selected-row" : ""}><td><button className="table-link" type="button" onClick={() => setSelectedId(item.id)}><strong>{item.code}</strong></button></td><td>{item.clientName}</td><td>{item.destination}</td><td><span className={`status-pill ${toneClass(statusConfig[item.status].tone)}`}>{statusConfig[item.status].label}</span></td><td>{item.nextAction}</td><td>{item.responsibleName}</td><td>{item.lastActivityAt}</td><td><details><summary className="icon-button">⋮</summary><div className="card" style={{ position: "absolute", right: 24, zIndex: 10 }}><a href={`/expedientes/${item.code}`}>Ver expediente</a><br/><button className="table-link" type="button" onClick={() => setSelectedId(item.id)}>Ver timeline</button><br/><a href="/propuestas">Abrir presupuesto</a><br/><a href="/compras">Ver compras</a><br/><button className="table-link" type="button" onClick={() => updateSelected("priority", item.priority === "alta" ? "media" : "alta")}>Cambiar prioridad</button></div></details></td></tr>)}</tbody>
           </table>
           <div className="table-pagination"><span>Mostrando 1 a {filtered.length} de {items.length} expedientes</span><span><button className="btn secondary">‹</button><button className="btn">1</button><button className="btn secondary">2</button><button className="btn secondary">3</button><button className="btn secondary">›</button></span></div>
         </div>
 
-        <aside className="case-side card">
-          <div className="case-side-header"><div><h2>{selected.code}</h2><p><strong>{selected.clientName}</strong> · {selected.destination}<br/>{formatDates(selected)}</p></div><span className={`case-status case-status-${statusConfig[selected.status].tone}`}>{statusConfig[selected.status].label}</span></div>
-          <section className="case-quick-grid"><div><small>Próxima acción</small><strong>{selected.nextAction}</strong></div><div><small>Bloqueo</small><strong>{selected.blocker || "Ninguno"}</strong></div><div><small>Responsable</small><strong>{selected.responsibleName}</strong></div><div><small>Prioridad</small><span className={`status-pill priority-${selected.priority === "alta" ? "high" : selected.priority === "media" ? "normal" : "low"}`}>{selected.priority}</span></div></section>
-
-          <section className="side-section"><h3>Resumen</h3><div className="case-summary-grid"><div><small>Viajeros</small><strong>{selected.travelersSummary}</strong></div><div><small>Valor aceptado</small><strong>{formatCaseMoney(selected.acceptedValue)}</strong></div><div><small>Margen previsto</small><strong>{formatCasePercent(selected.estimatedMarginPct)}</strong></div></div></section>
-
-          <section className="side-section"><h3>Timeline <a href={`/api/routsify/cases/${selected.code}/timeline`}>Ver API</a></h3><div className="case-timeline">{selectedTimeline.map((event) => <div key={event.id}><span></span><small>{event.createdAt}</small><strong>{event.title}</strong><em>{event.userName}</em></div>)}</div></section>
-
-          <section className="side-section"><h3>Estado del flujo</h3><div className="case-flow">{selectedFlow.slice(0, 5).map((step) => <a key={step.key} href={step.actionUrl} className={`flow-line ${step.status}`}><span></span><strong>{step.label}</strong><small>{flowLabel(step.status)}</small></a>)}</div></section>
-
+        <aside className="client-side card">
+          <div className="client-side-header"><div><h2>{selected.code}</h2><p><strong>{selected.clientName}</strong> · {selected.destination}<br/>{formatDates(selected)}</p></div><span className={`status-pill ${toneClass(statusConfig[selected.status].tone)}`}>{statusConfig[selected.status].label}</span></div>
+          <section className="side-section"><h3>Situación rápida</h3><table><tbody><tr><th>Próxima acción</th><td>{selected.nextAction}</td></tr><tr><th>Bloqueo</th><td>{selected.blocker || "Ninguno"}</td></tr><tr><th>Responsable</th><td>{selected.responsibleName}</td></tr><tr><th>Prioridad</th><td><span className={`status-pill priority-${selected.priority === "alta" ? "high" : selected.priority === "media" ? "normal" : "low"}`}>{selected.priority}</span></td></tr></tbody></table></section>
+          <section className="side-section"><h3>Resumen</h3><table><tbody><tr><th>Viajeros</th><td>{selected.travelersSummary}</td></tr><tr><th>Valor aceptado</th><td>{formatCaseMoney(selected.acceptedValue)}</td></tr><tr><th>Margen previsto</th><td>{formatCasePercent(selected.estimatedMarginPct)}</td></tr><tr><th>Cierre</th><td>{canCloseCase(selected) ? "Permitido" : "Bloqueado"}</td></tr></tbody></table></section>
+          <section className="side-section"><h3>Timeline <a href={`/api/routsify/cases/${selected.code}/timeline`}>Ver API</a></h3><div className="timeline">{selectedTimeline.map((event) => <div key={event.id}><strong>{event.createdAt} · {event.title}</strong><p>{event.userName}</p></div>)}</div></section>
+          <section className="side-section"><h3>Estado del flujo</h3>{selectedFlow.slice(0, 5).map((step) => <p key={step.key}><span className={`status-pill ${step.status === "completed" ? "status-progress" : step.status === "in_progress" ? "priority-normal" : step.status === "blocked" ? "priority-urgent" : ""}`}>{flowLabel(step.status)}</span> <strong>{step.label}</strong></p>)}</section>
           <section className="side-section"><h3>Bloqueos</h3>{selectedBlockers.length ? selectedBlockers.map((blocker) => <p key={blocker} className="danger-text">⚠ {blocker}</p>) : <p>Sin bloqueos. Puede avanzar.</p>}</section>
-
-          <section className="side-actions"><h3>Acciones rápidas</h3><a className="quick-action" href={`/expedientes/${selected.code}`}>Ver expediente completo <span>→</span></a><a className="quick-action" href={selected.budgetId ? "/propuestas" : "/propuestas"}>{selected.budgetId ? "Abrir presupuesto" : "Crear presupuesto"} <span>→</span></a><a className="quick-action" href="/compras">Ver compras <span>→</span></a><button className="quick-action primary" type="button" onClick={() => selectedFlow.find((step) => step.key === "contract")?.status === "pending" ? setMessage("No puedes generar contrato si falta documentación aprobada, precio aceptado o cliente vinculado.") : setMessage("Contrato generado en demo con preflight revisado.")}>Generar contrato <span>→</span></button><button className="quick-action" type="button" onClick={() => canCloseCase(selected) ? changeStatus("cerrado") : setMessage("No se puede cerrar: revisa contrato, pago, Holded o compras pendientes.")}>Cerrar expediente <span>→</span></button></section>
-
+          <section className="side-actions"><h3>Acciones rápidas</h3><a className="quick-action" href={`/expedientes/${selected.code}`}>Ver expediente completo <span>→</span></a><a className="quick-action" href="/propuestas">{selected.budgetId ? "Abrir presupuesto" : "Crear presupuesto"} <span>→</span></a><a className="quick-action" href="/compras">Ver compras <span>→</span></a><button className="quick-action primary" type="button" onClick={() => selectedFlow.find((step) => step.key === "contract")?.status === "pending" ? setMessage("No puedes generar contrato si falta documentación aprobada, precio aceptado o cliente vinculado.") : setMessage("Contrato generado en demo con preflight revisado.")}>Generar contrato <span>→</span></button><button className="quick-action" type="button" onClick={() => canCloseCase(selected) ? changeStatus("cerrado") : setMessage("No se puede cerrar: revisa contrato, pago, Holded o compras pendientes.")}>Cerrar expediente <span>→</span></button></section>
           <div className="client-footnote">El expediente es la unidad central de trabajo. Toda la información y actividad se gestiona aquí.</div>
         </aside>
       </section>
