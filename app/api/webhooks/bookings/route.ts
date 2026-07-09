@@ -1,23 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
 import { enqueueOutboxEvent } from "@/lib/outbox-server";
-
-function demoOrganizationId() {
-  return process.env.DEMO_ORGANIZATION_ID || "00000000-0000-0000-0000-000000000001";
-}
-
-function verifyWebhook(request: NextRequest) {
-  const configured = process.env.BOOKING_WEBHOOK_SECRET;
-  if (!configured) return true;
-  return request.headers.get("x-routsify-signature") === configured;
-}
+import { demoOrganizationId } from "@/lib/runtime-mode";
+import { providerIdempotencyKey, verifyWebhookRequest } from "@/lib/webhook-security";
 
 export async function POST(request: NextRequest) {
-  if (!verifyWebhook(request)) {
-    return NextResponse.json({ ok: false, error: "invalid_signature" }, { status: 401 });
+  const rawBody = await request.text();
+  const verification = verifyWebhookRequest({
+    rawBody,
+    secret: process.env.BOOKING_WEBHOOK_SECRET,
+    signature: request.headers.get("x-routsify-signature"),
+    timestamp: request.headers.get("x-routsify-timestamp"),
+    eventId: request.headers.get("x-routsify-event-id") || request.headers.get("x-idempotency-key"),
+  });
+
+  if (!verification.ok) {
+    return NextResponse.json({ ok: false, error: verification.error }, { status: verification.status });
   }
 
-  const payload = await request.json().catch(() => null);
-  if (!payload || typeof payload !== "object") {
+  const payload = JSON.parse(rawBody || "null") as Record<string, unknown> | null;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return NextResponse.json({ ok: false, error: "invalid_payload" }, { status: 400 });
   }
 
@@ -25,11 +26,11 @@ export async function POST(request: NextRequest) {
     organizationId: demoOrganizationId(),
     channel: "booking",
     eventType: "booking.requested",
-    payload: payload as Record<string, unknown>,
+    payload: { ...payload, verificationMode: verification.mode },
     risk: "medium",
     businessRule: "Booking API entra como solicitud hasta validar encaje comercial y disponibilidad.",
     nextAction: "Revisar disponibilidad, presupuesto y contacto antes de convertir.",
-    idempotencyKey: request.headers.get("x-idempotency-key") || undefined,
+    idempotencyKey: providerIdempotencyKey({ channel: "booking", eventType: "booking.requested", payload, fallbackRawBody: rawBody, eventId: verification.eventId }),
   });
 
   return NextResponse.json(result, { status: result.ok ? 200 : 400 });
