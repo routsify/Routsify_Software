@@ -13,11 +13,20 @@ const requiredFiles = [
   "lib/holded-server.ts",
   "lib/client-master.ts",
   "lib/purchase-master.ts",
+  "lib/settings-master.ts",
   "lib/demo-expedition-engine.ts",
   "lib/demo-holded-matching.ts",
   "lib/demo-ocr.ts",
   "app/ajustes/SettingsManager.tsx",
   "app/api/health/route.ts",
+  "app/api/routsify/settings/route.ts",
+  "app/api/routsify/settings/[module]/route.ts",
+  "app/api/routsify/settings/[module]/reset/route.ts",
+  "app/api/routsify/settings/export/route.ts",
+  "app/api/routsify/settings/import/route.ts",
+  "app/api/routsify/settings/audit/route.ts",
+  "app/api/routsify/settings/integrations/[integration]/test/route.ts",
+  "app/api/routsify/system/actions/route.ts",
   "app/api/routsify/expected-purchases/route.ts",
   "app/api/routsify/expected-purchases/sync-holded/route.ts",
   "app/api/routsify/expected-purchases/[purchaseId]/route.ts",
@@ -93,6 +102,15 @@ for (const token of ["Compras esperadas", "Pendientes de conciliar", "Con incide
 const purchasesApi = read("app/api/routsify/expected-purchases/route.ts");
 for (const token of ["pagination", "kpis", "filterPurchases", "purchaseKpis"]) assert(purchasesApi.includes(token), `Missing purchases API token: ${token}`);
 
+const settingsMaster = read("lib/settings-master.ts");
+for (const token of ["SettingScope", "SettingValueType", "AppSetting", "settingsModules", "demoSettings", "demoSettingsAuditLog", "quickActions", "updateSettingsDemo", "resetModuleDemo", "exportDemoSettings", "importSettingsPreview", "testIntegration", "runSystemAction", "theme.updated", "margin_rules.updated", "fiscal_mode.updated", "report_config.updated", "roles.updated", "security_policy.updated", "manual_review", "proforma_on_payment", "invoice_on_advance", "final_invoice_after_trip"]) assert(settingsMaster.includes(token), `Missing settings token: ${token}`);
+
+const settingsManager = read("app/ajustes/SettingsManager.tsx");
+for (const token of ["Resumen de configuración", "Guardar todos los cambios", "Guardar cambios", "Restaurar módulo", "Acciones rápidas", "Información del sistema", "Auditoría reciente", "Retención", "Confianza OCR"]) assert(settingsManager.includes(token), `Missing setting token: ${token}`);
+
+const settingsApi = read("app/api/routsify/settings/route.ts");
+for (const token of ["demoSettings", "settingsSummary", "updateSettingsDemo"]) assert(settingsApi.includes(token), `Missing settings API token: ${token}`);
+
 const demoEngine = read("lib/demo-expedition-engine.ts");
 for (const token of ["getDemoExpeditionState", "buildDemoExpectedPurchasesFromBudget", "blockers", "timeline", "stageOrder"]) assert(demoEngine.includes(token), `Missing demo engine token: ${token}`);
 
@@ -101,9 +119,6 @@ for (const token of ["EXP_CODE", "confidence", "matchAction", "bestHoldedCandida
 
 const ocrDemo = read("lib/demo-ocr.ts");
 for (const token of ["confidence", "revision_requerida", "aprobado", "reviewed_at"]) assert(ocrDemo.includes(token), `Missing OCR token: ${token}`);
-
-const settingsManager = read("app/ajustes/SettingsManager.tsx");
-for (const token of ["manual_review", "proforma_on_payment", "invoice_on_advance", "final_invoice_after_trip", "Retención", "Confianza OCR"]) assert(settingsManager.includes(token), `Missing setting token: ${token}`);
 
 const migration1 = read("supabase/migrations/0001_routsify_mvp_schema.sql");
 for (const table of ["clients", "leads", "bookings", "cases", "proposals", "proposal_versions", "budget_lines", "expected_purchases", "supplier_invoices", "suppliers", "travelers", "documents", "contracts", "payments", "billing_documents", "integration_outbox", "audit_log"]) assert(migration1.includes(`public.${table}`), `Missing schema table: ${table}`);
