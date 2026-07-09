@@ -12,6 +12,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: error || "caseCode_fileName_required" }, { status: 400 });
   }
 
-  const result = await createCaseDocumentUploadUrl({ organizationId: access.organizationId, caseCode: body.caseCode, fileName: sanitizeFileName(body.fileName) });
+  const result = await createCaseDocumentUploadUrl({ organizationId: access.organizationId, caseCode: body.caseCode, fileName: sanitizeFileName(body.fileName), actorId: access.actorId });
   return NextResponse.json({ ...result, audit: { actorId: access.actorId, accessMode: access.mode, purpose: "case_document_upload" } }, { status: result.ok ? 200 : 400 });
 }
