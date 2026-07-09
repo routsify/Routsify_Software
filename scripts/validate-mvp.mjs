@@ -3,9 +3,16 @@ import { join } from "node:path";
 
 const root = process.cwd();
 const requiredFiles = [
+  "middleware.ts",
+  "next.config.mjs",
   "supabase/migrations/0001_routsify_mvp_schema.sql",
   "supabase/migrations/0002_routsify_mvp_rls_audit_storage.sql",
   "supabase/migrations/0003_routsify_mvp_integration_hardening.sql",
+  "supabase/migrations/0004_routsify_mvp_security_model_hardening.sql",
+  "lib/runtime-mode.ts",
+  "lib/api-security.ts",
+  "lib/webhook-security.ts",
+  "lib/proposal-public-server.ts",
   "lib/supabase-admin.ts",
   "lib/proposal-token.ts",
   "lib/outbox-server.ts",
@@ -45,6 +52,7 @@ const requiredFiles = [
   "app/clientes/ClientsManager.tsx",
   "app/expedientes/page.tsx",
   "app/expedientes/[caseCode]/page.tsx",
+  "app/propuestas/[token]/page.tsx",
   "app/propuestas/page.tsx",
   "app/compras/page.tsx",
   "app/compras/PurchasesManager.tsx",
@@ -79,6 +87,15 @@ for (const [path, target] of Object.entries(redirectRoutes)) {
   assert(file.includes(target), `Expected ${path} to redirect to ${target}`);
 }
 
+const packageJson = read("package.json");
+assert(!packageJson.includes('"latest"'), "package.json must not use latest dependencies");
+
+const nextConfig = read("next.config.mjs");
+for (const token of ["Content-Security-Policy", "X-Frame-Options", "Referrer-Policy", "Permissions-Policy"]) assert(nextConfig.includes(token), `Missing security header: ${token}`);
+
+const middleware = read("middleware.ts");
+for (const token of ["/api/routsify", "authentication_required", "ROUTSIFY_INTERNAL_API_TOKEN", "isPublicDemoAllowed"]) assert(middleware.includes(token), `Missing middleware token: ${token}`);
+
 const appShell = read("components/AppShell.tsx");
 for (const label of ["Inicio", "Clientes", "Expedientes", "Presupuestos", "Compras / Proveedores", "Informes", "Ajustes"]) assert(appShell.includes(label), `Missing nav label: ${label}`);
 for (const removed of ["Dashboard", "Alertas", "Configuración", "demo-public-token", "Viajeros y Documentos", "Contrato, Firma y Pago"]) assert(!appShell.includes(removed), `Removed item still visible: ${removed}`);
@@ -96,6 +113,23 @@ const caseDetail = read("app/expedientes/[caseCode]/page.tsx");
 for (const token of ["#viajeros-documentos", "#contrato-pago", "Sin módulos separados", "Viajeros y documentos", "Contrato y pago", "Cobros y documentos fiscales"]) assert(caseDetail.includes(token), `Missing embedded case token: ${token}`);
 assert(!caseDetail.includes('href="/viajeros"'), "Case detail should not link to removed travelers module");
 assert(!caseDetail.includes('href="/contratos"'), "Case detail should not link to removed contracts module");
+
+const publicProposal = read("app/propuestas/[token]/page.tsx");
+for (const token of ["resolvePublicProposal", "notFound", "Acceso validado"]) assert(publicProposal.includes(token), `Missing public proposal token: ${token}`);
+
+const webhookSecurity = read("lib/webhook-security.ts");
+for (const token of ["verifyWebhookRequest", "canonicalJsonStringify", "timingSafeEqual", "timestamp_out_of_tolerance", "providerIdempotencyKey"]) assert(webhookSecurity.includes(token), `Missing webhook security token: ${token}`);
+
+const formWebhook = read("app/api/webhooks/forms/route.ts");
+const bookingWebhook = read("app/api/webhooks/bookings/route.ts");
+for (const source of [formWebhook, bookingWebhook]) for (const token of ["request.text()", "verifyWebhookRequest", "providerIdempotencyKey", "x-routsify-timestamp", "x-routsify-signature"]) assert(source.includes(token), `Missing webhook route token: ${token}`);
+
+const uploadRoute = read("app/api/documentos/upload-url/route.ts");
+for (const token of ["requireInternalAccess", "validatePrivateUpload", "sanitizeFileName", "actorId"]) assert(uploadRoute.includes(token), `Missing upload guard token: ${token}`);
+assert(!uploadRoute.includes("organizationId?:"), "Upload route must not accept organizationId from client body");
+
+const paymentRoute = read("app/api/payments/manual/route.ts");
+for (const token of ["paymentPreflight", "proposal_not_accepted", "payment_reference_required", "payment:manual:"]) assert(paymentRoute.includes(token), `Missing payment preflight token: ${token}`);
 
 const clientMaster = read("lib/client-master.ts");
 for (const token of ["demoClientMasters", "clientKpis", "possibleDuplicate", "clientFiscalMissing", "simulateHoldedSync", "createDemoClient", "filterClientMasters", "holded_contact_id", "accepted_value", "payments_received"]) assert(clientMaster.includes(token), `Missing client master token: ${token}`);
@@ -146,9 +180,13 @@ assert(migration3.includes("public.webhook_events"), "Webhook event table missin
 assert(migration3.includes("enqueue_integration_event"), "Outbox enqueue RPC missing");
 assert(migration3.includes("confirm_manual_payment"), "Manual payment RPC missing");
 
+const migration4 = read("supabase/migrations/0004_routsify_mvp_security_model_hardening.sql");
+for (const token of ["stable_line_id", "supplier_id", "cost_real", "proposal_version_id", "retention_until", "document_access_log", "ensure_profile_for_current_user", "margin_rules", "fiscal_modes", "integration_runs", "tasks", "timeline_events", "travel-documents", "invoices", "proposal-assets"]) assert(migration4.includes(token), `Missing migration hardening token: ${token}`);
+
 const publicAcceptance = read("app/api/propuestas/[token]/accept/route.ts");
 assert(publicAcceptance.includes("verifyProposalToken"), "Proposal token is not verified");
 assert(publicAcceptance.includes("accept_proposal_version"), "Acceptance RPC missing");
+assert(publicAcceptance.includes("resolvePublicProposal"), "Acceptance fallback must be token-scoped");
 
 const health = read("app/api/health/route.ts");
 assert(health.includes("demoMode"), "Health endpoint missing demoMode");
@@ -157,10 +195,12 @@ assert(health.includes("supabaseAdminConfigured"), "Health endpoint missing admi
 const outboxServer = read("lib/outbox-server.ts");
 assert(outboxServer.includes("upsert"), "Outbox must be idempotent");
 assert(outboxServer.includes("idempotencyKey"), "Outbox idempotency key missing");
+assert(outboxServer.includes("canonicalJsonStringify"), "Outbox must use canonical idempotency hashing");
 
 const storageServer = read("lib/storage-server.ts");
 assert(storageServer.includes("case-documents"), "Private storage bucket missing");
 assert(storageServer.includes("createSignedUploadUrl"), "Signed upload helper missing");
+assert(storageServer.includes("document_access_log"), "Document access audit missing");
 
 const envExample = read(".env.example");
 for (const key of ["PROPOSAL_TOKEN_SECRET", "FORM_WEBHOOK_SECRET", "BOOKING_WEBHOOK_SECRET"]) assert(envExample.includes(key), `Missing env placeholder: ${key}`);
