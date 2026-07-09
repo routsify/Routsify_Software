@@ -1,9 +1,13 @@
+import { notFound } from "next/navigation";
 import { Logo } from "@/components/Logo";
-import { proposal } from "@/lib/mock-data";
+import { resolvePublicProposal } from "@/lib/proposal-public-server";
 import { AcceptProposalBox } from "./AcceptProposalBox";
 
 export default async function PublicProposalPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
+  const resolved = resolvePublicProposal(token);
+  if (!resolved.ok) notFound();
+  const { proposal } = resolved;
 
   return (
     <div className="proposal-hero">
@@ -17,6 +21,7 @@ export default async function PublicProposalPage({ params }: { params: Promise<{
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 24 }}>
               <span className="badge">{proposal.destination}</span><span className="badge">{proposal.dates}</span><span className="badge">{proposal.travelers}</span>
             </div>
+            <p style={{ marginTop: 12 }}><small>Acceso validado · versión {resolved.versionId} · token hash {resolved.tokenHash.slice(0, 10)}…</small></p>
           </div>
           <div className="card">
             <AcceptProposalBox total={proposal.total} token={token} />
