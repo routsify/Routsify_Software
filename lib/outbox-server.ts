@@ -1,9 +1,10 @@
 import { createHash } from "crypto";
 import { getSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase-admin";
+import { canonicalJsonStringify } from "@/lib/webhook-security";
 
 export type OutboxServerInput = {
   organizationId: string;
-  channel: "form" | "booking" | "payment" | "fiscal" | "supplier";
+  channel: "form" | "booking" | "payment" | "fiscal" | "supplier" | "holded";
   eventType: string;
   relatedCaseId?: string | null;
   payload: Record<string, unknown>;
@@ -14,7 +15,7 @@ export type OutboxServerInput = {
 };
 
 function stableHash(value: unknown) {
-  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+  return createHash("sha256").update(canonicalJsonStringify(value)).digest("hex");
 }
 
 export function buildIdempotencyKey(input: Pick<OutboxServerInput, "channel" | "eventType" | "payload" | "idempotencyKey">) {
