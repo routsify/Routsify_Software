@@ -27,12 +27,15 @@ assert(netlify.includes('NODE_VERSION = "22"'), "Node 22 must be pinned for Netl
 assert(pkg.scripts?.["netlify:build"], "Missing netlify:build script");
 assert(pkg.scripts?.["validate:deploy"], "Missing validate:deploy script");
 assert(pkg.devDependencies?.["@netlify/plugin-nextjs"], "Missing @netlify/plugin-nextjs devDependency");
+assert(!JSON.stringify(pkg).includes('"latest"'), "Dependencies must not use latest");
 
 for (const key of [
   "NEXT_PUBLIC_DEMO_MODE",
+  "ROUTSIFY_ALLOW_PUBLIC_DEMO",
   "NEXT_PUBLIC_SUPABASE_URL",
   "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
   "SUPABASE_SERVICE_ROLE_KEY",
+  "ROUTSIFY_INTERNAL_API_TOKEN",
   "PROPOSAL_TOKEN_SECRET",
   "FORM_WEBHOOK_SECRET",
   "BOOKING_WEBHOOK_SECRET",
