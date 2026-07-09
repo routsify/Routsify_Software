@@ -12,11 +12,20 @@ const requiredFiles = [
   "lib/storage-server.ts",
   "lib/holded-server.ts",
   "lib/client-master.ts",
+  "lib/purchase-master.ts",
   "lib/demo-expedition-engine.ts",
   "lib/demo-holded-matching.ts",
   "lib/demo-ocr.ts",
   "app/ajustes/SettingsManager.tsx",
   "app/api/health/route.ts",
+  "app/api/routsify/expected-purchases/route.ts",
+  "app/api/routsify/expected-purchases/sync-holded/route.ts",
+  "app/api/routsify/expected-purchases/[purchaseId]/route.ts",
+  "app/api/routsify/expected-purchases/[purchaseId]/find-candidates/route.ts",
+  "app/api/routsify/expected-purchases/[purchaseId]/approve-match/route.ts",
+  "app/api/routsify/expected-purchases/[purchaseId]/manual-review/route.ts",
+  "app/api/routsify/expected-purchases/[purchaseId]/not-required/route.ts",
+  "app/api/routsify/expected-purchases/[purchaseId]/request-invoice/route.ts",
   "app/api/propuestas/[token]/accept/route.ts",
   "app/api/webhooks/forms/route.ts",
   "app/api/webhooks/bookings/route.ts",
@@ -28,6 +37,7 @@ const requiredFiles = [
   "app/expedientes/page.tsx",
   "app/propuestas/page.tsx",
   "app/compras/page.tsx",
+  "app/compras/PurchasesManager.tsx",
   "app/viajeros/page.tsx",
   "app/contratos/page.tsx",
   "app/informes/page.tsx",
@@ -46,15 +56,9 @@ const redirectRoutes = {
   "app/ajustes/tipos-servicio/page.tsx": "/ajustes",
 };
 
-function read(path) {
-  return readFileSync(join(root, path), "utf8");
-}
-function assert(condition, message) {
-  if (!condition) throw new Error(message);
-}
-function countCanonicalHrefRows(source) {
-  return (source.match(/\{ href: "\//g) || []).length;
-}
+function read(path) { return readFileSync(join(root, path), "utf8"); }
+function assert(condition, message) { if (!condition) throw new Error(message); }
+function countCanonicalHrefRows(source) { return (source.match(/\{ href: "\//g) || []).length; }
 
 for (const file of requiredFiles) assert(existsSync(join(root, file)), `Missing required file: ${file}`);
 for (const [path, target] of Object.entries(redirectRoutes)) {
@@ -79,6 +83,15 @@ for (const token of ["demoClientMasters", "clientKpis", "possibleDuplicate", "cl
 
 const clientsManager = read("app/clientes/ClientsManager.tsx");
 for (const token of ["Clientes activos", "Pendientes de sync", "Valor aceptado", "Duplicados por revisar", "Estado Holded", "Datos fiscales", "Historial resumido", "Acciones rápidas", "Sincronizar Holded", "Revisar duplicados", "Nuevo presupuesto"]) assert(clientsManager.includes(token), `Missing clients UI token: ${token}`);
+
+const purchaseMaster = read("lib/purchase-master.ts");
+for (const token of ["ExpectedPurchaseStatus", "demoExpectedPurchases", "purchaseKpis", "filterPurchases", "holdedCandidate", "purchaseFlow", "purchaseAlerts", "approvePurchaseMatch", "markPurchaseNotRequired", "getPurchaseDetail", "blocksCaseClosing"]) assert(purchaseMaster.includes(token), `Missing purchase master token: ${token}`);
+
+const purchasesManager = read("app/compras/PurchasesManager.tsx");
+for (const token of ["Compras esperadas", "Pendientes de conciliar", "Con incidencias", "Valor pendiente", "Sincronizar Holded", "Sugerencia de matching", "Estado del flujo", "Aprobar match", "Revisar manualmente", "Marcar not_required", "bloquea el cierre"]) assert(purchasesManager.includes(token), `Missing purchases UI token: ${token}`);
+
+const purchasesApi = read("app/api/routsify/expected-purchases/route.ts");
+for (const token of ["pagination", "kpis", "filterPurchases", "purchaseKpis"]) assert(purchasesApi.includes(token), `Missing purchases API token: ${token}`);
 
 const demoEngine = read("lib/demo-expedition-engine.ts");
 for (const token of ["getDemoExpeditionState", "buildDemoExpectedPurchasesFromBudget", "blockers", "timeline", "stageOrder"]) assert(demoEngine.includes(token), `Missing demo engine token: ${token}`);
