@@ -4,7 +4,7 @@ import { Logo } from "@/components/Logo";
 import { buildOperationalInbox } from "@/lib/workbench";
 
 const nav = [
-  ["/hoy", "Inicio / Dashboard"],
+  ["/hoy", "Inicio"],
   ["/clientes", "Clientes"],
   ["/expedientes", "Expedientes"],
   ["/propuestas", "Presupuestos"],
@@ -12,9 +12,7 @@ const nav = [
   ["/viajeros", "Viajeros y Documentos"],
   ["/contratos", "Contrato, Firma y Pago"],
   ["/informes", "Informes"],
-  ["/tareas", "Tareas"],
-  ["/integraciones", "Alertas"],
-  ["/seguridad", "Configuración"],
+  ["/ajustes", "Ajustes"],
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -65,7 +63,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <a className="notification-all" href="/hoy">Ver todas</a>
               </div>
             </details>
-            <Link className="topbar-icon" href="/tareas" title="Calendario">□</Link>
+            <Link className="topbar-icon" href="/hoy" title="Acciones del día">□</Link>
             <div className="user-chip">
               <span className="avatar">MG</span>
               <span><strong>María García</strong><small>Operaciones</small></span>
