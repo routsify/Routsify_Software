@@ -14,7 +14,8 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm install
+      - run: npm install --package-lock-only --ignore-scripts
+      - run: npm ci --ignore-scripts
       - run: npm run validate:deploy
       - run: npm run typecheck
       - run: npm run build
