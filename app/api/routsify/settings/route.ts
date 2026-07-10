@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { jsonAccessDenied, requireInternalAccess } from "@/lib/api-security";
 import { resolveOrganizationId, getRequestUserId } from "@/lib/request-context";
 import { getSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase-admin";
-import { demoSettings, settingsSummary, type AppSetting } from "@/lib/settings-master";
+import { defaultSettings, settingsSummary, type AppSetting } from "@/lib/settings-master";
 
 function mergeSettings(rows: Record<string, unknown>[]) {
-  return demoSettings.map((setting) => {
+  return defaultSettings.map((setting) => {
     const stored = rows.find((row) => row.key === setting.key);
     if (!stored) return setting;
     return {
@@ -39,7 +39,7 @@ export async function PATCH(request: NextRequest) {
   const updates = Array.isArray(body.settings) ? body.settings as Partial<AppSetting>[] : [];
   if (!updates.length) return NextResponse.json({ ok: true, data: [] });
 
-  const allowed = new Map(demoSettings.filter((setting) => setting.editable && !setting.isSensitive).map((setting) => [setting.key, setting]));
+  const allowed = new Map(defaultSettings.filter((setting) => setting.editable && !setting.isSensitive).map((setting) => [setting.key, setting]));
   const organizationId = await resolveOrganizationId(request, access.organizationId);
   const actorId = await getRequestUserId(request);
   const supabase = getSupabaseAdminClient();
