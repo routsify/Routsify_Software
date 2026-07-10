@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { AuthStatus } from "@/components/AuthStatus";
+import { GlobalSearch } from "@/components/GlobalSearch";
 import { Logo } from "@/components/Logo";
-import { buildOperationalInbox } from "@/lib/workbench";
 
 const nav = [
   ["/hoy", "Inicio"],
@@ -14,9 +14,6 @@ const nav = [
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const notifications = buildOperationalInbox().slice(0, 5);
-  const critical = notifications.filter((item) => item.urgency === "critical").length;
-
   return (
     <div className="shell">
       <aside className="sidebar">
@@ -35,29 +32,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
       <main className="main">
         <div className="topbar">
-          <div className="searchbox">Buscar expedientes, clientes, reservas...</div>
-          <div className="topbar-actions">
-            <details className="notification">
-              <summary className="topbar-icon" title="Notificaciones">
-                <span>!</span>
-                <strong>{notifications.length}</strong>
-              </summary>
-              <div className="notification-panel">
-                <div className="notification-head">
-                  <strong>Notificaciones</strong>
-                  <span>{critical} críticas</span>
-                </div>
-                {notifications.map((item) => (
-                  <a key={`${item.source}-${item.id}`} href={item.href} className="notification-item">
-                    <span className={`dot ${item.urgency}`}></span>
-                    <span><strong>{item.title}</strong><small>{item.case_code || item.area} · {item.reason}</small></span>
-                  </a>
-                ))}
-                <a className="notification-all" href="/hoy">Ver todas</a>
-              </div>
-            </details>
-            <AuthStatus />
-          </div>
+          <GlobalSearch />
+          <div className="topbar-actions"><AuthStatus /></div>
         </div>
         {children}
       </main>
