@@ -1,151 +1,112 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
-import {
-  BudgetMaster,
-  BudgetStatus,
-  budgetAlerts,
-  budgetKpis,
-  budgetOwners,
-  budgetStatusConfig,
-  budgetStatuses,
-  buildBudgetFlow,
-  calculateSalePrice,
-  createDemoBudget,
-  demoBudgetLines,
-  demoBudgetVersions,
-  demoBudgets,
-  filterBudgets,
-  formatBudgetMoney,
-  formatBudgetPercent,
-  marginFilters,
-} from "@/lib/budget-master";
 
-const emptyDraft = {
-  clientName: "",
-  caseCode: "",
-  destination: "",
-  responsibleName: "Laura Pérez",
-  marginPct: 20,
-};
+type CaseOption = { id: string; case_code: string; title?: string | null; destination?: string | null; clients?: { display_name?: string | null } | null };
+type Line = { id: string; description_public: string; supplier_name?: string | null; cost_budget?: number | string | null; sale_price?: number | string | null; margin_applied?: number | string | null };
+type Version = { id: string; version_number: number; budget_lines?: Line[] | null };
+type Proposal = { id: string; status?: string | null; cases?: CaseOption | null; proposal_versions?: Version[] | null };
 
-function toneClass(tone: string) {
-  if (tone === "green") return "status-progress";
-  if (tone === "blue") return "status-progress";
-  if (tone === "red") return "priority-urgent";
-  return "status-pill";
+type LineDraft = { description_public: string; supplier_name: string; cost_budget: string; margin_applied: string };
+const emptyLine: LineDraft = { description_public: "", supplier_name: "", cost_budget: "", margin_applied: "20" };
+const statuses = [["draft", "Borrador"], ["internal_review", "Revisión interna"], ["sent", "Enviado"], ["accepted", "Aceptado"], ["rejected", "Rechazado"]];
+
+function asCase(input: unknown): CaseOption {
+  const row = input as Record<string, unknown>;
+  return { id: String(row.id || ""), case_code: String(row.case_code || "Expediente"), title: row.title ? String(row.title) : null, destination: row.destination ? String(row.destination) : null, clients: row.clients && typeof row.clients === "object" ? row.clients as CaseOption["clients"] : null };
 }
 
-function flowLabel(status: string) {
-  if (status === "completed") return "Completado";
-  if (status === "blocked") return "Bloqueado";
-  return "Pendiente";
+function asProposal(input: unknown): Proposal {
+  const row = input as Record<string, unknown>;
+  return { id: String(row.id || crypto.randomUUID()), status: row.status ? String(row.status) : "draft", cases: row.cases && typeof row.cases === "object" ? asCase(row.cases) : null, proposal_versions: Array.isArray(row.proposal_versions) ? row.proposal_versions as Version[] : [] };
 }
 
-export function BudgetManager() {
-  const [budgets, setBudgets] = useState<BudgetMaster[]>(demoBudgets);
-  const [selectedId, setSelectedId] = useState(demoBudgets[0].id);
-  const [search, setSearch] = useState("");
-  const [status, setStatus] = useState("Todos");
-  const [owner, setOwner] = useState("Todos");
-  const [margin, setMargin] = useState("Todos");
-  const [draft, setDraft] = useState(emptyDraft);
+function versionOf(proposal?: Proposal | null) { return [...(proposal?.proposal_versions || [])].sort((a, b) => Number(b.version_number || 0) - Number(a.version_number || 0))[0] || null; }
+function linesOf(proposal?: Proposal | null) { return versionOf(proposal)?.budget_lines || []; }
+function num(value: unknown) { const number = Number(value || 0); return Number.isFinite(number) ? number : 0; }
+function money(value: unknown) { const number = num(value); return number ? new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(number) : "—"; }
+function statusText(value?: string | null) { return statuses.find(([key]) => key === value)?.[1] || value || "Borrador"; }
+function totals(proposal?: Proposal | null) { const lines = linesOf(proposal); const cost = lines.reduce((sum, line) => sum + num(line.cost_budget), 0); const sale = lines.reduce((sum, line) => sum + num(line.sale_price), 0); return { cost, sale, profit: sale - cost, margin: sale ? ((sale - cost) / sale) * 100 : 0 }; }
+
+export function BudgetManager({ initialProposals = [], initialCases = [] }: { initialProposals?: unknown[]; initialCases?: unknown[] }) {
+  const [proposals, setProposals] = useState<Proposal[]>(() => initialProposals.map(asProposal));
+  const [cases] = useState<CaseOption[]>(() => initialCases.map(asCase).filter((item) => item.id));
+  const [selectedId, setSelectedId] = useState<string | null>(() => proposals[0]?.id || null);
+  const [query, setQuery] = useState("");
+  const [caseId, setCaseId] = useState("");
+  const [line, setLine] = useState<LineDraft>(emptyLine);
   const [message, setMessage] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  const kpis = useMemo(() => budgetKpis(budgets), [budgets]);
-  const filtered = useMemo(() => filterBudgets(budgets, { search, status, owner, margin }), [budgets, search, status, owner, margin]);
-  const selected = budgets.find((item) => item.id === selectedId) || filtered[0] || budgets[0];
-  const flow = useMemo(() => buildBudgetFlow(selected), [selected]);
-  const alerts = useMemo(() => budgetAlerts(selected), [selected]);
+  const filtered = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return proposals;
+    return proposals.filter((proposal) => [proposal.cases?.case_code, proposal.cases?.title, proposal.cases?.destination, proposal.cases?.clients?.display_name, proposal.status].filter(Boolean).join(" ").toLowerCase().includes(needle));
+  }, [proposals, query]);
 
-  function updateSelected<K extends keyof BudgetMaster>(key: K, value: BudgetMaster[K]) {
-    setBudgets((current) => current.map((item) => item.id === selected.id ? { ...item, [key]: value, lastActivityAt: "Ahora" } : item));
-    setMessage(`Cambio demo guardado: ${String(key)}. En real genera auditoría económica.`);
-  }
+  const selected = proposals.find((proposal) => proposal.id === selectedId) || filtered[0] || proposals[0] || null;
+  const selectedVersion = versionOf(selected);
+  const selectedTotals = totals(selected);
+  const pipeline = proposals.reduce((sum, proposal) => sum + totals(proposal).sale, 0);
 
-  function createBudget(event: FormEvent<HTMLFormElement>) {
+  async function createProposal(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!draft.clientName.trim() || !draft.caseCode.trim()) {
-      setMessage("Para crear presupuesto hacen falta cliente y expediente.");
-      return;
-    }
-    const result = createDemoBudget(draft, budgets);
-    setBudgets((current) => [result.budget, ...current]);
-    setSelectedId(result.budget.id);
-    setDraft(emptyDraft);
-    setMessage(`Presupuesto ${result.budget.code} creado. Evento ${result.event}; tarea: ${result.task}.`);
+    if (!caseId) return setMessage("Selecciona un expediente.");
+    setSaving(true);
+    const response = await fetch("/api/routsify/proposals", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ case_id: caseId }) });
+    const result = await response.json().catch(() => null);
+    setSaving(false);
+    if (!response.ok || !result?.ok) return setMessage("No se pudo crear el presupuesto.");
+    const created = asProposal(result.data);
+    setProposals((current) => [created, ...current.filter((item) => item.id !== created.id)]);
+    setSelectedId(created.id);
+    setCaseId("");
+    setMessage("Presupuesto creado correctamente.");
   }
 
-  function sendBudget() {
-    if (selected.totalSalePrice <= 0) {
-      setMessage("No se puede enviar: el total de venta debe ser mayor que 0.");
-      return;
-    }
-    updateSelected("status", "sent");
-    setMessage("Presupuesto enviado en demo: expediente pasa a seguimiento, se crea tarea y se prepara evento Holded.");
+  async function changeStatus(proposalId: string, status: string) {
+    setSaving(true);
+    const response = await fetch(`/api/routsify/proposals/${proposalId}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ status }) });
+    const result = await response.json().catch(() => null);
+    setSaving(false);
+    if (!response.ok || !result?.ok) return setMessage("No se pudo actualizar el presupuesto.");
+    const updated = asProposal(result.data);
+    setProposals((current) => current.map((item) => item.id === proposalId ? updated : item));
+    setSelectedId(updated.id);
+    setMessage("Estado actualizado correctamente.");
   }
 
-  function acceptBudget() {
-    if (!["sent", "internal_review"].includes(selected.status)) {
-      setMessage("Solo se puede aceptar un presupuesto enviado o aprobado internamente.");
-      return;
-    }
-    setBudgets((current) => current.map((item) => item.id === selected.id ? { ...item, status: "accepted", acceptedAt: "Ahora", lastActivityAt: "Ahora" } : item));
-    setMessage("Presupuesto aceptado: versión bloqueada, compras esperadas generadas, viajeros activados y expediente actualizado.");
+  async function addLine(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selected || !selectedVersion) return;
+    if (!line.description_public.trim()) return setMessage("La línea necesita descripción.");
+    setSaving(true);
+    const response = await fetch(`/api/routsify/proposals/${selected.id}/lines`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...line, proposal_version_id: selectedVersion.id }) });
+    const result = await response.json().catch(() => null);
+    setSaving(false);
+    if (!response.ok || !result?.ok) return setMessage("No se pudo añadir la línea.");
+    setProposals((current) => current.map((proposal) => proposal.id === selected.id ? { ...proposal, proposal_versions: (proposal.proposal_versions || []).map((version) => version.id === selectedVersion.id ? { ...version, budget_lines: [...(version.budget_lines || []), result.data] } : version) } : proposal));
+    setLine(emptyLine);
+    setMessage("Línea añadida correctamente.");
   }
 
-  function createVersion() {
-    setBudgets((current) => current.map((item) => item.id === selected.id ? { ...item, currentVersion: item.currentVersion + 1, status: "draft", lastActivityAt: "Ahora" } : item));
-    setMessage("Nueva versión demo creada. Las versiones enviadas/aceptadas quedan como snapshot histórico.");
+  async function removeLine(lineId: string) {
+    if (!selected || !selectedVersion) return;
+    setSaving(true);
+    const response = await fetch(`/api/routsify/proposals/${selected.id}/lines/${lineId}`, { method: "DELETE" });
+    const result = await response.json().catch(() => null);
+    setSaving(false);
+    if (!response.ok || !result?.ok) return setMessage("No se pudo eliminar la línea.");
+    setProposals((current) => current.map((proposal) => proposal.id === selected.id ? { ...proposal, proposal_versions: (proposal.proposal_versions || []).map((version) => version.id === selectedVersion.id ? { ...version, budget_lines: (version.budget_lines || []).filter((item) => item.id !== lineId) } : version) } : proposal));
+    setMessage("Línea eliminada correctamente.");
   }
 
   return (
     <div className="clients-page">
-      <section className="client-kpis">
-        <a className="kpi-card" href="#presupuestos-listado"><span className="kpi-icon">▣</span><span className="kpi-copy"><strong>Presupuestos activos</strong><b>{kpis.active}</b><small>+6 vs. mes anterior ↑</small></span></a>
-        <a className="kpi-card" href="#presupuestos-listado"><span className="kpi-icon">□</span><span className="kpi-copy"><strong>Borradores</strong><b>{kpis.drafts}</b><small>Pendientes de revisión</small></span></a>
-        <a className="kpi-card" href="#presupuestos-listado"><span className="kpi-icon">✈</span><span className="kpi-copy"><strong>Enviados / pendientes</strong><b>{kpis.sentPending}</b><small>A la espera de respuesta</small></span></a>
-        <a className="kpi-card" href="#presupuestos-listado"><span className="kpi-icon">€</span><span className="kpi-copy"><strong>Valor presupuestado</strong><b>{formatBudgetMoney(kpis.budgetedValue)}</b><small>Pipeline económico ↑</small></span></a>
-      </section>
-
+      <section className="client-kpis"><div className="kpi-card"><span className="kpi-icon">P</span><span className="kpi-copy"><strong>Presupuestos</strong><b>{proposals.length}</b><small>Total creados</small></span></div><div className="kpi-card"><span className="kpi-icon">B</span><span className="kpi-copy"><strong>Borradores</strong><b>{proposals.filter((item) => item.status === "draft").length}</b><small>En preparación</small></span></div><div className="kpi-card"><span className="kpi-icon">A</span><span className="kpi-copy"><strong>Aceptados</strong><b>{proposals.filter((item) => item.status === "accepted").length}</b><small>Cerrados con cliente</small></span></div><div className="kpi-card"><span className="kpi-icon">€</span><span className="kpi-copy"><strong>Pipeline</strong><b>{money(pipeline)}</b><small>Venta presupuestada</small></span></div></section>
       <section className="clients-layout">
-        <div className="card clients-main" id="presupuestos-listado">
-          <div className="client-filters">
-            <input className="input" placeholder="Buscar presupuesto..." value={search} onChange={(event) => setSearch(event.target.value)} />
-            <label>Estado<select value={status} onChange={(event) => setStatus(event.target.value)}><option>Todos</option>{budgetStatuses.map((item) => <option key={item} value={item}>{budgetStatusConfig[item].label}</option>)}</select></label>
-            <label>Responsable<select value={owner} onChange={(event) => setOwner(event.target.value)}><option>Todos</option>{budgetOwners.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-            <label>Margen<select value={margin} onChange={(event) => setMargin(event.target.value)}>{marginFilters.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-            <details className="new-client-drawer">
-              <summary className="btn">+ Nuevo presupuesto</summary>
-              <form className="form" onSubmit={createBudget}>
-                <label>Cliente<input className="input" value={draft.clientName} onChange={(event) => setDraft((current) => ({ ...current, clientName: event.target.value }))} placeholder="Juan Pérez" /></label>
-                <label>Expediente<input className="input" value={draft.caseCode} onChange={(event) => setDraft((current) => ({ ...current, caseCode: event.target.value }))} placeholder="EXP-2026-0001" /></label>
-                <label>Destino<input className="input" value={draft.destination} onChange={(event) => setDraft((current) => ({ ...current, destination: event.target.value }))} placeholder="Japón" /></label>
-                <div className="grid grid-2"><label>Responsable<select value={draft.responsibleName} onChange={(event) => setDraft((current) => ({ ...current, responsibleName: event.target.value }))}>{budgetOwners.map((item) => <option key={item} value={item}>{item}</option>)}</select></label><label>Margen inicial %<input className="input" type="number" value={draft.marginPct} onChange={(event) => setDraft((current) => ({ ...current, marginPct: Number(event.target.value) }))} /></label></div>
-                <button className="btn" type="submit">Crear presupuesto</button>
-              </form>
-            </details>
-          </div>
-          {message ? <p className="client-message">{message}</p> : null}
-
-          <table>
-            <thead><tr><th>Presupuesto</th><th>Cliente</th><th>Expediente</th><th>Estado</th><th>Margen</th><th>Venta</th><th>Responsable</th><th>Última actividad</th><th></th></tr></thead>
-            <tbody>{filtered.map((item) => <tr key={item.id} className={item.id === selected.id ? "selected-row" : ""}><td><button className="table-link" type="button" onClick={() => setSelectedId(item.id)}><strong>{item.code}</strong></button></td><td>{item.clientName}</td><td><a href={`/expedientes/${item.caseCode}`}>{item.caseCode}</a></td><td><span className={`status-pill ${toneClass(budgetStatusConfig[item.status].tone)}`}>{budgetStatusConfig[item.status].label}</span></td><td>{formatBudgetPercent(item.expectedMarginPct)}</td><td>{formatBudgetMoney(item.totalSalePrice)}</td><td>{item.responsibleName}</td><td>{item.lastActivityAt}</td><td><details><summary className="icon-button">⋮</summary><div className="card" style={{ position: "absolute", right: 24, zIndex: 10 }}><a href="/propuestas/demo-public-token">Ver landing privada</a><br/><button className="table-link" type="button" onClick={createVersion}>Crear nueva versión</button><br/><button className="table-link" type="button" onClick={sendBudget}>Enviar al cliente</button><br/><button className="table-link" type="button" onClick={acceptBudget}>Marcar aceptado</button><br/><a href="/compras">Ver compras esperadas</a></div></details></td></tr>)}</tbody>
-          </table>
-          <div className="table-pagination"><span>Mostrando 1 a {filtered.length} de {budgets.length} presupuestos</span><span><button className="btn secondary">‹</button><button className="btn">1</button><button className="btn secondary">2</button><button className="btn secondary">3</button><button className="btn secondary">›</button></span></div>
-        </div>
-
-        <aside className="client-side card">
-          <div className="client-side-header"><div><h2>{selected.code}</h2><p><strong>{selected.clientName}</strong> · {selected.caseCode}<br/>{selected.destination}{selected.startDate ? ` · ${selected.startDate} → ${selected.endDate}` : ""}</p></div><span className={`status-pill ${toneClass(budgetStatusConfig[selected.status].tone)}`}>{budgetStatusConfig[selected.status].label}</span></div>
-          <section className="side-section"><h3>Datos rápidos</h3><table><tbody><tr><th>Versión</th><td>v{selected.currentVersion}</td></tr><tr><th>Responsable</th><td>{selected.responsibleName}</td></tr><tr><th>Margen</th><td>{formatBudgetPercent(selected.expectedMarginPct)}</td></tr><tr><th>Venta</th><td>{formatBudgetMoney(selected.totalSalePrice)}</td></tr></tbody></table></section>
-          <section className="side-section"><h3>Resumen financiero</h3><table><tbody><tr><th>Coste previsto</th><td>{formatBudgetMoney(selected.totalCostBudget)}</td></tr><tr><th>Venta</th><td>{formatBudgetMoney(selected.totalSalePrice)}</td></tr><tr><th>Beneficio previsto</th><td>{formatBudgetMoney(selected.expectedProfit)}</td></tr><tr><th>Coste real</th><td>{formatBudgetMoney(selected.realCost || 0)}</td></tr><tr><th>Desviación</th><td>{formatBudgetMoney((selected.realCost || selected.totalCostBudget) - selected.totalCostBudget)}</td></tr></tbody></table></section>
-          <section className="side-section"><h3>Líneas principales</h3>{demoBudgetLines.map((line) => <p key={line.id}><strong>{line.description}</strong><br/><small>{line.providerName} · coste {formatBudgetMoney(line.costBudget)} · venta {formatBudgetMoney(line.salePrice)}</small></p>)}</section>
-          <section className="side-section"><h3>Versiones snapshots</h3>{demoBudgetVersions.map((version) => <p key={version.id}><span className={`status-pill ${toneClass(budgetStatusConfig[version.status as BudgetStatus].tone)}`}>v{version.versionNumber} · {budgetStatusConfig[version.status as BudgetStatus].label}</span><br/><small>{version.createdAt} · {version.summary}</small></p>)}</section>
-          <section className="side-section"><h3>Estado del flujo</h3>{flow.map((step) => <p key={step.label}><span className={`status-pill ${step.status === "completed" ? "status-progress" : step.status === "blocked" ? "priority-urgent" : ""}`}>{flowLabel(step.status)}</span> <strong>{step.label}</strong></p>)}</section>
-          <section className="side-section"><h3>Alertas</h3>{alerts.length ? alerts.map((alert) => <p key={alert} className="danger-text">⚠ {alert}</p>) : <p>Sin alertas críticas.</p>}</section>
-          <section className="side-actions"><h3>Acciones rápidas</h3><a className="quick-action" href="/propuestas/demo-public-token">Ver presupuesto completo <span>→</span></a><button className="quick-action" type="button" onClick={() => selected.status === "accepted" ? setMessage("La versión aceptada no se edita: crea nueva versión o revisión controlada.") : setMessage(`Editor de líneas listo. Precio ejemplo: ${formatBudgetMoney(calculateSalePrice(100, selected.expectedMarginPct))}`)}>Editar líneas <span>→</span></button><button className="quick-action" type="button" onClick={createVersion}>Ver versiones <span>→</span></button><button className="quick-action primary" type="button" onClick={sendBudget}>Enviar al cliente <span>→</span></button><button className="quick-action" type="button" onClick={acceptBudget}>Marcar aceptado <span>→</span></button></section>
-          <div className="client-footnote">Cada presupuesto se versiona. La versión aceptada bloquea fórmula, precio y condiciones.</div>
-        </aside>
+        <div className="card clients-main"><div className="client-filters client-filters-simple"><input className="input" placeholder="Buscar presupuesto..." value={query} onChange={(event) => setQuery(event.target.value)} /><details className="new-client-drawer"><summary className="btn">Nuevo presupuesto</summary><form className="form" onSubmit={createProposal}><label>Expediente<select value={caseId} onChange={(event) => setCaseId(event.target.value)}><option value="">Selecciona expediente</option>{cases.map((item) => <option key={item.id} value={item.id}>{item.case_code} · {item.clients?.display_name || item.destination || item.title || "Expediente"}</option>)}</select></label>{cases.length === 0 ? <p className="client-message">Primero crea un expediente.</p> : null}<button className="btn" type="submit" disabled={saving || cases.length === 0}>{saving ? "Guardando..." : "Crear presupuesto"}</button></form></details></div>{message ? <p className="client-message">{message}</p> : null}{proposals.length === 0 ? <div className="empty-state"><h2>Todavía no hay presupuestos</h2><p>Crea un presupuesto desde un expediente.</p></div> : <table><thead><tr><th>Expediente</th><th>Cliente</th><th>Estado</th><th>Líneas</th><th>Venta</th></tr></thead><tbody>{filtered.map((proposal) => <tr key={proposal.id} className={proposal.id === selected?.id ? "selected-row" : ""}><td><button className="table-link" type="button" onClick={() => setSelectedId(proposal.id)}><strong>{proposal.cases?.case_code || "Presupuesto"}</strong></button></td><td>{proposal.cases?.clients?.display_name || "—"}</td><td><select value={proposal.status || "draft"} onChange={(event) => void changeStatus(proposal.id, event.target.value)} disabled={saving}>{statuses.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></td><td>{linesOf(proposal).length}</td><td>{money(totals(proposal).sale)}</td></tr>)}</tbody></table>}</div>
+        <aside className="client-side card">{selected ? <><div className="client-side-header"><div><h2>{selected.cases?.case_code || "Presupuesto"}</h2><p>{selected.cases?.clients?.display_name || "Sin cliente"}<br />{selected.cases?.destination || "Sin destino"}</p></div><span className="status-pill status-progress">{statusText(selected.status)}</span></div><section className="side-section"><h3>Totales</h3><table><tbody><tr><th>Coste</th><td>{money(selectedTotals.cost)}</td></tr><tr><th>Venta</th><td>{money(selectedTotals.sale)}</td></tr><tr><th>Beneficio</th><td>{money(selectedTotals.profit)}</td></tr><tr><th>Margen</th><td>{selectedTotals.margin ? `${selectedTotals.margin.toFixed(1)}%` : "—"}</td></tr></tbody></table></section><section className="side-section"><h3>Líneas</h3>{linesOf(selected).length ? <table><tbody>{linesOf(selected).map((item) => <tr key={item.id}><td>{item.description_public}<br /><small>{item.supplier_name || "Sin proveedor"}</small></td><td>{money(item.sale_price)}</td><td><button className="link-button" type="button" onClick={() => void removeLine(item.id)} disabled={saving}>Eliminar</button></td></tr>)}</tbody></table> : <p>Sin líneas todavía.</p>}</section><section className="side-section"><h3>Añadir línea</h3><form className="form" onSubmit={addLine}><label>Descripción<input className="input" value={line.description_public} onChange={(event) => setLine((current) => ({ ...current, description_public: event.target.value }))} /></label><label>Proveedor<input className="input" value={line.supplier_name} onChange={(event) => setLine((current) => ({ ...current, supplier_name: event.target.value }))} /></label><div className="grid grid-2"><label>Coste<input className="input" type="number" value={line.cost_budget} onChange={(event) => setLine((current) => ({ ...current, cost_budget: event.target.value }))} /></label><label>Margen %<input className="input" type="number" value={line.margin_applied} onChange={(event) => setLine((current) => ({ ...current, margin_applied: event.target.value }))} /></label></div><button className="btn" type="submit" disabled={saving}>{saving ? "Guardando..." : "Añadir línea"}</button></form></section><section className="side-actions"><h3>Estado</h3>{statuses.map(([value, label]) => <button key={value} className={value === selected.status ? "quick-action primary" : "quick-action"} type="button" onClick={() => void changeStatus(selected.id, value)} disabled={saving}>{label}<span>→</span></button>)}</section></> : <div className="empty-state"><h2>Sin presupuesto seleccionado</h2><p>Selecciona o crea un presupuesto.</p></div>}</aside>
       </section>
     </div>
   );
