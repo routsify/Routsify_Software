@@ -46,6 +46,7 @@ assert(runtime.includes('ROUTSIFY_ALLOW_PUBLIC_DEMO === "true"'), "Server public
 assert(!runtime.includes('ROUTSIFY_ALLOW_PUBLIC_DEMO !== "false"'), "Public demo must not be allowed by default");
 
 const browser = read("lib/supabase-browser.ts");
+assert(browser.includes("createBrowserClient"), "Browser auth must use Supabase SSR browser client for cookies");
 assert(browser.includes('NEXT_PUBLIC_DEMO_MODE === "true"'), "Browser demo mode must be explicit");
 assert(browser.includes('NEXT_PUBLIC_ALLOW_PUBLIC_DEMO === "true"'), "Browser demo button must be explicit");
 
@@ -53,8 +54,12 @@ const middleware = read("middleware.ts");
 for (const token of ["/api/routsify", "/api/documentos/confirm-upload", "authentication_required", "isPublicDemoAllowed"]) assert(middleware.includes(token), `Missing middleware token: ${token}`);
 
 const login = read("app/login/LoginForm.tsx");
-for (const token of ["signInWithPassword", "ensure_profile_for_current_user", "NEXT_PUBLIC_SUPABASE_URL", "Entrar"]) assert(login.includes(token), `Missing login token: ${token}`);
+for (const token of ["signInWithPassword", "ensure_profile_for_current_user", "resetPasswordForEmail", "He olvidado mi contraseña", "showSecret", "safeNext"]) assert(login.includes(token), `Missing login token: ${token}`);
+assert(!login.includes("disabled={!canUseAuth}"), "Login inputs must stay writable even when platform env is missing");
 assert(!login.includes("Puedes entrar sin usuario con el botón Entrar en demo"), "Login must not suggest demo by default");
+
+const loginPage = read("app/login/page.tsx");
+for (const token of ["Recuperación por email", "Sesión compatible con middleware", "Demo solo si se activa explícitamente"]) assert(loginPage.includes(token), `Missing login page token: ${token}`);
 
 const nav = read("lib/navigation.ts");
 for (const label of ["Inicio", "Clientes", "Expedientes", "Presupuestos", "Compras / Proveedores", "Informes", "Ajustes"]) assert(nav.includes(label), `Missing module: ${label}`);
