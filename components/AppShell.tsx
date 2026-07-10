@@ -32,16 +32,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </Link>
           ))}
         </nav>
-        <div className="sidebar-footer">
-          <span>Ayuda</span>
-          <small>Operar mejor. Viajar más lejos.</small>
-        </div>
       </aside>
       <main className="main">
         <div className="topbar">
           <div className="searchbox">Buscar expedientes, clientes, reservas...</div>
           <div className="topbar-actions">
-            <Link className="topbar-icon" href="/solicitudes" title="Nueva solicitud">+</Link>
             <details className="notification">
               <summary className="topbar-icon" title="Notificaciones">
                 <span>!</span>
@@ -61,11 +56,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <a className="notification-all" href="/hoy">Ver todas</a>
               </div>
             </details>
-            <Link className="topbar-icon" href="/hoy" title="Acciones del día">□</Link>
-            <div className="user-chip">
-              <span className="avatar">MG</span>
-              <span><strong>María García</strong><small>Operaciones</small></span>
-            </div>
             <AuthStatus />
           </div>
         </div>
