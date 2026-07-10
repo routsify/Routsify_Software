@@ -1,147 +1,207 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
-import {
-  CreateExpedienteInput,
-  Expediente,
-  buildExpedienteFlow,
-  canCloseCase,
-  caseBlockers,
-  createDemoExpediente,
-  demoExpedientes,
-  expedienteKpis,
-  expedienteOwners,
-  expedientePriorities,
-  expedienteStatuses,
-  filterExpedientes,
-  formatCaseMoney,
-  formatCasePercent,
-  getCaseTimeline,
-  statusConfig,
-} from "@/lib/case-master";
 
-const emptyDraft: CreateExpedienteInput = {
-  clientName: "",
-  destination: "",
-  startDate: "",
-  endDate: "",
-  travelersCount: 2,
-  responsibleName: "Laura Pérez",
-  priority: "media",
-  internalNotes: "",
+type CaseRow = {
+  id: string;
+  case_code: string;
+  title?: string | null;
+  status?: string | null;
+  destination?: string | null;
+  trip_start?: string | null;
+  trip_end?: string | null;
+  next_action?: string | null;
+  blocker?: string | null;
+  accepted_value?: number | string | null;
+  currency?: string | null;
+  final_notes?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  clients?: { display_name?: string | null; email?: string | null; phone?: string | null } | null;
 };
 
-function formatDates(item: Expediente) {
-  if (!item.startDate && !item.endDate) return "Sin fechas";
-  return `${item.startDate || "—"} → ${item.endDate || "—"}`;
+type Draft = { client_name: string; destination: string; trip_start: string; trip_end: string; final_notes: string };
+
+const emptyDraft: Draft = { client_name: "", destination: "", trip_start: "", trip_end: "", final_notes: "" };
+const statuses = [
+  ["new_lead", "Nuevo"],
+  ["budget_draft", "Presupuesto en preparación"],
+  ["proposal_sent", "Presupuesto enviado"],
+  ["accepted", "Aceptado"],
+  ["in_progress", "En curso"],
+  ["closed", "Cerrado"],
+];
+
+function normalizeCase(input: unknown): CaseRow {
+  const row = input as Record<string, unknown>;
+  const code = String(row.case_code || row.code || "EXP-SIN-CODIGO");
+  return {
+    id: String(row.id || code),
+    case_code: code,
+    title: row.title ? String(row.title) : null,
+    status: row.status ? String(row.status) : "new_lead",
+    destination: row.destination ? String(row.destination) : null,
+    trip_start: row.trip_start ? String(row.trip_start) : null,
+    trip_end: row.trip_end ? String(row.trip_end) : null,
+    next_action: row.next_action ? String(row.next_action) : null,
+    blocker: row.blocker ? String(row.blocker) : null,
+    accepted_value: typeof row.accepted_value === "number" || typeof row.accepted_value === "string" ? row.accepted_value : null,
+    currency: row.currency ? String(row.currency) : "EUR",
+    final_notes: row.final_notes ? String(row.final_notes) : null,
+    created_at: row.created_at ? String(row.created_at) : null,
+    updated_at: row.updated_at ? String(row.updated_at) : null,
+    clients: row.clients && typeof row.clients === "object" ? row.clients as CaseRow["clients"] : null,
+  };
 }
 
-function flowLabel(status: string) {
-  if (status === "completed") return "Completado";
-  if (status === "in_progress") return "En curso";
-  if (status === "blocked") return "Bloqueado";
-  return "Pendiente";
+function statusLabel(status?: string | null) {
+  return statuses.find(([value]) => value === status)?.[1] || status || "Nuevo";
 }
 
-function toneClass(tone: string) {
-  if (tone === "green") return "status-progress";
-  if (tone === "amber") return "priority-normal";
-  if (tone === "purple") return "status-pending";
-  if (tone === "blue") return "status-progress";
-  return "status-pill";
+function money(value?: string | number | null, currency = "EUR") {
+  const numeric = Number(value || 0);
+  if (!numeric) return "—";
+  return new Intl.NumberFormat("es-ES", { style: "currency", currency }).format(numeric);
 }
 
-export function CasesManager() {
-  const [items, setItems] = useState<Expediente[]>(demoExpedientes);
-  const [selectedId, setSelectedId] = useState(demoExpedientes[0].id);
+function dateRange(item: CaseRow) {
+  if (!item.trip_start && !item.trip_end) return "Sin fechas";
+  return `${item.trip_start || "—"} → ${item.trip_end || "—"}`;
+}
+
+export function CasesManager({ initialCases = [] }: { initialCases?: unknown[] }) {
+  const [items, setItems] = useState<CaseRow[]>(() => initialCases.map(normalizeCase));
+  const [selectedId, setSelectedId] = useState<string | null>(() => items[0]?.id || null);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("Todos");
-  const [owner, setOwner] = useState("Todos");
-  const [priority, setPriority] = useState("Todos");
-  const [draft, setDraft] = useState<CreateExpedienteInput>(emptyDraft);
+  const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [message, setMessage] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [savingId, setSavingId] = useState<string | null>(null);
 
-  const kpis = useMemo(() => expedienteKpis(items), [items]);
-  const filtered = useMemo(() => filterExpedientes(items, { search, status, owner, priority }), [items, search, status, owner, priority]);
-  const selected = items.find((item) => item.id === selectedId) || filtered[0] || items[0];
-  const selectedFlow = useMemo(() => buildExpedienteFlow(selected), [selected]);
-  const selectedTimeline = useMemo(() => getCaseTimeline(selected), [selected]);
-  const selectedBlockers = useMemo(() => caseBlockers(selected), [selected]);
+  const filtered = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return items.filter((item) => {
+      const matchesStatus = status === "Todos" || item.status === status;
+      const haystack = [item.case_code, item.title, item.destination, item.clients?.display_name, item.clients?.email, item.next_action].filter(Boolean).join(" ").toLowerCase();
+      return matchesStatus && (!needle || haystack.includes(needle));
+    });
+  }, [items, search, status]);
 
-  function updateDraft<K extends keyof CreateExpedienteInput>(key: K, value: CreateExpedienteInput[K]) {
+  const selected = items.find((item) => item.id === selectedId) || filtered[0] || items[0] || null;
+  const active = items.filter((item) => item.status !== "closed" && item.status !== "cerrado").length;
+  const pending = items.filter((item) => item.next_action || item.blocker).length;
+  const closed = items.filter((item) => item.status === "closed" || item.status === "cerrado").length;
+  const acceptedValue = items.reduce((sum, item) => sum + Number(item.accepted_value || 0), 0);
+
+  function updateDraft<K extends keyof Draft>(key: K, value: Draft[K]) {
     setDraft((current) => ({ ...current, [key]: value }));
   }
 
-  function createCase(event: FormEvent<HTMLFormElement>) {
+  async function createCase(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!draft.clientName.trim() || !draft.destination.trim()) {
-      setMessage("Para crear expediente hacen falta cliente y destino.");
+    const clientName = draft.client_name.trim();
+    const destination = draft.destination.trim();
+    if (!clientName || !destination) {
+      setMessage("Indica cliente y destino para crear el expediente.");
       return;
     }
-    const result = createDemoExpediente(draft, items);
-    setItems((current) => [result.expediente, ...current]);
-    setSelectedId(result.expediente.id);
+
+    setSaving(true);
+    setMessage(null);
+    const response = await fetch("/api/routsify/cases", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...draft, client_name: clientName, destination }),
+    });
+    const result = await response.json().catch(() => null);
+    setSaving(false);
+
+    if (!response.ok || !result?.ok) {
+      setMessage("No se pudo crear el expediente.");
+      return;
+    }
+
+    const created = normalizeCase(result.data);
+    setItems((current) => [created, ...current.filter((item) => item.id !== created.id)]);
+    setSelectedId(created.id);
     setDraft(emptyDraft);
-    setMessage(`Expediente ${result.expediente.code} creado en modo demo. Timeline y auditoría quedan simulados.`);
+    setMessage("Expediente creado correctamente.");
   }
 
-  function updateSelected<K extends keyof Expediente>(key: K, value: Expediente[K]) {
-    setItems((current) => current.map((item) => item.id === selected.id ? { ...item, [key]: value, updatedAt: "Ahora", lastActivityAt: "Ahora" } : item));
-    setMessage(`Cambio demo guardado: ${String(key)}. En real generará timeline y auditoría.`);
-  }
+  async function updateStatus(id: string, nextStatus: string) {
+    setSavingId(id);
+    setMessage(null);
+    const response = await fetch(`/api/routsify/cases/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ status: nextStatus, next_action: nextStatus === "closed" ? "Expediente cerrado" : "Revisar siguiente paso" }),
+    });
+    const result = await response.json().catch(() => null);
+    setSavingId(null);
 
-  function changeStatus(nextStatus: Expediente["status"]) {
-    setItems((current) => current.map((item) => item.id === selected.id ? { ...item, status: nextStatus, nextAction: statusConfig[nextStatus].nextAction, updatedAt: "Ahora", lastActivityAt: "Ahora" } : item));
-    setMessage(`Estado cambiado a ${statusConfig[nextStatus].label}. Próxima acción recalculada.`);
+    if (!response.ok || !result?.ok) {
+      setMessage("No se pudo actualizar el expediente.");
+      return;
+    }
+
+    const updated = normalizeCase(result.data);
+    setItems((current) => current.map((item) => item.id === id ? updated : item));
+    setSelectedId(updated.id);
+    setMessage("Estado actualizado correctamente.");
   }
 
   return (
     <div className="clients-page">
       <section className="client-kpis">
-        <a className="kpi-card" href="#expedientes-listado"><span className="kpi-icon">▣</span><span className="kpi-copy"><strong>Expedientes activos</strong><b>{kpis.activeCases}</b><small>+12 vs. mes anterior ↑</small></span></a>
-        <a className="kpi-card" href="#expedientes-listado"><span className="kpi-icon">!</span><span className="kpi-copy"><strong>Pendientes de acción</strong><b>{kpis.pendingActionCases}</b><small>Requieren atención</small></span></a>
-        <a className="kpi-card" href="/compras"><span className="kpi-icon">👥</span><span className="kpi-copy"><strong>Proveedores pendientes</strong><b>{kpis.supplierPendingCases}</b><small>A la espera de respuesta</small></span></a>
-        <a className="kpi-card" href="/propuestas"><span className="kpi-icon">€</span><span className="kpi-copy"><strong>Valor aceptado</strong><b>{formatCaseMoney(kpis.acceptedValueTotal)}</b><small>Presupuestos aceptados ↑</small></span></a>
+        <div className="kpi-card"><span className="kpi-icon">E</span><span className="kpi-copy"><strong>Expedientes</strong><b>{items.length}</b><small>Total registrados</small></span></div>
+        <div className="kpi-card"><span className="kpi-icon">A</span><span className="kpi-copy"><strong>Activos</strong><b>{active}</b><small>En seguimiento</small></span></div>
+        <div className="kpi-card"><span className="kpi-icon">P</span><span className="kpi-copy"><strong>Pendientes</strong><b>{pending}</b><small>Con próxima acción</small></span></div>
+        <div className="kpi-card"><span className="kpi-icon">€</span><span className="kpi-copy"><strong>Vendido</strong><b>{money(acceptedValue)}</b><small>Valor aceptado</small></span></div>
       </section>
 
       <section className="clients-layout">
         <div className="card clients-main" id="expedientes-listado">
-          <div className="client-filters">
+          <div className="client-filters client-filters-simple">
             <input className="input" placeholder="Buscar expediente..." value={search} onChange={(event) => setSearch(event.target.value)} />
-            <label>Estado<select value={status} onChange={(event) => setStatus(event.target.value)}><option>Todos</option>{expedienteStatuses.map((item) => <option key={item} value={item}>{statusConfig[item].label}</option>)}</select></label>
-            <label>Responsable<select value={owner} onChange={(event) => setOwner(event.target.value)}><option>Todos</option>{expedienteOwners.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-            <label>Prioridad<select value={priority} onChange={(event) => setPriority(event.target.value)}><option>Todos</option>{expedientePriorities.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+            <label>Estado<select value={status} onChange={(event) => setStatus(event.target.value)}><option>Todos</option>{statuses.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
             <details className="new-client-drawer">
-              <summary className="btn">+ Nuevo expediente</summary>
+              <summary className="btn">Nuevo expediente</summary>
               <form className="form" onSubmit={createCase}>
-                <label>Cliente<input className="input" value={draft.clientName} onChange={(event) => updateDraft("clientName", event.target.value)} placeholder="Juan Pérez" /></label>
-                <label>Destino<input className="input" value={draft.destination} onChange={(event) => updateDraft("destination", event.target.value)} placeholder="Japón" /></label>
-                <div className="grid grid-2"><label>Inicio<input className="input" type="date" value={draft.startDate} onChange={(event) => updateDraft("startDate", event.target.value)} /></label><label>Fin<input className="input" type="date" value={draft.endDate} onChange={(event) => updateDraft("endDate", event.target.value)} /></label></div>
-                <div className="grid grid-2"><label>Viajeros<input className="input" type="number" min="1" value={draft.travelersCount} onChange={(event) => updateDraft("travelersCount", Number(event.target.value))} /></label><label>Responsable<select value={draft.responsibleName} onChange={(event) => updateDraft("responsibleName", event.target.value)}>{expedienteOwners.map((item) => <option key={item} value={item}>{item}</option>)}</select></label></div>
-                <label>Prioridad<select value={draft.priority} onChange={(event) => updateDraft("priority", event.target.value as Expediente["priority"])}>{expedientePriorities.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-                <label>Notas internas<textarea className="input" rows={3} value={draft.internalNotes} onChange={(event) => updateDraft("internalNotes", event.target.value)} /></label>
-                <button className="btn" type="submit">Crear expediente</button>
+                <label>Cliente<input className="input" value={draft.client_name} onChange={(event) => updateDraft("client_name", event.target.value)} /></label>
+                <label>Destino<input className="input" value={draft.destination} onChange={(event) => updateDraft("destination", event.target.value)} /></label>
+                <div className="grid grid-2"><label>Inicio<input className="input" type="date" value={draft.trip_start} onChange={(event) => updateDraft("trip_start", event.target.value)} /></label><label>Fin<input className="input" type="date" value={draft.trip_end} onChange={(event) => updateDraft("trip_end", event.target.value)} /></label></div>
+                <label>Notas<textarea className="input" rows={3} value={draft.final_notes} onChange={(event) => updateDraft("final_notes", event.target.value)} /></label>
+                <button className="btn" type="submit" disabled={saving}>{saving ? "Guardando..." : "Guardar expediente"}</button>
               </form>
             </details>
           </div>
           {message ? <p className="client-message">{message}</p> : null}
 
-          <table>
-            <thead><tr><th>Expediente</th><th>Cliente</th><th>Destino</th><th>Estado</th><th>Próxima acción</th><th>Responsable</th><th>Última actividad</th><th></th></tr></thead>
-            <tbody>{filtered.map((item) => <tr key={item.id} className={item.id === selected.id ? "selected-row" : ""}><td><button className="table-link" type="button" onClick={() => setSelectedId(item.id)}><strong>{item.code}</strong></button></td><td>{item.clientName}</td><td>{item.destination}</td><td><span className={`status-pill ${toneClass(statusConfig[item.status].tone)}`}>{statusConfig[item.status].label}</span></td><td>{item.nextAction}</td><td>{item.responsibleName}</td><td>{item.lastActivityAt}</td><td><details><summary className="icon-button">⋮</summary><div className="card" style={{ position: "absolute", right: 24, zIndex: 10 }}><a href={`/expedientes/${item.code}`}>Ver expediente</a><br/><button className="table-link" type="button" onClick={() => setSelectedId(item.id)}>Ver timeline</button><br/><a href="/propuestas">Abrir presupuesto</a><br/><a href="/compras">Ver compras</a><br/><button className="table-link" type="button" onClick={() => updateSelected("priority", item.priority === "alta" ? "media" : "alta")}>Cambiar prioridad</button></div></details></td></tr>)}</tbody>
-          </table>
-          <div className="table-pagination"><span>Mostrando 1 a {filtered.length} de {items.length} expedientes</span><span><button className="btn secondary">‹</button><button className="btn">1</button><button className="btn secondary">2</button><button className="btn secondary">3</button><button className="btn secondary">›</button></span></div>
+          {items.length === 0 ? (
+            <div className="empty-state"><h2>Todavía no hay expedientes</h2><p>Crea tu primer expediente para empezar a trabajar.</p></div>
+          ) : filtered.length === 0 ? (
+            <div className="empty-state"><h2>No hay coincidencias</h2><p>Cambia la búsqueda o el filtro.</p></div>
+          ) : (
+            <table>
+              <thead><tr><th>Expediente</th><th>Cliente</th><th>Destino</th><th>Fechas</th><th>Estado</th><th>Próxima acción</th></tr></thead>
+              <tbody>{filtered.map((item) => <tr key={item.id} className={item.id === selected?.id ? "selected-row" : ""}><td><button className="table-link" type="button" onClick={() => setSelectedId(item.id)}><strong>{item.case_code}</strong></button></td><td>{item.clients?.display_name || "—"}</td><td>{item.destination || "—"}</td><td>{dateRange(item)}</td><td><select value={item.status || "new_lead"} onChange={(event) => void updateStatus(item.id, event.target.value)} disabled={savingId === item.id}>{statuses.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></td><td>{item.next_action || "—"}</td></tr>)}</tbody>
+            </table>
+          )}
         </div>
 
         <aside className="client-side card">
-          <div className="client-side-header"><div><h2>{selected.code}</h2><p><strong>{selected.clientName}</strong> · {selected.destination}<br/>{formatDates(selected)}</p></div><span className={`status-pill ${toneClass(statusConfig[selected.status].tone)}`}>{statusConfig[selected.status].label}</span></div>
-          <section className="side-section"><h3>Situación rápida</h3><table><tbody><tr><th>Próxima acción</th><td>{selected.nextAction}</td></tr><tr><th>Bloqueo</th><td>{selected.blocker || "Ninguno"}</td></tr><tr><th>Responsable</th><td>{selected.responsibleName}</td></tr><tr><th>Prioridad</th><td><span className={`status-pill priority-${selected.priority === "alta" ? "high" : selected.priority === "media" ? "normal" : "low"}`}>{selected.priority}</span></td></tr></tbody></table></section>
-          <section className="side-section"><h3>Resumen</h3><table><tbody><tr><th>Viajeros</th><td>{selected.travelersSummary}</td></tr><tr><th>Valor aceptado</th><td>{formatCaseMoney(selected.acceptedValue)}</td></tr><tr><th>Margen previsto</th><td>{formatCasePercent(selected.estimatedMarginPct)}</td></tr><tr><th>Cierre</th><td>{canCloseCase(selected) ? "Permitido" : "Bloqueado"}</td></tr></tbody></table></section>
-          <section className="side-section"><h3>Timeline <a href={`/api/routsify/cases/${selected.code}/timeline`}>Ver API</a></h3><div className="timeline">{selectedTimeline.map((event) => <div key={event.id}><strong>{event.createdAt} · {event.title}</strong><p>{event.userName}</p></div>)}</div></section>
-          <section className="side-section"><h3>Estado del flujo</h3>{selectedFlow.slice(0, 5).map((step) => <p key={step.key}><span className={`status-pill ${step.status === "completed" ? "status-progress" : step.status === "in_progress" ? "priority-normal" : step.status === "blocked" ? "priority-urgent" : ""}`}>{flowLabel(step.status)}</span> <strong>{step.label}</strong></p>)}</section>
-          <section className="side-section"><h3>Bloqueos</h3>{selectedBlockers.length ? selectedBlockers.map((blocker) => <p key={blocker} className="danger-text">⚠ {blocker}</p>) : <p>Sin bloqueos. Puede avanzar.</p>}</section>
-          <section className="side-actions"><h3>Acciones rápidas</h3><a className="quick-action" href={`/expedientes/${selected.code}`}>Ver expediente completo <span>→</span></a><a className="quick-action" href="/propuestas">{selected.budgetId ? "Abrir presupuesto" : "Crear presupuesto"} <span>→</span></a><a className="quick-action" href="/compras">Ver compras <span>→</span></a><button className="quick-action primary" type="button" onClick={() => selectedFlow.find((step) => step.key === "contract")?.status === "pending" ? setMessage("No puedes generar contrato si falta documentación aprobada, precio aceptado o cliente vinculado.") : setMessage("Contrato generado en demo con preflight revisado.")}>Generar contrato <span>→</span></button><button className="quick-action" type="button" onClick={() => canCloseCase(selected) ? changeStatus("cerrado") : setMessage("No se puede cerrar: revisa contrato, pago, Holded o compras pendientes.")}>Cerrar expediente <span>→</span></button></section>
-          <div className="client-footnote">El expediente es la unidad central de trabajo. Toda la información y actividad se gestiona aquí.</div>
+          {selected ? (
+            <>
+              <div className="client-side-header"><div><h2>{selected.case_code}</h2><p><strong>{selected.clients?.display_name || "Sin cliente"}</strong><br />{selected.destination || "Sin destino"} · {dateRange(selected)}</p></div><span className="status-pill status-progress">{statusLabel(selected.status)}</span></div>
+              <section className="side-section"><h3>Datos generales</h3><table><tbody><tr><th>Título</th><td>{selected.title || "—"}</td></tr><tr><th>Estado</th><td>{statusLabel(selected.status)}</td></tr><tr><th>Próxima acción</th><td>{selected.next_action || "—"}</td></tr><tr><th>Bloqueo</th><td>{selected.blocker || "Ninguno"}</td></tr></tbody></table></section>
+              <section className="side-section"><h3>Cliente</h3><table><tbody><tr><th>Nombre</th><td>{selected.clients?.display_name || "—"}</td></tr><tr><th>Email</th><td>{selected.clients?.email || "—"}</td></tr><tr><th>Teléfono</th><td>{selected.clients?.phone || "—"}</td></tr></tbody></table></section>
+              <section className="side-section"><h3>Notas</h3><p>{selected.final_notes || "Sin notas internas."}</p></section>
+              <section className="side-actions"><h3>Acciones</h3><a className="quick-action primary" href="/propuestas">Crear presupuesto <span>→</span></a><a className="quick-action" href="/compras">Ver compras <span>→</span></a>{statuses.map(([value, label]) => <button key={value} className={value === selected.status ? "quick-action primary" : "quick-action"} type="button" onClick={() => void updateStatus(selected.id, value)} disabled={savingId === selected.id}>{label}<span>→</span></button>)}</section>
+            </>
+          ) : (
+            <div className="empty-state"><h2>Sin expediente seleccionado</h2><p>Selecciona o crea un expediente para ver su ficha.</p></div>
+          )}
         </aside>
       </section>
     </div>
