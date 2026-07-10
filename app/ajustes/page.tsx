@@ -1,6 +1,6 @@
 import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
-import { SettingsManager } from "./SettingsManager";
+import { ProductionSettings } from "./ProductionSettings";
 
 export default function SettingsPage() {
   return (
@@ -8,9 +8,9 @@ export default function SettingsPage() {
       <PageHeader
         eyebrow="Ajustes"
         title="Ajustes del sistema"
-        description="Configuración básica de empresa, márgenes, presupuestos, compras, seguridad e integraciones. Solo se muestran ajustes editables y seguros."
+        description="Configuración básica de empresa, márgenes, presupuestos, compras, fiscalidad e integraciones. Sin acciones simuladas ni botones técnicos peligrosos."
       />
-      <SettingsManager />
+      <ProductionSettings />
     </AppShell>
   );
 }
