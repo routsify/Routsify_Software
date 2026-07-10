@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { isPublicDemoAllowed, shouldBlockDemoInProduction } from "@/lib/runtime-mode";
 
-const internalPagePrefixes = ["/hoy", "/clientes", "/expedientes", "/compras", "/informes", "/ajustes"];
+const internalPagePrefixes = ["/hoy", "/clientes", "/expedientes", "/compras", "/informes", "/ajustes", "/buscar"];
 const internalApiPrefixes = ["/api/routsify", "/api/documentos/upload-url", "/api/documentos/confirm-upload", "/api/payments/manual", "/api/health/internal"];
 
 function isInternalProposal(pathname: string) {
@@ -35,12 +35,8 @@ async function hasValidSession(request: NextRequest, response: NextResponse) {
 
   const supabase = createServerClient(config.url, config.key, {
     cookies: {
-      getAll() {
-        return request.cookies.getAll();
-      },
-      setAll(cookiesToSet) {
-        cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
-      },
+      getAll() { return request.cookies.getAll(); },
+      setAll(cookiesToSet) { cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options)); },
     },
   });
 
@@ -67,5 +63,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/hoy/:path*", "/clientes/:path*", "/expedientes/:path*", "/propuestas", "/compras/:path*", "/informes/:path*", "/ajustes/:path*", "/api/routsify/:path*", "/api/documentos/upload-url", "/api/documentos/confirm-upload", "/api/payments/manual", "/api/health/internal"],
+  matcher: ["/hoy/:path*", "/clientes/:path*", "/expedientes/:path*", "/propuestas", "/compras/:path*", "/informes/:path*", "/ajustes/:path*", "/buscar/:path*", "/api/routsify/:path*", "/api/documentos/upload-url", "/api/documentos/confirm-upload", "/api/payments/manual", "/api/health/internal"],
 };
