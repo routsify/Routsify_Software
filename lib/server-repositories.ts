@@ -16,6 +16,9 @@ export type GlobalSearchResult = {
 };
 
 type ClientRepositoryInput = Partial<ClientMaster> & { organization_id?: string; name?: string };
+type CaseRepositoryInput = { organization_id?: string; client_id?: string | null; client_name?: string | null; title?: string | null; destination?: string | null; trip_start?: string | null; trip_end?: string | null; status?: string | null; next_action?: string | null; blocker?: string | null; final_notes?: string | null };
+type ProposalRepositoryInput = { organization_id?: string; case_id?: string; status?: string | null };
+type BudgetLineInput = { organization_id?: string; proposal_id?: string; proposal_version_id?: string; service_type_code?: string; description_public?: string; supplier_name?: string | null; cost_budget?: number; margin_applied?: number; sale_price?: number };
 
 function canUseSupabase() {
   return !isDemoMode() && hasSupabaseAdminEnv();
@@ -27,6 +30,15 @@ function originFrom(value: unknown): ClientOrigin {
 
 function emptyProductionResult<T>(data: T): RepositoryResult<T> {
   return { ok: true, mode: "supabase", data };
+}
+
+function randomCaseCode() {
+  return `EXP-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 9000) + 1000)}`;
+}
+
+function normalizeMoney(value: unknown) {
+  const number = Number(value || 0);
+  return Number.isFinite(number) ? number : 0;
 }
 
 export function repositoryMode(): RepositoryMode {
@@ -71,11 +83,126 @@ export async function listCasesRepository(): Promise<RepositoryResult<unknown[]>
   return error ? { ok: false, mode: "supabase", error: error.message } : { ok: true, mode: "supabase", data: data || [] };
 }
 
+export async function createCaseRepository(input: CaseRepositoryInput): Promise<RepositoryResult<unknown>> {
+  if (isDemoMode()) return { ok: false, mode: "demo", error: "case_creation_disabled_in_demo" };
+  if (!canUseSupabase()) return { ok: false, mode: "supabase", error: "supabase_admin_not_configured" };
+  if (!input.organization_id) return { ok: false, mode: "supabase", error: "organization_required" };
+
+  const supabase = getSupabaseAdminClient();
+  let clientId = input.client_id || null;
+  const clientName = String(input.client_name || "").trim();
+
+  if (!clientId && clientName) {
+    const { data: client, error: clientError } = await supabase.from("clients").insert({ organization_id: input.organization_id, display_name: clientName, client_type: "person", source: "manual" }).select("id").single();
+    if (clientError) return { ok: false, mode: "supabase", error: clientError.message };
+    clientId = client.id;
+  }
+
+  const destination = String(input.destination || "").trim();
+  const title = String(input.title || destination || clientName || "Nuevo expediente").trim();
+  const payload = {
+    organization_id: input.organization_id,
+    case_code: randomCaseCode(),
+    client_id: clientId,
+    title,
+    destination: destination || null,
+    trip_start: input.trip_start || null,
+    trip_end: input.trip_end || null,
+    status: input.status || "new_lead",
+    next_action: input.next_action || "Revisar expediente",
+    blocker: input.blocker || null,
+    final_notes: input.final_notes || null,
+  };
+
+  const { data, error } = await supabase.from("cases").insert(payload).select("*, clients(display_name,email,phone,holded_contact_id)").single();
+  return error ? { ok: false, mode: "supabase", error: error.message } : { ok: true, mode: "supabase", data };
+}
+
+export async function updateCaseRepository(caseId: string, input: Partial<CaseRepositoryInput>): Promise<RepositoryResult<unknown>> {
+  if (isDemoMode()) return { ok: false, mode: "demo", error: "case_update_disabled_in_demo" };
+  if (!canUseSupabase()) return { ok: false, mode: "supabase", error: "supabase_admin_not_configured" };
+  const payload: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  for (const key of ["title", "destination", "trip_start", "trip_end", "status", "next_action", "blocker", "final_notes"] as const) {
+    if (key in input) payload[key] = input[key] || null;
+  }
+  const { data, error } = await getSupabaseAdminClient().from("cases").update(payload).eq("id", caseId).select("*, clients(display_name,email,phone,holded_contact_id)").single();
+  return error ? { ok: false, mode: "supabase", error: error.message } : { ok: true, mode: "supabase", data };
+}
+
 export async function createTimelineEventRepository(input: { organizationId: string; caseId?: string | null; clientId?: string | null; eventType: string; title: string; payload?: Record<string, unknown>; createdBy?: string | null }): Promise<RepositoryResult<unknown>> {
   if (isDemoMode()) return { ok: true, mode: "demo", data: { ...input, id: `demo-${Date.now()}` } };
   if (!canUseSupabase()) return { ok: false, mode: "supabase", error: "supabase_admin_not_configured" };
   const { data, error } = await getSupabaseAdminClient().from("timeline_events").insert({ organization_id: input.organizationId, case_id: input.caseId || null, client_id: input.clientId || null, event_type: input.eventType, title: input.title, payload: input.payload || {}, created_by: input.createdBy || null }).select("*").single();
   return error ? { ok: false, mode: "supabase", error: error.message } : { ok: true, mode: "supabase", data };
+}
+
+export async function listProposalsRepository(): Promise<RepositoryResult<unknown[]>> {
+  if (isDemoMode()) return emptyProductionResult([]);
+  if (!canUseSupabase()) return emptyProductionResult([]);
+  const { data, error } = await getSupabaseAdminClient().from("proposals").select("*, cases(case_code,title,destination,trip_start,trip_end,clients(display_name,email)), proposal_versions(*, budget_lines(*))").order("created_at", { ascending: false }).limit(100);
+  return error ? { ok: false, mode: "supabase", error: error.message } : { ok: true, mode: "supabase", data: data || [] };
+}
+
+export async function createProposalRepository(input: ProposalRepositoryInput): Promise<RepositoryResult<unknown>> {
+  if (isDemoMode()) return { ok: false, mode: "demo", error: "proposal_creation_disabled_in_demo" };
+  if (!canUseSupabase()) return { ok: false, mode: "supabase", error: "supabase_admin_not_configured" };
+  if (!input.organization_id || !input.case_id) return { ok: false, mode: "supabase", error: "case_required" };
+  const supabase = getSupabaseAdminClient();
+  const { data: proposal, error: proposalError } = await supabase.from("proposals").insert({ organization_id: input.organization_id, case_id: input.case_id, status: input.status || "draft" }).select("*").single();
+  if (proposalError) return { ok: false, mode: "supabase", error: proposalError.message };
+  const { error: versionError } = await supabase.from("proposal_versions").insert({ organization_id: input.organization_id, proposal_id: proposal.id, version_number: 1, status: "draft", total_sale: 0, total_cost: 0 });
+  if (versionError) return { ok: false, mode: "supabase", error: versionError.message };
+  const { data, error } = await supabase.from("proposals").select("*, cases(case_code,title,destination,trip_start,trip_end,clients(display_name,email)), proposal_versions(*, budget_lines(*))").eq("id", proposal.id).single();
+  return error ? { ok: false, mode: "supabase", error: error.message } : { ok: true, mode: "supabase", data };
+}
+
+export async function updateProposalStatusRepository(proposalId: string, status: string): Promise<RepositoryResult<unknown>> {
+  if (isDemoMode()) return { ok: false, mode: "demo", error: "proposal_update_disabled_in_demo" };
+  if (!canUseSupabase()) return { ok: false, mode: "supabase", error: "supabase_admin_not_configured" };
+  const supabase = getSupabaseAdminClient();
+  const { error: proposalError } = await supabase.from("proposals").update({ status }).eq("id", proposalId);
+  if (proposalError) return { ok: false, mode: "supabase", error: proposalError.message };
+  const { data, error } = await supabase.from("proposals").select("*, cases(case_code,title,destination,trip_start,trip_end,clients(display_name,email)), proposal_versions(*, budget_lines(*))").eq("id", proposalId).single();
+  return error ? { ok: false, mode: "supabase", error: error.message } : { ok: true, mode: "supabase", data };
+}
+
+async function recalculateProposalVersion(versionId: string) {
+  const supabase = getSupabaseAdminClient();
+  const { data: lines } = await supabase.from("budget_lines").select("cost_budget,sale_price").eq("proposal_version_id", versionId);
+  const totalCost = (lines || []).reduce((sum, line) => sum + normalizeMoney(line.cost_budget), 0);
+  const totalSale = (lines || []).reduce((sum, line) => sum + normalizeMoney(line.sale_price), 0);
+  await supabase.from("proposal_versions").update({ total_cost: totalCost, total_sale: totalSale }).eq("id", versionId);
+}
+
+export async function addBudgetLineRepository(input: BudgetLineInput): Promise<RepositoryResult<unknown>> {
+  if (isDemoMode()) return { ok: false, mode: "demo", error: "budget_line_creation_disabled_in_demo" };
+  if (!canUseSupabase()) return { ok: false, mode: "supabase", error: "supabase_admin_not_configured" };
+  if (!input.organization_id || !input.proposal_id) return { ok: false, mode: "supabase", error: "proposal_required" };
+  const supabase = getSupabaseAdminClient();
+  let versionId = input.proposal_version_id;
+  if (!versionId) {
+    const { data: version, error } = await supabase.from("proposal_versions").select("id").eq("proposal_id", input.proposal_id).order("version_number", { ascending: false }).limit(1).single();
+    if (error) return { ok: false, mode: "supabase", error: error.message };
+    versionId = version.id;
+  }
+  const cost = normalizeMoney(input.cost_budget);
+  const margin = normalizeMoney(input.margin_applied);
+  const sale = input.sale_price !== undefined ? normalizeMoney(input.sale_price) : cost > 0 ? cost / (1 - Math.min(margin, 95) / 100) : 0;
+  const { data, error } = await supabase.from("budget_lines").insert({ organization_id: input.organization_id, proposal_version_id: versionId, service_type_code: input.service_type_code || "custom", description_public: input.description_public || "Servicio", supplier_name: input.supplier_name || null, cost_budget: cost, margin_applied: margin / 100, sale_price: sale }).select("*").single();
+  if (error) return { ok: false, mode: "supabase", error: error.message };
+  await recalculateProposalVersion(versionId);
+  return { ok: true, mode: "supabase", data };
+}
+
+export async function deleteBudgetLineRepository(lineId: string): Promise<RepositoryResult<{ id: string }>> {
+  if (isDemoMode()) return { ok: false, mode: "demo", error: "budget_line_delete_disabled_in_demo" };
+  if (!canUseSupabase()) return { ok: false, mode: "supabase", error: "supabase_admin_not_configured" };
+  const supabase = getSupabaseAdminClient();
+  const { data: line } = await supabase.from("budget_lines").select("proposal_version_id").eq("id", lineId).maybeSingle();
+  const { error } = await supabase.from("budget_lines").delete().eq("id", lineId);
+  if (error) return { ok: false, mode: "supabase", error: error.message };
+  if (line?.proposal_version_id) await recalculateProposalVersion(line.proposal_version_id as string);
+  return { ok: true, mode: "supabase", data: { id: lineId } };
 }
 
 export async function listPurchasesRepository(): Promise<RepositoryResult<unknown[]>> {
