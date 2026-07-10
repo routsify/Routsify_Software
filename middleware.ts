@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { isPublicDemoAllowed, shouldBlockDemoInProduction } from "@/lib/runtime-mode";
 
 const internalPagePrefixes = ["/hoy", "/clientes", "/expedientes", "/compras", "/informes", "/ajustes"];
-const internalApiPrefixes = ["/api/routsify", "/api/documentos/upload-url", "/api/payments/manual"];
+const internalApiPrefixes = ["/api/routsify", "/api/documentos/upload-url", "/api/documentos/confirm-upload", "/api/payments/manual", "/api/health/internal"];
 
 function isInternalProposal(pathname: string) {
   return pathname === "/propuestas";
@@ -45,5 +45,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/hoy/:path*", "/clientes/:path*", "/expedientes/:path*", "/propuestas", "/compras/:path*", "/informes/:path*", "/ajustes/:path*", "/api/routsify/:path*", "/api/documentos/upload-url", "/api/payments/manual"],
+  matcher: ["/hoy/:path*", "/clientes/:path*", "/expedientes/:path*", "/propuestas", "/compras/:path*", "/informes/:path*", "/ajustes/:path*", "/api/routsify/:path*", "/api/documentos/upload-url", "/api/documentos/confirm-upload", "/api/payments/manual", "/api/health/internal"],
 };
