@@ -53,7 +53,7 @@ export default async function TodayWorkbenchPage() {
           {activeCases.length === 0 ? <div className="empty-state"><h2>No hay expedientes activos</h2><p>Cuando crees expedientes aparecerán aquí.</p></div> : (
             <table><thead><tr><th>Expediente</th><th>Cliente</th><th>Estado</th><th>Próxima acción</th></tr></thead><tbody>
               {activeCases.slice(0, 8).map((item) => (
-                <tr key={item.case_code || item.title}><td><a href={`/expedientes/${item.case_code}`}><strong>{item.case_code || "Sin código"}</strong></a><br/><small>{item.title || item.destination || "Expediente"}</small></td><td>{item.clients?.display_name || "—"}</td><td><span className="status-pill status-progress">{statusLabel(item.status)}</span></td><td>{item.next_action || "—"}</td></tr>
+                <tr key={item.case_code || item.title}><td><a href="/expedientes"><strong>{item.case_code || "Sin código"}</strong></a><br/><small>{item.title || item.destination || "Expediente"}</small></td><td>{item.clients?.display_name || "—"}</td><td><span className="status-pill status-progress">{statusLabel(item.status)}</span></td><td>{item.next_action || "—"}</td></tr>
               ))}
             </tbody></table>
           )}
