@@ -1,7 +1,6 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createServerClient } from "@supabase/ssr";
-import { isPublicDemoAllowed, shouldBlockDemoInProduction } from "@/lib/runtime-mode";
 
 function publicSupabaseConfig() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -9,15 +8,7 @@ function publicSupabaseConfig() {
   return url && key ? { url, key } : null;
 }
 
-function isDemoAccessAllowed() {
-  return isPublicDemoAllowed() && !shouldBlockDemoInProduction();
-}
-
 export async function requireAppSession() {
-  if (isDemoAccessAllowed()) {
-    return { email: null, role: "demo" };
-  }
-
   const config = publicSupabaseConfig();
   if (!config) redirect("/login");
 
