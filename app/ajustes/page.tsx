@@ -7,9 +7,8 @@ export default function SettingsPage() {
     <AppShell>
       <PageHeader
         eyebrow="Ajustes"
-        title="Panel de control de Routsify"
-        description="Configura módulos, integraciones, márgenes, estados, documentos, informes, roles, fiscalidad, logs y sistema desde una sola zona."
-        action={<a className="btn" href="/api/routsify/settings/export">Exportar configuración</a>}
+        title="Ajustes del sistema"
+        description="Configuración básica de empresa, márgenes, presupuestos, compras, seguridad e integraciones. Solo se muestran ajustes editables y seguros."
       />
       <SettingsManager />
     </AppShell>
