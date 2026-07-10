@@ -18,7 +18,7 @@ export function AuthStatus() {
 
   async function loadProfile() {
     if (isDemoMode() || !hasSupabaseBrowserEnv()) {
-      setState({ email: null, role: "demo" });
+      setState({ email: null, role: null });
       setLoading(false);
       return;
     }
@@ -39,7 +39,7 @@ export function AuthStatus() {
 
   useEffect(() => {
     if (isDemoMode() || !hasSupabaseBrowserEnv()) {
-      setState({ email: null, role: "demo" });
+      setState({ email: null, role: null });
       setLoading(false);
       return;
     }
@@ -71,7 +71,6 @@ export function AuthStatus() {
   }
 
   if (loading) return <span className="badge">Comprobando sesión</span>;
-  if (state.role === "demo") return <span className="badge">Modo demo</span>;
   if (!state.email) return <Link className="btn secondary" href="/login">Entrar</Link>;
 
   return (
