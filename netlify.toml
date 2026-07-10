@@ -1,5 +1,5 @@
 [build]
-  command = "npm run netlify:build"
+  command = "npm run platform:build"
   publish = ".next"
 
 [build.environment]
