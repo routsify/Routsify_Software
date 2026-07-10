@@ -5,14 +5,12 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "netlify:build": "npm run validate:deploy && npm run typecheck && next build",
+    "platform:build": "npm run validate:platform && npm run typecheck && next build",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "validate:mvp": "node scripts/validate-mvp.mjs",
-    "validate:netlify": "node scripts/validate-netlify.mjs",
-    "validate:deploy": "npm run validate:mvp && npm run validate:netlify",
-    "smoke:netlify": "node scripts/smoke-netlify.mjs"
+    "validate:platform": "npm run validate:mvp && node scripts/validate-platform.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "0.7.0",
