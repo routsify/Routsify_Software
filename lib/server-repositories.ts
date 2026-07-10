@@ -185,12 +185,15 @@ export async function addBudgetLineRepository(input: BudgetLineInput): Promise<R
     if (error) return { ok: false, mode: "supabase", error: error.message };
     versionId = version.id;
   }
+  const targetVersionId = versionId;
+  if (!targetVersionId) return { ok: false, mode: "supabase", error: "proposal_version_required" };
+
   const cost = normalizeMoney(input.cost_budget);
   const margin = normalizeMoney(input.margin_applied);
   const sale = input.sale_price !== undefined ? normalizeMoney(input.sale_price) : cost > 0 ? cost / (1 - Math.min(margin, 95) / 100) : 0;
-  const { data, error } = await supabase.from("budget_lines").insert({ organization_id: input.organization_id, proposal_version_id: versionId, service_type_code: input.service_type_code || "custom", description_public: input.description_public || "Servicio", supplier_name: input.supplier_name || null, cost_budget: cost, margin_applied: margin / 100, sale_price: sale }).select("*").single();
+  const { data, error } = await supabase.from("budget_lines").insert({ organization_id: input.organization_id, proposal_version_id: targetVersionId, service_type_code: input.service_type_code || "custom", description_public: input.description_public || "Servicio", supplier_name: input.supplier_name || null, cost_budget: cost, margin_applied: margin / 100, sale_price: sale }).select("*").single();
   if (error) return { ok: false, mode: "supabase", error: error.message };
-  await recalculateProposalVersion(versionId);
+  await recalculateProposalVersion(targetVersionId);
   return { ok: true, mode: "supabase", data };
 }
 
