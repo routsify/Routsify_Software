@@ -23,13 +23,13 @@ export async function getRequestUserId(request: NextRequest) {
   return data.user?.id || null;
 }
 
-export async function resolveOrganizationId(request: NextRequest, fallback: string) {
+export async function resolveOrganizationId(request: NextRequest, fallback = "") {
   if (!hasSupabaseAdminEnv()) return fallback;
   const userId = await getRequestUserId(request);
   const admin = getSupabaseAdminClient();
 
   if (userId) {
-    const { data: profile } = await admin.from("profiles").select("organization_id").eq("id", userId).maybeSingle();
+    const { data: profile } = await admin.from("profiles").select("organization_id").eq("user_id", userId).maybeSingle();
     if (profile?.organization_id) return profile.organization_id as string;
   }
 
