@@ -1,16 +1,20 @@
 import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
+import { listPurchasesRepository } from "@/lib/server-repositories";
 import { PurchasesManager } from "./PurchasesManager";
 
-export default function PurchasesPage() {
+export default async function PurchasesPage() {
+  const result = await listPurchasesRepository();
+  const purchases = result.ok ? result.data : [];
+
   return (
     <AppShell>
       <PageHeader
         eyebrow="Compras / Proveedores"
-        title="Conciliación de compras esperadas"
-        description="Routsify controla qué facturas proveedor se esperan; Holded aporta compras reales; esta pantalla propone matches, aprueba costes reales y bloquea el cierre si falta algo obligatorio."
+        title="Compras y proveedores"
+        description="Controla compras, proveedores, importes y estados. Los estados se pueden corregir en cualquier momento."
       />
-      <PurchasesManager />
+      <PurchasesManager initialPurchases={purchases} />
     </AppShell>
   );
 }
