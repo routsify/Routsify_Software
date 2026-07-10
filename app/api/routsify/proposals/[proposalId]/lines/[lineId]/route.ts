@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { jsonAccessDenied, requireInternalAccess } from "@/lib/api-security";
 import { deleteBudgetLineRepository } from "@/lib/server-repositories";
 
-export async function DELETE(request: NextRequest, { params }: { params: Promise<{ lineId: string }> }) {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ proposalId: string; lineId: string }> }) {
   const access = requireInternalAccess(request);
   if (!access.ok) return jsonAccessDenied(access);
 
