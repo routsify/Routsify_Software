@@ -1,15 +1,12 @@
 import { createBrowserClient } from "@supabase/ssr";
 
-const urlVar = "NEXT_PUBLIC_SUPABASE_URL";
-const keyVar = "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY";
-
 export function hasSupabaseBrowserEnv() {
-  return Boolean(process.env[urlVar] && process.env[keyVar]);
+  return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY);
 }
 
 export function getSupabaseBrowserClient() {
-  const url = process.env[urlVar];
-  const key = process.env[keyVar];
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
   if (!url || !key) throw new Error("Missing public Supabase browser configuration");
   return createBrowserClient(url, key);
 }
