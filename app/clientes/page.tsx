@@ -1,16 +1,20 @@
 import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
+import { listClientsRepository } from "@/lib/server-repositories";
 import { ClientsManager } from "./ClientsManager";
 
-export default function ClientsPage() {
+export default async function ClientsPage() {
+  const result = await listClientsRepository();
+  const clients = result.ok ? result.data : [];
+
   return (
     <AppShell>
       <PageHeader
         eyebrow="Clientes"
-        title="Ficha maestra de clientes"
-        description="Cliente único, deduplicación por email/teléfono, fiscalidad mínima, estado Holded, historial y acciones rápidas conectadas con expedientes y presupuestos."
+        title="Clientes"
+        description="Crea, consulta y mantiene fichas reales de clientes para trabajar con expedientes y presupuestos."
       />
-      <ClientsManager />
+      <ClientsManager initialClients={clients} />
     </AppShell>
   );
 }
