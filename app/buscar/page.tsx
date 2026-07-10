@@ -3,6 +3,14 @@ import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
 import { searchGlobalRepository } from "@/lib/server-repositories";
 
+function stableHref(href: string) {
+  if (href.startsWith("/expedientes/")) return "/expedientes";
+  if (href.startsWith("/clientes/")) return "/clientes";
+  if (href.startsWith("/propuestas/")) return "/propuestas";
+  if (href.startsWith("/compras/")) return "/compras";
+  return href;
+}
+
 export default async function SearchPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
   const params = await searchParams;
   const query = (params.q || "").trim();
@@ -27,7 +35,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
                   <td><span className="status-pill status-progress">{item.type}</span></td>
                   <td><strong>{item.title}</strong></td>
                   <td>{item.subtitle}</td>
-                  <td><Link className="btn secondary" href={item.href}>Abrir</Link></td>
+                  <td><Link className="btn secondary" href={stableHref(item.href)}>Abrir</Link></td>
                 </tr>
               ))}
             </tbody>
