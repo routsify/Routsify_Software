@@ -1,9 +1,9 @@
-import { demoSettings, moduleFor, settingValueToText } from "@/lib/settings-master";
+import { defaultSettings, moduleFor, settingValueToText } from "@/lib/settings-master";
 
 const visibleModules = new Set(["general", "appearance", "clients", "cases", "budgets", "margins", "purchases", "integrations", "fiscal"]);
 
 export function ProductionSettings() {
-  const settings = demoSettings.filter((setting) => visibleModules.has(setting.module) && setting.editable && !setting.isSensitive);
+  const settings = defaultSettings.filter((setting) => visibleModules.has(setting.module) && setting.editable && !setting.isSensitive);
   const margin = settings.find((setting) => setting.key === "margins.minimum");
   const fiscal = settings.find((setting) => setting.key === "fiscal.mode");
   const holded = settings.find((setting) => setting.key === "integrations.holded.mode");
