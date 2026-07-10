@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getSupabaseBrowserClient, hasSupabaseBrowserEnv, isBrowserDemoAccessAllowed } from "@/lib/supabase-browser";
+import { getSupabaseBrowserClient, hasSupabaseBrowserEnv } from "@/lib/supabase-browser";
 
 type Mode = "login" | "forgot";
 type Notice = { tone: "ok" | "error"; text: string } | null;
@@ -22,7 +22,6 @@ export function LoginForm() {
   const [loading, setLoading] = useState(false);
   const [nextPath, setNextPath] = useState("/hoy");
   const canUseAuth = hasSupabaseBrowserEnv();
-  const canUseDemo = isBrowserDemoAccessAllowed();
 
   useEffect(() => {
     setNextPath(safeNext(new URLSearchParams(window.location.search).get("next")));
@@ -39,7 +38,7 @@ export function LoginForm() {
     }
 
     if (!canUseAuth) {
-      setNotice({ tone: "error", text: "El acceso no está disponible en este momento." });
+      setNotice({ tone: "error", text: "No se ha podido iniciar sesión." });
       return;
     }
 
@@ -55,12 +54,12 @@ export function LoginForm() {
 
     const { error: profileError } = await supabase.rpc("ensure_profile_for_current_user");
     if (profileError) {
+      await supabase.auth.signOut();
       setLoading(false);
-      setNotice({ tone: "error", text: "No se pudo completar el acceso." });
+      setNotice({ tone: "error", text: "No se ha podido iniciar sesión." });
       return;
     }
 
-    setNotice({ tone: "ok", text: "Acceso correcto." });
     router.replace(nextPath);
     router.refresh();
   }
@@ -76,7 +75,7 @@ export function LoginForm() {
     }
 
     if (!canUseAuth) {
-      setNotice({ tone: "error", text: "No se pudo enviar el enlace." });
+      setNotice({ tone: "error", text: "No se ha podido enviar el enlace." });
       return;
     }
 
@@ -86,21 +85,16 @@ export function LoginForm() {
     setLoading(false);
 
     if (error) {
-      setNotice({ tone: "error", text: "No se pudo enviar el enlace." });
+      setNotice({ tone: "error", text: "No se ha podido enviar el enlace." });
       return;
     }
 
     setNotice({ tone: "ok", text: "Si el email existe, recibirás un enlace para recuperar tu contraseña." });
   }
 
-  function enterDemo() {
-    router.replace("/hoy");
-    router.refresh();
-  }
-
   return (
-    <div style={{ display: "grid", gap: 18 }}>
-      {notice ? <p className="client-message" style={{ color: notice.tone === "error" ? "var(--danger)" : "var(--success)" }}>{notice.text}</p> : null}
+    <div className="login-form-wrap">
+      {notice ? <p className={`login-notice ${notice.tone}`}>{notice.text}</p> : null}
 
       {mode === "login" ? (
         <form className="form" onSubmit={login}>
@@ -111,7 +105,7 @@ export function LoginForm() {
 
           <label>
             Contraseña
-            <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8 }}>
+            <div className="password-field">
               <input className="input" type={showPassword ? "text" : "password"} autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Contraseña" required />
               <button className="btn secondary" type="button" onClick={() => setShowPassword((value) => !value)}>{showPassword ? "Ocultar" : "Ver"}</button>
             </div>
@@ -119,7 +113,6 @@ export function LoginForm() {
 
           <button className="btn" type="submit" disabled={loading}>{loading ? "Entrando..." : "Entrar"}</button>
           <button className="link-button" type="button" onClick={() => { setMode("forgot"); setNotice(null); }}>¿Has olvidado tu contraseña?</button>
-          {canUseDemo ? <button className="btn secondary" type="button" onClick={enterDemo}>Entrar en demo</button> : null}
         </form>
       ) : null}
 
