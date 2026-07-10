@@ -1,54 +1,42 @@
 import { AppShell } from "@/components/AppShell";
-import { cases } from "@/lib/mock-data";
-import { demoTasks } from "@/lib/tasks";
-import { demoDocuments } from "@/lib/documents";
-import { demoPayments, demoBillingDocuments } from "@/lib/billing";
-import { demoCommunications } from "@/lib/communications";
-import { demoOutbox } from "@/lib/integrations";
-import { demoSuppliers } from "@/lib/suppliers";
-import { buildOperationalInbox, workbenchSummary } from "@/lib/workbench";
+import { listCasesRepository, listClientsRepository, listPurchasesRepository } from "@/lib/server-repositories";
 
-function priorityLabel(priority: string) {
-  if (priority === "urgent") return "Alta";
-  if (priority === "high") return "Alta";
-  if (priority === "normal") return "Media";
-  return "Baja";
-}
+type CaseRow = { case_code?: string; title?: string; status?: string; destination?: string; next_action?: string | null; clients?: { display_name?: string | null } | null };
+type PurchaseRow = { supplier_name?: string; service?: string; status?: string; amount?: number | string };
 
-function caseStatusLabel(status: string) {
-  if (status === "proposal_sent") return "En progreso";
-  if (status === "budget_draft") return "Pendiente";
+function statusLabel(status?: string) {
+  if (!status) return "Pendiente";
   if (status === "closed") return "Cerrado";
+  if (status === "proposal_sent") return "Presupuesto enviado";
+  if (status === "budget_draft") return "Presupuesto en borrador";
+  if (status === "new_lead") return "Nuevo";
   return status.replaceAll("_", " ");
 }
 
-export default function TodayWorkbenchPage() {
-  const inbox = buildOperationalInbox();
-  const summary = workbenchSummary(inbox);
-  const openTasks = demoTasks.filter((item) => item.status !== "done");
+export default async function TodayWorkbenchPage() {
+  const [clientsResult, casesResult, purchasesResult] = await Promise.all([
+    listClientsRepository(),
+    listCasesRepository(),
+    listPurchasesRepository(),
+  ]);
+
+  const clients = clientsResult.ok ? clientsResult.data : [];
+  const cases = (casesResult.ok ? casesResult.data : []) as CaseRow[];
+  const purchases = (purchasesResult.ok ? purchasesResult.data : []) as PurchaseRow[];
   const activeCases = cases.filter((item) => item.status !== "closed");
-  const pendingDocuments = demoDocuments.filter((item) => item.status === "missing" || item.status === "reviewing" || item.status === "expired").length;
-  const todayCalls = demoCommunications.filter((item) => item.channel === "phone" || item.channel === "meeting").length;
-  const pendingBudgets = cases.filter((item) => item.status === "budget_draft" || item.status === "proposal_sent").length;
-  const pendingPayments = demoPayments.filter((item) => item.status === "pending" || item.status === "failed").length;
-  const activeSuppliers = demoSuppliers.filter((item) => item.status === "active").length;
-  const holdedIssues = demoBillingDocuments.filter((item) => item.status === "blocked" || item.status === "error").length + demoOutbox.filter((item) => item.channel === "fiscal" && item.status !== "done").length;
+  const pendingPurchases = purchases.filter((item) => !["received", "cancelled", "not_required"].includes(String(item.status || "")));
+  const pendingBudgets = cases.filter((item) => item.status === "budget_draft" || item.status === "proposal_sent");
 
   const kpis = [
-    { label: "Urgente", value: summary.critical, note: "Requieren atención", icon: "!", href: "/hoy" },
-    { label: "Llamadas de hoy", value: todayCalls, note: "+ reuniones y seguimientos", icon: "☎", href: "/comunicaciones" },
-    { label: "Presupuestos pendientes", value: pendingBudgets, note: "A la espera de respuesta", icon: "€", href: "/propuestas" },
-    { label: "Documentos", value: pendingDocuments, note: "Pendientes de gestionar", icon: "□", href: "/documentos" },
-    { label: "Pagos", value: pendingPayments, note: "Vencen o faltan confirmar", icon: "▭", href: "/facturacion" },
-    { label: "Proveedores", value: activeSuppliers, note: "Activos", icon: "👥", href: "/compras" },
-    { label: "Errores Holded", value: holdedIssues, note: "Por revisar", icon: "!", href: "/integraciones" },
+    { label: "Clientes", value: clients.length, note: "Registrados", icon: "C", href: "/clientes" },
+    { label: "Expedientes activos", value: activeCases.length, note: "En seguimiento", icon: "E", href: "/expedientes" },
+    { label: "Presupuestos", value: pendingBudgets.length, note: "Borradores o enviados", icon: "P", href: "/propuestas" },
+    { label: "Compras pendientes", value: pendingPurchases.length, note: "Por revisar", icon: "€", href: "/compras" },
   ];
 
   return (
     <AppShell>
-      <section className="home-title">
-        <h1>Inicio / Dashboard</h1>
-      </section>
+      <section className="home-title"><h1>Inicio</h1></section>
 
       <section className="home-kpis">
         {kpis.map((item) => (
@@ -61,45 +49,25 @@ export default function TodayWorkbenchPage() {
 
       <section className="dashboard-panels">
         <div className="card dashboard-table-card">
-          <div className="panel-head">
-            <h2>Tareas</h2>
-            <a className="btn secondary" href="/tareas">Ver todas las tareas</a>
-          </div>
-          <table>
-            <thead><tr><th>Tarea</th><th>Prioridad</th><th>Responsable</th><th>Vence</th></tr></thead>
-            <tbody>
-              {openTasks.slice(0, 7).map((task) => (
-                <tr key={task.id}>
-                  <td><a href={`/expedientes/${task.case_code}`}><strong>{task.title}</strong></a><br/><small>{task.case_code} · {task.area}</small></td>
-                  <td><span className={`status-pill priority-${task.priority}`}>{priorityLabel(task.priority)}</span></td>
-                  <td>{task.owner}</td>
-                  <td>{task.due_date}</td>
-                </tr>
+          <div className="panel-head"><h2>Expedientes activos</h2><a className="btn secondary" href="/expedientes">Ver expedientes</a></div>
+          {activeCases.length === 0 ? <div className="empty-state"><h2>No hay expedientes activos</h2><p>Cuando crees expedientes aparecerán aquí.</p></div> : (
+            <table><thead><tr><th>Expediente</th><th>Cliente</th><th>Estado</th><th>Próxima acción</th></tr></thead><tbody>
+              {activeCases.slice(0, 8).map((item) => (
+                <tr key={item.case_code || item.title}><td><a href={`/expedientes/${item.case_code}`}><strong>{item.case_code || "Sin código"}</strong></a><br/><small>{item.title || item.destination || "Expediente"}</small></td><td>{item.clients?.display_name || "—"}</td><td><span className="status-pill status-progress">{statusLabel(item.status)}</span></td><td>{item.next_action || "—"}</td></tr>
               ))}
-            </tbody>
-          </table>
-          <a className="table-footer-link" href="/tareas">Ver todas las tareas →</a>
+            </tbody></table>
+          )}
         </div>
 
         <div className="card dashboard-table-card">
-          <div className="panel-head">
-            <h2>Expedientes activos</h2>
-            <a className="btn secondary" href="/expedientes">Ver todos los expedientes</a>
-          </div>
-          <table>
-            <thead><tr><th>Expediente</th><th>Cliente</th><th>Estado</th><th>Próxima acción</th></tr></thead>
-            <tbody>
-              {activeCases.map((item) => (
-                <tr key={item.case_code}>
-                  <td><a href={`/expedientes/${item.case_code}`}><strong>{item.case_code}</strong></a></td>
-                  <td>{item.client}</td>
-                  <td><span className={`status-pill ${item.blocker ? "status-pending" : "status-progress"}`}>{caseStatusLabel(item.status)}</span></td>
-                  <td>{item.next_action}</td>
-                </tr>
+          <div className="panel-head"><h2>Compras pendientes</h2><a className="btn secondary" href="/compras">Ver compras</a></div>
+          {pendingPurchases.length === 0 ? <div className="empty-state"><h2>No hay compras pendientes</h2><p>Las compras esperadas aparecerán cuando existan presupuestos aceptados o compras manuales.</p></div> : (
+            <table><thead><tr><th>Proveedor</th><th>Servicio</th><th>Estado</th><th>Importe</th></tr></thead><tbody>
+              {pendingPurchases.slice(0, 8).map((item, index) => (
+                <tr key={`${item.supplier_name}-${index}`}><td><strong>{item.supplier_name || "Proveedor"}</strong></td><td>{item.service || "—"}</td><td><span className="status-pill status-pending">{statusLabel(item.status)}</span></td><td>{item.amount ? `${item.amount} €` : "—"}</td></tr>
               ))}
-            </tbody>
-          </table>
-          <a className="table-footer-link" href="/expedientes">Ver todos los expedientes →</a>
+            </tbody></table>
+          )}
         </div>
       </section>
     </AppShell>
