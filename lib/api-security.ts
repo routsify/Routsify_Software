@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { demoOrganizationId, isPublicDemoAllowed, shouldBlockDemoInProduction } from "@/lib/runtime-mode";
 
 export type ApiAccessContext = {
   ok: true;
-  mode: "demo" | "authenticated" | "internal_token";
+  mode: "authenticated" | "internal_token";
   organizationId: string;
   actorId: string;
   role: "admin" | "direction" | "sales" | "operations" | "billing" | "viewer";
@@ -28,11 +27,14 @@ function hasInternalToken(request: NextRequest) {
   return Boolean(expected && received && expected === received);
 }
 
+function productionOrganizationFallback() {
+  return process.env.ROUTSIFY_DEFAULT_ORGANIZATION_ID || "";
+}
+
 export function requireInternalAccess(request: NextRequest): ApiAccessContext {
-  if (shouldBlockDemoInProduction()) return { ok: false, status: 503, error: "demo_mode_blocked_in_production" };
-  if (hasInternalToken(request)) return { ok: true, mode: "internal_token", organizationId: demoOrganizationId(), actorId: "internal", role: "admin" };
-  if (hasSessionLikeCookie(request) || hasBearerToken(request)) return { ok: true, mode: "authenticated", organizationId: demoOrganizationId(), actorId: "session", role: "admin" };
-  if (isPublicDemoAllowed()) return { ok: true, mode: "demo", organizationId: demoOrganizationId(), actorId: "demo", role: "admin" };
+  const fallbackOrganizationId = productionOrganizationFallback();
+  if (hasInternalToken(request)) return { ok: true, mode: "internal_token", organizationId: fallbackOrganizationId, actorId: "internal", role: "admin" };
+  if (hasSessionLikeCookie(request) || hasBearerToken(request)) return { ok: true, mode: "authenticated", organizationId: fallbackOrganizationId, actorId: "session", role: "admin" };
   return { ok: false, status: 401, error: "authentication_required" };
 }
 
