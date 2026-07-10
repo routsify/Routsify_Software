@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { getSupabaseBrowserClient, hasSupabaseBrowserEnv, isDemoMode } from "@/lib/supabase-browser";
 
 type ProfileState = {
@@ -10,8 +11,10 @@ type ProfileState = {
 };
 
 export function AuthStatus() {
+  const router = useRouter();
   const [state, setState] = useState<ProfileState>({ email: null, role: null });
   const [loading, setLoading] = useState(!isDemoMode());
+  const [signingOut, setSigningOut] = useState(false);
 
   async function loadProfile() {
     if (isDemoMode() || !hasSupabaseBrowserEnv()) {
@@ -52,9 +55,19 @@ export function AuthStatus() {
   }, []);
 
   async function signOut() {
-    const supabase = getSupabaseBrowserClient();
-    await supabase.auth.signOut();
-    setState({ email: null, role: null });
+    setSigningOut(true);
+    try {
+      if (hasSupabaseBrowserEnv()) {
+        const supabase = getSupabaseBrowserClient();
+        await supabase.auth.signOut({ scope: "global" });
+      }
+      setState({ email: null, role: null });
+      router.replace("/login");
+      router.refresh();
+      window.setTimeout(() => window.location.assign("/login"), 120);
+    } finally {
+      setSigningOut(false);
+    }
   }
 
   if (loading) return <span className="badge">Comprobando sesión</span>;
@@ -62,10 +75,10 @@ export function AuthStatus() {
   if (!state.email) return <Link className="btn secondary" href="/login">Entrar</Link>;
 
   return (
-    <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+    <div className="auth-status">
       <span className="badge">{state.email}</span>
       {state.role ? <span className="badge">{state.role}</span> : null}
-      <button className="btn secondary" type="button" onClick={signOut}>Salir</button>
+      <button className="btn secondary" type="button" onClick={signOut} disabled={signingOut}>{signingOut ? "Saliendo..." : "Salir"}</button>
     </div>
   );
 }
