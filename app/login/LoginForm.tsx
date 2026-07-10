@@ -2,7 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getSupabaseBrowserClient, hasSupabaseBrowserEnv } from "@/lib/supabase-browser";
+import { getSupabaseBrowserClient, hasSupabaseBrowserEnv, isBrowserDemoAccessAllowed } from "@/lib/supabase-browser";
 
 export function LoginForm() {
   const router = useRouter();
@@ -11,12 +11,13 @@ export function LoginForm() {
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const canUseAuth = hasSupabaseBrowserEnv();
+  const canUseDemo = isBrowserDemoAccessAllowed();
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     if (!canUseAuth) {
-      setMessage("Modo demo activo. Puedes entrar sin usuario con el botón Entrar en demo.");
+      setMessage("Faltan las variables públicas de Supabase. Configura NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY en la plataforma.");
       return;
     }
 
@@ -50,7 +51,8 @@ export function LoginForm() {
 
   return (
     <form className="form" onSubmit={onSubmit}>
-      {!canUseAuth ? <p style={{ color: "var(--warning)" }}>Modo demo activo: no necesitas usuario. El login real se activará al configurar Supabase.</p> : null}
+      {!canUseAuth ? <p style={{ color: "var(--danger)" }}>Login real pendiente de variables públicas Supabase en esta plataforma.</p> : null}
+      {canUseDemo ? <p style={{ color: "var(--warning)" }}>Modo demo explícito activo. Puedes entrar sin usuario.</p> : null}
       <label>
         Email
         <input className="input" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required={canUseAuth} disabled={!canUseAuth} />
@@ -59,9 +61,9 @@ export function LoginForm() {
         Contraseña
         <input className="input" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required={canUseAuth} disabled={!canUseAuth} />
       </label>
-      {message ? <p style={{ color: canUseAuth ? "var(--danger)" : "var(--warning)" }}>{message}</p> : null}
+      {message ? <p style={{ color: "var(--danger)" }}>{message}</p> : null}
       <button className="btn" type="submit" disabled={loading || !canUseAuth}>{loading ? "Entrando..." : "Entrar"}</button>
-      {!canUseAuth ? <button className="btn secondary" type="button" onClick={enterDemo}>Entrar en demo</button> : null}
+      {canUseDemo ? <button className="btn secondary" type="button" onClick={enterDemo}>Entrar en demo</button> : null}
     </form>
   );
 }
