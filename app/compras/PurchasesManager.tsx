@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { FormEvent, useMemo, useState } from "react";
 
 type PurchaseRow = {
   id: string;
@@ -10,6 +10,24 @@ type PurchaseRow = {
   amount?: number | string | null;
   currency?: string | null;
   review_notes?: string | null;
+};
+
+type PurchaseDraft = {
+  supplier_name: string;
+  service: string;
+  amount: string;
+  currency: string;
+  status: string;
+  review_notes: string;
+};
+
+const emptyDraft: PurchaseDraft = {
+  supplier_name: "",
+  service: "",
+  amount: "",
+  currency: "EUR",
+  status: "pending",
+  review_notes: "",
 };
 
 const statuses = [
@@ -49,7 +67,9 @@ export function PurchasesManager({ initialPurchases = [] }: { initialPurchases?:
   const [selectedId, setSelectedId] = useState<string | null>(() => items[0]?.id || null);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("Todos");
+  const [draft, setDraft] = useState<PurchaseDraft>(emptyDraft);
   const [message, setMessage] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [savingId, setSavingId] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
@@ -66,6 +86,47 @@ export function PurchasesManager({ initialPurchases = [] }: { initialPurchases?:
   const received = items.filter((item) => item.status === "received").length;
   const review = items.filter((item) => item.status === "review" || item.status === "review_needed").length;
   const total = items.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+
+  function updateDraft<K extends keyof PurchaseDraft>(key: K, value: PurchaseDraft[K]) {
+    setDraft((current) => ({ ...current, [key]: value }));
+  }
+
+  async function createPurchase(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const supplierName = draft.supplier_name.trim();
+    if (!supplierName) {
+      setMessage("Introduce el proveedor.");
+      return;
+    }
+
+    setSaving(true);
+    setMessage(null);
+    const response = await fetch("/api/routsify/expected-purchases", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        supplier_name: supplierName,
+        service: draft.service.trim() || null,
+        amount: draft.amount ? Number(draft.amount) : 0,
+        currency: draft.currency || "EUR",
+        status: draft.status,
+        review_notes: draft.review_notes.trim() || null,
+      }),
+    });
+    const result = await response.json().catch(() => null);
+    setSaving(false);
+
+    if (!response.ok || !result?.ok) {
+      setMessage("No se pudo crear la compra.");
+      return;
+    }
+
+    const created = normalize(result.data);
+    setItems((current) => [created, ...current.filter((item) => item.id !== created.id)]);
+    setSelectedId(created.id);
+    setDraft(emptyDraft);
+    setMessage("Compra creada correctamente.");
+  }
 
   async function updateStatus(id: string, nextStatus: string) {
     setSavingId(id);
@@ -103,6 +164,17 @@ export function PurchasesManager({ initialPurchases = [] }: { initialPurchases?:
           <div className="client-filters client-filters-simple">
             <input className="input" placeholder="Buscar proveedor o servicio..." value={search} onChange={(event) => setSearch(event.target.value)} />
             <label>Estado<select value={status} onChange={(event) => setStatus(event.target.value)}><option>Todos</option>{statuses.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+            <details className="new-client-drawer">
+              <summary className="btn">Nueva compra</summary>
+              <form className="form" onSubmit={createPurchase}>
+                <label>Proveedor<input className="input" value={draft.supplier_name} onChange={(event) => updateDraft("supplier_name", event.target.value)} /></label>
+                <label>Servicio<input className="input" value={draft.service} onChange={(event) => updateDraft("service", event.target.value)} /></label>
+                <div className="grid grid-2"><label>Importe<input className="input" type="number" min="0" step="0.01" value={draft.amount} onChange={(event) => updateDraft("amount", event.target.value)} /></label><label>Moneda<input className="input" value={draft.currency} onChange={(event) => updateDraft("currency", event.target.value)} /></label></div>
+                <label>Estado<select value={draft.status} onChange={(event) => updateDraft("status", event.target.value)}>{statuses.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+                <label>Notas<textarea className="input" rows={3} value={draft.review_notes} onChange={(event) => updateDraft("review_notes", event.target.value)} /></label>
+                <button className="btn" type="submit" disabled={saving}>{saving ? "Guardando..." : "Guardar compra"}</button>
+              </form>
+            </details>
           </div>
           {message ? <p className="client-message">{message}</p> : null}
 
@@ -126,7 +198,7 @@ export function PurchasesManager({ initialPurchases = [] }: { initialPurchases?:
               <section className="side-actions"><h3>Cambiar estado</h3>{statuses.map(([value, label]) => <button key={value} className={value === selected.status ? "quick-action primary" : "quick-action"} type="button" onClick={() => void updateStatus(selected.id, value)} disabled={savingId === selected.id}>{label}<span>→</span></button>)}</section>
             </>
           ) : (
-            <div className="empty-state"><h2>Sin compra seleccionada</h2><p>Selecciona una compra para ver el detalle.</p></div>
+            <div className="empty-state"><h2>Sin compra seleccionada</h2><p>Selecciona o crea una compra para ver el detalle.</p></div>
           )}
         </aside>
       </section>
