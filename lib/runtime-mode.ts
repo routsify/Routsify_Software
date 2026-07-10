@@ -3,7 +3,7 @@ export function hasSupabasePublicEnv() {
 }
 
 export function isDemoMode() {
-  return process.env.NEXT_PUBLIC_DEMO_MODE !== "false" || !hasSupabasePublicEnv();
+  return process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 }
 
 export function isProductionRuntime() {
@@ -11,8 +11,7 @@ export function isProductionRuntime() {
 }
 
 export function isPublicDemoAllowed() {
-  if (!isDemoMode()) return false;
-  return process.env.ROUTSIFY_ALLOW_PUBLIC_DEMO !== "false";
+  return isDemoMode() && process.env.ROUTSIFY_ALLOW_PUBLIC_DEMO === "true";
 }
 
 export function shouldBlockDemoInProduction() {
