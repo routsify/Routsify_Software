@@ -1,161 +1,186 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
-import {
-  ClientDraftInput,
-  ClientMaster,
-  ClientOrigin,
-  clientAlerts,
-  clientFiscalMissing,
-  clientInitials,
-  clientKpis,
-  createDemoClient,
-  demoClientMasters,
-  filterClientMasters,
-  formatClientMoney,
-  possibleDuplicate,
-  simulateHoldedSync,
-} from "@/lib/client-master";
+import type { Client } from "@/lib/types";
 
-const origins = ["Todos", "Web", "Fillout", "Booking", "Referral", "Agencia", "Manual"];
-const holdedStatuses = ["Todos", "sincronizado", "pendiente", "con_error", "sin_datos"];
-const owners = ["Todos", "Laura Pérez", "Diego Romero", "Sofía Martínez", "Carlos Vega"];
-const issueFilters = ["Todos", "Duplicados", "Sin fiscal", "Con error", "Aceptados"];
+type ClientRow = Client & {
+  created_at?: string | null;
+  updated_at?: string | null;
+};
 
-const emptyDraft: ClientDraftInput = {
+type Draft = {
+  display_name: string;
+  email: string;
+  phone: string;
+  client_type: string;
+  tax_id: string;
+  billing_address: string;
+  country: string;
+  notes: string;
+};
+
+const emptyDraft: Draft = {
   display_name: "",
   email: "",
   phone: "",
-  origin: "Manual",
-  owner: "Laura Pérez",
+  client_type: "person",
   tax_id: "",
   billing_address: "",
-  fiscal_email: "",
+  country: "ES",
+  notes: "",
 };
 
-function holdedLabel(status: ClientMaster["holded_status"]) {
-  if (status === "sincronizado") return "Sincronizado";
-  if (status === "pendiente") return "Pendiente";
-  if (status === "con_error") return "Con error";
-  return "Sin datos";
+function normalizeClient(input: unknown): ClientRow {
+  const row = input as Record<string, unknown>;
+  return {
+    id: String(row.id || crypto.randomUUID()),
+    display_name: String(row.display_name || row.name || "Cliente sin nombre"),
+    client_type: String(row.client_type || "person"),
+    email: row.email ? String(row.email) : null,
+    email_normalized: row.email_normalized ? String(row.email_normalized) : null,
+    phone: row.phone ? String(row.phone) : null,
+    phone_normalized: row.phone_normalized ? String(row.phone_normalized) : null,
+    tax_id: row.tax_id ? String(row.tax_id) : null,
+    billing_address: row.billing_address || null,
+    country: row.country ? String(row.country) : "ES",
+    language: row.language ? String(row.language) : "es",
+    source: row.source ? String(row.source) : "manual",
+    holded_contact_id: row.holded_contact_id ? String(row.holded_contact_id) : null,
+    notes: row.notes ? String(row.notes) : null,
+    created_at: row.created_at ? String(row.created_at) : null,
+    updated_at: row.updated_at ? String(row.updated_at) : null,
+  };
 }
 
-function holdedClass(status: ClientMaster["holded_status"]) {
-  if (status === "sincronizado") return "status-progress";
-  if (status === "pendiente") return "priority-normal";
-  if (status === "con_error") return "priority-urgent";
-  return "status-pill";
+function billingAddressText(value: unknown) {
+  if (!value) return "—";
+  if (typeof value === "string") return value || "—";
+  if (typeof value === "object" && value && "address" in value) return String((value as { address?: unknown }).address || "—");
+  return "—";
 }
 
-export function ClientsManager() {
-  const [clients, setClients] = useState<ClientMaster[]>(demoClientMasters);
-  const [selectedId, setSelectedId] = useState(demoClientMasters[0].id);
+function clientInitials(client?: ClientRow) {
+  if (!client?.display_name) return "--";
+  return client.display_name.split(" ").filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("");
+}
+
+export function ClientsManager({ initialClients = [] }: { initialClients?: unknown[] }) {
+  const [clients, setClients] = useState<ClientRow[]>(() => initialClients.map(normalizeClient));
+  const [selectedId, setSelectedId] = useState<string | null>(() => clients[0]?.id || null);
   const [query, setQuery] = useState("");
-  const [origin, setOrigin] = useState("Todos");
-  const [holded, setHolded] = useState("Todos");
-  const [owner, setOwner] = useState("Todos");
-  const [issue, setIssue] = useState("Todos");
-  const [draft, setDraft] = useState<ClientDraftInput>(emptyDraft);
+  const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [message, setMessage] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  const kpis = useMemo(() => clientKpis(clients), [clients]);
-  const filtered = useMemo(() => filterClientMasters(clients, { query, origin, holded, owner, issue }), [clients, query, origin, holded, owner, issue]);
-  const selected = clients.find((client) => client.id === selectedId) || filtered[0] || clients[0];
-  const selectedAlerts = selected ? clientAlerts(selected, clients) : [];
-  const fiscalMissing = selected ? clientFiscalMissing(selected) : [];
-  const duplicate = selected ? possibleDuplicate(selected, clients) : undefined;
+  const filtered = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return clients;
+    return clients.filter((client) => [client.display_name, client.email, client.phone, client.tax_id, client.country].filter(Boolean).join(" ").toLowerCase().includes(needle));
+  }, [clients, query]);
 
-  function updateDraft<K extends keyof ClientDraftInput>(key: K, value: ClientDraftInput[K]) {
+  const selected = clients.find((client) => client.id === selectedId) || filtered[0] || clients[0] || null;
+  const fiscalComplete = clients.filter((client) => client.tax_id && billingAddressText(client.billing_address) !== "—").length;
+  const withEmail = clients.filter((client) => client.email).length;
+  const withPhone = clients.filter((client) => client.phone).length;
+
+  function updateDraft<K extends keyof Draft>(key: K, value: Draft[K]) {
     setDraft((current) => ({ ...current, [key]: value }));
   }
 
-  function createClient(event: FormEvent<HTMLFormElement>) {
+  async function createClient(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!draft.display_name.trim()) {
-      setMessage("El cliente necesita nombre visible para crear ficha maestra.");
+    const displayName = draft.display_name.trim();
+    if (!displayName) {
+      setMessage("Introduce el nombre del cliente.");
       return;
     }
-    const result = createDemoClient(draft, clients);
-    if (!result.ok) {
-      setMessage(`${result.reason}. No se crea ficha nueva; actualiza la existente o revisa duplicado.`);
-      setSelectedId(result.existing.id);
+
+    setSaving(true);
+    setMessage(null);
+
+    const response = await fetch("/api/routsify/clients", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        display_name: displayName,
+        email: draft.email.trim() || null,
+        phone: draft.phone.trim() || null,
+        client_type: draft.client_type,
+        tax_id: draft.tax_id.trim() || null,
+        billing_address: draft.billing_address.trim() ? { address: draft.billing_address.trim() } : {},
+        country: draft.country.trim() || "ES",
+        notes: draft.notes.trim() || null,
+        source: "manual",
+      }),
+    });
+
+    const result = await response.json().catch(() => null);
+    setSaving(false);
+
+    if (!response.ok || !result?.ok) {
+      setMessage("No se pudo crear el cliente. Revisa los datos e inténtalo de nuevo.");
       return;
     }
-    setClients((current) => [result.client, ...current]);
-    setSelectedId(result.client.id);
+
+    const created = normalizeClient(result.data);
+    setClients((current) => [created, ...current.filter((client) => client.id !== created.id)]);
+    setSelectedId(created.id);
     setDraft(emptyDraft);
-    setMessage("Cliente creado en modo demo como ficha única. Si entra por Fillout/Booking se vinculará por email/teléfono.");
-  }
-
-  function syncHolded(id: string) {
-    setClients((current) => current.map((client) => client.id === id ? simulateHoldedSync(client) : client));
-    setMessage("Sincronización Holded simulada. Si faltan datos fiscales, queda error accionable sin duplicar contacto.");
-  }
-
-  function markAsMaster(id: string) {
-    setClients((current) => current.map((client) => client.id === id ? { ...client, duplicate_status: "unique", possible_duplicate_of: undefined, notes: "Marcado como ficha maestra revisada." } : client));
-    setMessage("Ficha marcada como única en modo demo. En real quedará auditado.");
+    setMessage("Cliente creado correctamente.");
   }
 
   return (
     <div className="clients-page">
       <section className="client-kpis">
-        <a className="kpi-card" href="#clientes-listado"><span className="kpi-icon">👥</span><span className="kpi-copy"><strong>Clientes activos</strong><b>{kpis.active}</b><small>+18 vs. mes anterior ↑</small></span></a>
-        <a className="kpi-card" href="#clientes-listado"><span className="kpi-icon">↻</span><span className="kpi-copy"><strong>Pendientes de sync</strong><b>{kpis.pendingSync}</b><small>Por sincronizar con Holded</small></span></a>
-        <a className="kpi-card" href="#clientes-listado"><span className="kpi-icon">€</span><span className="kpi-copy"><strong>Valor aceptado</strong><b>{formatClientMoney(kpis.acceptedValue)}</b><small>Presupuestos aceptados</small></span></a>
-        <a className="kpi-card" href="#clientes-listado"><span className="kpi-icon">!</span><span className="kpi-copy"><strong>Duplicados por revisar</strong><b>{kpis.duplicates}</b><small>Revisión recomendada</small></span></a>
+        <div className="kpi-card"><span className="kpi-icon">C</span><span className="kpi-copy"><strong>Clientes</strong><b>{clients.length}</b><small>Total registrados</small></span></div>
+        <div className="kpi-card"><span className="kpi-icon">@</span><span className="kpi-copy"><strong>Con email</strong><b>{withEmail}</b><small>Contacto disponible</small></span></div>
+        <div className="kpi-card"><span className="kpi-icon">☎</span><span className="kpi-copy"><strong>Con teléfono</strong><b>{withPhone}</b><small>Seguimiento directo</small></span></div>
+        <div className="kpi-card"><span className="kpi-icon">F</span><span className="kpi-copy"><strong>Fiscal completo</strong><b>{fiscalComplete}</b><small>NIF y dirección</small></span></div>
       </section>
 
       <section className="clients-layout">
         <div className="card clients-main" id="clientes-listado">
-          <div className="client-filters">
+          <div className="client-filters client-filters-simple">
             <input className="input" placeholder="Buscar cliente..." value={query} onChange={(event) => setQuery(event.target.value)} />
-            <label>Origen<select value={origin} onChange={(event) => setOrigin(event.target.value)}>{origins.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-            <label>Estado Holded<select value={holded} onChange={(event) => setHolded(event.target.value)}>{holdedStatuses.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-            <label>Responsable<select value={owner} onChange={(event) => setOwner(event.target.value)}>{owners.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-            <label>Problema<select value={issue} onChange={(event) => setIssue(event.target.value)}>{issueFilters.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
             <details className="new-client-drawer">
-              <summary className="btn">+ Nuevo cliente</summary>
+              <summary className="btn">Nuevo cliente</summary>
               <form className="form" onSubmit={createClient}>
-                <label>Nombre visible<input className="input" value={draft.display_name} onChange={(event) => updateDraft("display_name", event.target.value)} placeholder="Nombre del cliente" /></label>
+                <label>Nombre<input className="input" value={draft.display_name} onChange={(event) => updateDraft("display_name", event.target.value)} /></label>
                 <div className="grid grid-2"><label>Email<input className="input" type="email" value={draft.email} onChange={(event) => updateDraft("email", event.target.value)} /></label><label>Teléfono<input className="input" value={draft.phone} onChange={(event) => updateDraft("phone", event.target.value)} /></label></div>
-                <div className="grid grid-2"><label>Origen<select value={draft.origin} onChange={(event) => updateDraft("origin", event.target.value as ClientOrigin)}>{origins.filter((item) => item !== "Todos").map((item) => <option key={item} value={item}>{item}</option>)}</select></label><label>Responsable<select value={draft.owner} onChange={(event) => updateDraft("owner", event.target.value)}>{owners.filter((item) => item !== "Todos").map((item) => <option key={item} value={item}>{item}</option>)}</select></label></div>
-                <div className="grid grid-2"><label>NIF/DNI/CIF<input className="input" value={draft.tax_id} onChange={(event) => updateDraft("tax_id", event.target.value)} /></label><label>Email facturación<input className="input" value={draft.fiscal_email} onChange={(event) => updateDraft("fiscal_email", event.target.value)} /></label></div>
-                <label>Dirección fiscal<input className="input" value={draft.billing_address} onChange={(event) => updateDraft("billing_address", event.target.value)} /></label>
-                <button className="btn" type="submit">Crear ficha única</button>
+                <div className="grid grid-2"><label>Tipo<select value={draft.client_type} onChange={(event) => updateDraft("client_type", event.target.value)}><option value="person">Persona</option><option value="company">Empresa</option></select></label><label>País<input className="input" value={draft.country} onChange={(event) => updateDraft("country", event.target.value)} /></label></div>
+                <div className="grid grid-2"><label>NIF/DNI/CIF<input className="input" value={draft.tax_id} onChange={(event) => updateDraft("tax_id", event.target.value)} /></label><label>Dirección fiscal<input className="input" value={draft.billing_address} onChange={(event) => updateDraft("billing_address", event.target.value)} /></label></div>
+                <label>Notas<textarea className="input" value={draft.notes} onChange={(event) => updateDraft("notes", event.target.value)} rows={3} /></label>
+                <button className="btn" type="submit" disabled={saving}>{saving ? "Guardando..." : "Guardar cliente"}</button>
               </form>
             </details>
           </div>
+
           {message ? <p className="client-message">{message}</p> : null}
 
-          <table>
-            <thead><tr><th>Cliente</th><th>Origen</th><th>Valor aceptado</th><th>Estado Holded</th><th>Expedientes</th><th>Responsable</th><th></th></tr></thead>
-            <tbody>{filtered.map((client) => {
-              const alerts = clientAlerts(client, clients);
-              return <tr key={client.id} className={client.id === selected.id ? "selected-row" : ""}><td><button className="table-link" type="button" onClick={() => setSelectedId(client.id)}><strong>{client.display_name}</strong></button>{alerts.length ? <><br/><small>{alerts[0]}</small></> : null}</td><td><span className="status-pill status-progress">{client.origin}</span></td><td>{formatClientMoney(client.accepted_value)}</td><td><span className={`status-pill ${holdedClass(client.holded_status)}`}>{holdedLabel(client.holded_status)}</span></td><td>{client.cases_count}</td><td>{client.owner}</td><td><button className="icon-button" type="button" onClick={() => setSelectedId(client.id)}>⋮</button></td></tr>;
-            })}</tbody>
-          </table>
-          <div className="table-pagination"><span>Mostrando 1 a {filtered.length} de {clients.length} clientes</span><span><button className="btn secondary">‹</button><button className="btn">1</button><button className="btn secondary">2</button><button className="btn secondary">3</button><button className="btn secondary">›</button></span></div>
+          {clients.length === 0 ? (
+            <div className="empty-state"><h2>Todavía no hay clientes</h2><p>Crea tu primer cliente para empezar a trabajar con expedientes y presupuestos.</p></div>
+          ) : filtered.length === 0 ? (
+            <div className="empty-state"><h2>No hay coincidencias</h2><p>Cambia la búsqueda para ver otros clientes.</p></div>
+          ) : (
+            <table>
+              <thead><tr><th>Cliente</th><th>Email</th><th>Teléfono</th><th>País</th><th>Fiscal</th></tr></thead>
+              <tbody>{filtered.map((client) => <tr key={client.id} className={client.id === selected?.id ? "selected-row" : ""}><td><button className="table-link" type="button" onClick={() => setSelectedId(client.id)}><strong>{client.display_name}</strong></button></td><td>{client.email || "—"}</td><td>{client.phone || "—"}</td><td>{client.country || "—"}</td><td>{client.tax_id ? "Completable" : "Pendiente"}</td></tr>)}</tbody>
+            </table>
+          )}
         </div>
 
         <aside className="client-side card" id="cliente-panel">
-          <div className="client-side-header">
-            <span className="client-avatar">{clientInitials(selected)}</span>
-            <div><h2>{selected.display_name}</h2><p>{selected.email}<br/>{selected.phone}</p></div>
-          </div>
-          <div className="client-badges"><span className="badge">Ficha única</span><span className="badge">{duplicate ? "Duplicado posible" : "Sin duplicados"}</span><span className="badge">Cliente activo</span></div>
-
-          <section className="side-section"><h3>Datos fiscales</h3><table><tbody><tr><th>NIF/DNI/CIF</th><td>{selected.tax_id || "pendiente"}</td></tr><tr><th>Dirección fiscal</th><td>{String(selected.billing_address || "pendiente")}</td></tr><tr><th>País fiscal</th><td>{selected.fiscal_country || selected.country || "pendiente"}</td></tr><tr><th>Email de facturación</th><td>{selected.fiscal_email || selected.email || "pendiente"}</td></tr></tbody></table>{fiscalMissing.length ? <p className="danger-text">Falta: {fiscalMissing.join(", ")}</p> : <p>Datos fiscales mínimos completos.</p>}</section>
-
-          <section className="side-section"><h3>Estado Holded</h3><table><tbody><tr><th>holded_contact_id</th><td>{selected.holded_contact_id || "sin contacto"}</td></tr><tr><th>Última sincronización</th><td>{selected.holded_last_sync || "pendiente"}</td></tr><tr><th>Estado</th><td><span className={`status-pill ${holdedClass(selected.holded_status)}`}>{holdedLabel(selected.holded_status)}</span></td></tr><tr><th>Último error</th><td>{selected.holded_last_error || "—"}</td></tr></tbody></table></section>
-
-          <section className="side-section"><h3>Historial resumido</h3><table><tbody><tr><th>Primer contacto</th><td>{selected.first_contact_at}</td></tr><tr><th>Último contacto</th><td>{selected.last_contact_at}</td></tr><tr><th>Expedientes</th><td>{selected.cases_count}</td></tr><tr><th>Presupuestos aceptados</th><td>{selected.accepted_proposals}</td></tr><tr><th>Valor vendido</th><td>{formatClientMoney(selected.accepted_value)}</td></tr><tr><th>Pagos recibidos</th><td>{formatClientMoney(selected.payments_received)}</td></tr></tbody></table></section>
-
-          <section className="side-section"><h3>Alertas</h3>{selectedAlerts.length ? selectedAlerts.map((alert) => <p key={alert} className="danger-text">⚠ {alert}</p>) : <p>Sin alertas críticas.</p>}</section>
-
-          <section className="side-actions"><h3>Acciones rápidas</h3><a className="quick-action" href="#cliente-panel">Ver ficha completa <span>→</span></a><a className="quick-action" href="/expedientes">Crear expediente <span>→</span></a><a className="quick-action primary" href="/propuestas">Nuevo presupuesto <span>→</span></a><button className="quick-action" type="button" onClick={() => markAsMaster(selected.id)}>Revisar duplicados <span>→</span></button><button className="quick-action" type="button" onClick={() => syncHolded(selected.id)}>Sincronizar Holded <span>→</span></button></section>
-
-          <div className="client-footnote">Esta es la ficha maestra del cliente. Toda la actividad se centraliza aquí.</div>
+          {selected ? (
+            <>
+              <div className="client-side-header"><span className="client-avatar">{clientInitials(selected)}</span><div><h2>{selected.display_name}</h2><p>{selected.email || "Sin email"}<br />{selected.phone || "Sin teléfono"}</p></div></div>
+              <div className="client-badges"><span className="badge">Cliente</span><span className="badge">{selected.client_type === "company" ? "Empresa" : "Persona"}</span></div>
+              <section className="side-section"><h3>Datos fiscales</h3><table><tbody><tr><th>NIF/DNI/CIF</th><td>{selected.tax_id || "Pendiente"}</td></tr><tr><th>Dirección fiscal</th><td>{billingAddressText(selected.billing_address)}</td></tr><tr><th>País</th><td>{selected.country || "—"}</td></tr></tbody></table></section>
+              <section className="side-section"><h3>Notas</h3><p>{selected.notes || "Sin notas internas."}</p></section>
+              <section className="side-actions"><h3>Acciones</h3><a className="quick-action primary" href="/expedientes">Crear expediente <span>→</span></a><a className="quick-action" href="/propuestas">Crear presupuesto <span>→</span></a></section>
+            </>
+          ) : (
+            <div className="empty-state"><h2>Sin cliente seleccionado</h2><p>Selecciona o crea un cliente para ver su ficha.</p></div>
+          )}
         </aside>
       </section>
     </div>
