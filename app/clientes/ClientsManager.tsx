@@ -164,7 +164,7 @@ export function ClientsManager({ initialClients = [] }: { initialClients?: unkno
           ) : (
             <table>
               <thead><tr><th>Cliente</th><th>Email</th><th>Teléfono</th><th>País</th><th>Fiscal</th></tr></thead>
-              <tbody>{filtered.map((client) => <tr key={client.id} className={client.id === selected?.id ? "selected-row" : ""}><td><button className="table-link" type="button" onClick={() => setSelectedId(client.id)}><strong>{client.display_name}</strong></button></td><td>{client.email || "—"}</td><td>{client.phone || "—"}</td><td>{client.country || "—"}</td><td>{client.tax_id ? "Completable" : "Pendiente"}</td></tr>)}</tbody>
+              <tbody>{filtered.map((client) => <tr key={client.id} className={client.id === selected?.id ? "selected-row" : ""}><td><button className="table-link" type="button" onClick={() => setSelectedId(client.id)}><strong>{client.display_name}</strong></button></td><td>{client.email || "—"}</td><td>{client.phone || "—"}</td><td>{client.country || "—"}</td><td>{client.tax_id ? "Completo" : "Pendiente"}</td></tr>)}</tbody>
             </table>
           )}
         </div>
