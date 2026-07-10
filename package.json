@@ -4,8 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
-    "platform:build": "npm run validate:platform && npm run typecheck && next build",
+    "build": "opennextjs-cloudflare build",
+    "build:next": "next build",
+    "build:cloudflare": "opennextjs-cloudflare build",
+    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+    "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
+    "platform:build": "npm run validate:platform && npm run typecheck && npm run build:next",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
@@ -29,6 +33,7 @@
     "@types/react-dom": "19.0.3",
     "eslint": "9.17.0",
     "eslint-config-next": "16.2.1",
-    "typescript": "5.7.3"
+    "typescript": "5.7.3",
+    "wrangler": "4.110.0"
   }
 }
