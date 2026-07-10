@@ -18,11 +18,3 @@ export function getSupabaseBrowserClient() {
   if (!url || !key) throw new Error("Missing public Supabase browser configuration");
   return createBrowserClient(url, key);
 }
-
-export function isDemoMode() {
-  return process.env.NEXT_PUBLIC_DEMO_MODE === "true";
-}
-
-export function isBrowserDemoAccessAllowed() {
-  return isDemoMode() && process.env.NEXT_PUBLIC_ALLOW_PUBLIC_DEMO === "true";
-}
