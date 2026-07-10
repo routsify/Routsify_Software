@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createServerClient } from "@supabase/ssr";
 import { isPublicDemoAllowed, shouldBlockDemoInProduction } from "@/lib/runtime-mode";
 
 const internalPagePrefixes = ["/hoy", "/clientes", "/expedientes", "/compras", "/informes", "/ajustes"];
@@ -6,14 +7,6 @@ const internalApiPrefixes = ["/api/routsify", "/api/documentos/upload-url", "/ap
 
 function isInternalProposal(pathname: string) {
   return pathname === "/propuestas";
-}
-
-function hasSessionLikeCookie(request: NextRequest) {
-  return request.cookies.getAll().some((cookie) => cookie.name.startsWith("sb-") || cookie.name.includes("supabase") || cookie.name === "routsify_session");
-}
-
-function hasBearerToken(request: NextRequest) {
-  return (request.headers.get("authorization") || "").toLowerCase().startsWith("bearer ");
 }
 
 function hasInternalToken(request: NextRequest) {
@@ -30,12 +23,41 @@ function isApi(pathname: string) {
   return pathname.startsWith("/api/");
 }
 
-export function middleware(request: NextRequest) {
+function publicSupabaseConfig() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  return url && key ? { url, key } : null;
+}
+
+async function hasValidSession(request: NextRequest, response: NextResponse) {
+  const config = publicSupabaseConfig();
+  if (!config) return false;
+
+  const supabase = createServerClient(config.url, config.key, {
+    cookies: {
+      getAll() {
+        return request.cookies.getAll();
+      },
+      setAll(cookiesToSet) {
+        cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
+      },
+    },
+  });
+
+  const { data, error } = await supabase.auth.getUser();
+  return Boolean(!error && data.user);
+}
+
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   if (!isProtectedPath(pathname)) return NextResponse.next();
 
-  const allowed = hasSessionLikeCookie(request) || hasBearerToken(request) || hasInternalToken(request) || isPublicDemoAllowed();
-  if (allowed && !shouldBlockDemoInProduction()) return NextResponse.next();
+  const response = NextResponse.next({ request });
+  const allowedByToken = hasInternalToken(request);
+  const allowedByDemo = isPublicDemoAllowed() && !shouldBlockDemoInProduction();
+  const allowedBySession = await hasValidSession(request, response);
+
+  if (allowedByToken || allowedByDemo || allowedBySession) return response;
 
   if (isApi(pathname)) return NextResponse.json({ ok: false, error: "authentication_required" }, { status: 401 });
   const loginUrl = request.nextUrl.clone();
