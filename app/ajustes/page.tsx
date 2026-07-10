@@ -8,7 +8,7 @@ export default function SettingsPage() {
       <PageHeader
         eyebrow="Ajustes"
         title="Ajustes del sistema"
-        description="Configuración básica de empresa, márgenes, presupuestos, compras, fiscalidad e integraciones. Sin acciones simuladas ni botones técnicos peligrosos."
+        description="Configuración básica de empresa, márgenes, presupuestos, compras, fiscalidad e integraciones."
       />
       <ProductionSettings />
     </AppShell>
