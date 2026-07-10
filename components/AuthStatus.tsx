@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { getSupabaseBrowserClient, hasSupabaseBrowserEnv, isDemoMode } from "@/lib/supabase-browser";
+import { getSupabaseBrowserClient, hasSupabaseBrowserEnv } from "@/lib/supabase-browser";
 
 type ProfileState = {
   email: string | null;
@@ -13,11 +13,11 @@ type ProfileState = {
 export function AuthStatus() {
   const router = useRouter();
   const [state, setState] = useState<ProfileState>({ email: null, role: null });
-  const [loading, setLoading] = useState(!isDemoMode());
+  const [loading, setLoading] = useState(true);
   const [signingOut, setSigningOut] = useState(false);
 
   async function loadProfile() {
-    if (isDemoMode() || !hasSupabaseBrowserEnv()) {
+    if (!hasSupabaseBrowserEnv()) {
       setState({ email: null, role: null });
       setLoading(false);
       return;
@@ -38,7 +38,7 @@ export function AuthStatus() {
   }
 
   useEffect(() => {
-    if (isDemoMode() || !hasSupabaseBrowserEnv()) {
+    if (!hasSupabaseBrowserEnv()) {
       setState({ email: null, role: null });
       setLoading(false);
       return;
