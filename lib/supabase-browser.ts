@@ -16,5 +16,9 @@ export function getSupabaseBrowserClient() {
 }
 
 export function isDemoMode() {
-  return process.env.NEXT_PUBLIC_DEMO_MODE !== "false" || !hasSupabaseBrowserEnv();
+  return process.env.NEXT_PUBLIC_DEMO_MODE === "true";
+}
+
+export function isBrowserDemoAccessAllowed() {
+  return isDemoMode() && process.env.NEXT_PUBLIC_ALLOW_PUBLIC_DEMO === "true";
 }
