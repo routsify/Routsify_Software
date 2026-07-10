@@ -1,0 +1,39 @@
+import Link from "next/link";
+import { AppShell } from "@/components/AppShell";
+import { PageHeader } from "@/components/PageHeader";
+import { searchGlobalRepository } from "@/lib/server-repositories";
+
+export default async function SearchPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
+  const params = await searchParams;
+  const query = (params.q || "").trim();
+  const result = await searchGlobalRepository(query);
+  const items = result.ok ? result.data : [];
+
+  return (
+    <AppShell>
+      <PageHeader eyebrow="Buscar" title={query ? `Resultados para “${query}”` : "Buscar"} description="Encuentra clientes, expedientes y compras dentro del sistema." />
+
+      <section className="card dashboard-table-card">
+        {!query ? (
+          <div className="empty-state"><h2>Escribe una búsqueda</h2><p>Usa la barra superior para buscar por nombre, email, expediente, destino, proveedor o servicio.</p></div>
+        ) : items.length === 0 ? (
+          <div className="empty-state"><h2>No hay resultados</h2><p>No se han encontrado coincidencias para esta búsqueda.</p></div>
+        ) : (
+          <table>
+            <thead><tr><th>Tipo</th><th>Resultado</th><th>Detalle</th><th></th></tr></thead>
+            <tbody>
+              {items.map((item, index) => (
+                <tr key={`${item.type}-${item.href}-${index}`}>
+                  <td><span className="status-pill status-progress">{item.type}</span></td>
+                  <td><strong>{item.title}</strong></td>
+                  <td>{item.subtitle}</td>
+                  <td><Link className="btn secondary" href={item.href}>Abrir</Link></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+    </AppShell>
+  );
+}
