@@ -2,6 +2,7 @@ import Link from "next/link";
 import { AuthStatus } from "@/components/AuthStatus";
 import { GlobalSearch } from "@/components/GlobalSearch";
 import { Logo } from "@/components/Logo";
+import { requireAppSession } from "@/lib/app-auth";
 
 const nav = [
   ["/hoy", "Inicio"],
@@ -13,7 +14,9 @@ const nav = [
   ["/ajustes", "Ajustes"],
 ];
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export async function AppShell({ children }: { children: React.ReactNode }) {
+  await requireAppSession();
+
   return (
     <div className="shell">
       <aside className="sidebar">
