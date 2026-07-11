@@ -1,7 +1,6 @@
 import { getSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase-admin";
-import { isDemoMode } from "@/lib/runtime-mode";
 
-export type OutboxWorkerResult = { ok: true; mode: "demo" | "supabase"; processed: number; failed: number; manualReview: number; runId?: string; details: unknown[] } | { ok: false; mode: "supabase"; error: string };
+export type OutboxWorkerResult = { ok: true; mode: "supabase"; processed: number; failed: number; manualReview: number; runId?: string; details: unknown[] } | { ok: false; mode: "supabase"; error: string };
 
 type OutboxRow = {
   id: string;
@@ -28,9 +27,7 @@ async function handleOutboxRow(row: OutboxRow) {
 }
 
 export async function processOutboxBatch(limit = 10): Promise<OutboxWorkerResult> {
-  if (isDemoMode() || !hasSupabaseAdminEnv()) {
-    return { ok: true, mode: "demo", processed: 0, failed: 0, manualReview: 0, details: [{ message: "Worker outbox preparado. En demo no procesa filas reales." }] };
-  }
+  if (!hasSupabaseAdminEnv()) return { ok: false, mode: "supabase", error: "supabase_admin_not_configured" };
 
   const supabase = getSupabaseAdminClient();
   const { data: run, error: runError } = await supabase.from("integration_runs").insert({ integration: "outbox", status: "processing", started_at: new Date().toISOString(), metadata: { limit } }).select("id").single();
