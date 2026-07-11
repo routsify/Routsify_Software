@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { jsonAccessDenied, requireInternalAccess } from "@/lib/api-security";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { resolveOrganizationId } from "@/lib/request-context";
+import { calculateSalePrice, resolveMarginRule } from "@/lib/economics-server";
 
 function numeric(value: unknown) {
   const number = Number(value || 0);
@@ -31,7 +32,7 @@ async function recalculate(versionId: string) {
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ proposalId: string; lineId: string }> }) {
-  const access = requireInternalAccess(request);
+  const access = await requireInternalAccess(request);
   if (!access.ok) return jsonAccessDenied(access);
   const { proposalId, lineId } = await params;
   const organizationId = await resolveOrganizationId(request, access.organizationId);
@@ -44,21 +45,33 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const source = body as Record<string, unknown>;
   const description = String(source.description_public || "").trim();
   const cost = numeric(source.cost_budget);
-  const marginPercent = numeric(source.margin_applied);
+  const explicitMargin = source.margin_applied === undefined || source.margin_applied === null || source.margin_applied === "" ? null : Number(source.margin_applied);
   if (description.length < 2) return NextResponse.json({ ok: false, error: "description_required" }, { status: 400 });
   if (cost < 0) return NextResponse.json({ ok: false, error: "invalid_cost" }, { status: 400 });
-  if (marginPercent < 0 || marginPercent >= 100) return NextResponse.json({ ok: false, error: "invalid_margin" }, { status: 400 });
-  const sale = source.sale_price === undefined ? (cost > 0 ? cost / (1 - marginPercent / 100) : 0) : numeric(source.sale_price);
+  if (explicitMargin !== null && (!Number.isFinite(explicitMargin) || explicitMargin < 0 || explicitMargin >= 100)) return NextResponse.json({ ok: false, error: "invalid_margin" }, { status: 400 });
+  const supplierId = source.supplier_id ? String(source.supplier_id) : null;
+  const serviceTypeCode = source.service_type_code ? String(source.service_type_code) : "custom";
+  const rule = await resolveMarginRule({ organizationId, explicitMarginPercent: explicitMargin, supplierId, serviceTypeCode, destination: source.destination_segment ? String(source.destination_segment) : null });
+  const sale = source.sale_price === undefined || source.sale_price === null || source.sale_price === "" ? calculateSalePrice(cost, rule.percent, rule.formula) : numeric(source.sale_price);
 
   const { data, error } = await getSupabaseAdminClient()
     .from("budget_lines")
     .update({
       description_public: description,
+      description_internal: String(source.description_internal || "").trim() || null,
+      service_type_code: serviceTypeCode,
+      supplier_id: supplierId,
       supplier_name: String(source.supplier_name || "").trim() || null,
+      destination_segment: String(source.destination_segment || "").trim() || null,
+      start_date: source.start_date ? String(source.start_date) : null,
+      end_date: source.end_date ? String(source.end_date) : null,
       cost_budget: cost,
-      margin_applied: marginPercent / 100,
+      margin_applied: rule.fraction,
+      margin_rule_id: rule.ruleId,
+      margin_snapshot: rule.snapshot,
       sale_price: sale,
-      creates_expected_purchase: Boolean(String(source.supplier_name || "").trim() || cost > 0),
+      creates_expected_purchase: source.creates_expected_purchase === undefined ? Boolean(supplierId || String(source.supplier_name || "").trim()) : Boolean(source.creates_expected_purchase),
+      updated_at: new Date().toISOString(),
     })
     .eq("id", lineId)
     .eq("organization_id", organizationId)
@@ -72,7 +85,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 }
 
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ proposalId: string; lineId: string }> }) {
-  const access = requireInternalAccess(request);
+  const access = await requireInternalAccess(request);
   if (!access.ok) return jsonAccessDenied(access);
   const { proposalId, lineId } = await params;
   const organizationId = await resolveOrganizationId(request, access.organizationId);

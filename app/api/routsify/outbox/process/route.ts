@@ -5,7 +5,7 @@ import { processOutboxBatch } from "@/lib/outbox-worker-server";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
-  const access = requireInternalAccess(request);
+  const access = await requireInternalAccess(request);
   if (!access.ok) return jsonAccessDenied(access);
 
   const body = await request.json().catch(() => ({})) as { limit?: number };

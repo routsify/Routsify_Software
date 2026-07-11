@@ -12,7 +12,7 @@ function firstRelation(value: unknown): RelationRow | null {
 }
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ proposalId: string }> }) {
-  const access = requireInternalAccess(request);
+  const access = await requireInternalAccess(request);
   if (!access.ok) return jsonAccessDenied(access);
   const { proposalId } = await params;
   const body = await request.json().catch(() => ({}));

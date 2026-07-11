@@ -7,7 +7,7 @@ import { jsonAccessDenied, requireInternalAccess } from "@/lib/api-security";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
-  const access = requireInternalAccess(request);
+  const access = await requireInternalAccess(request);
   if (!access.ok) return jsonAccessDenied(access);
 
   const modules = moduleSummary(appModules);

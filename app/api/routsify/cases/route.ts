@@ -6,7 +6,7 @@ import { resolveOrganizationId } from "@/lib/request-context";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 
 export async function GET(request: NextRequest) {
-  const access = requireInternalAccess(request);
+  const access = await requireInternalAccess(request);
   if (!access.ok) return jsonAccessDenied(access);
   const organizationId = await resolveOrganizationId(request, access.organizationId);
   const result = await listOrganizationCases(organizationId);
@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const access = requireInternalAccess(request);
+  const access = await requireInternalAccess(request);
   if (!access.ok) return jsonAccessDenied(access);
 
   const body = await request.json().catch(() => null);

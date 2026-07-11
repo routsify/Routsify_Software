@@ -17,7 +17,7 @@ function mergeSettings(rows: Record<string, unknown>[]) {
 }
 
 export async function GET(request: NextRequest) {
-  const access = requireInternalAccess(request);
+  const access = await requireInternalAccess(request);
   if (!access.ok) return jsonAccessDenied(access);
 
   if (!hasSupabaseAdminEnv()) return NextResponse.json({ ok: true, mode: "local", data: [], summary: settingsSummary([]) });
@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  const access = requireInternalAccess(request);
+  const access = await requireInternalAccess(request);
   if (!access.ok) return jsonAccessDenied(access);
   if (!hasSupabaseAdminEnv()) return NextResponse.json({ ok: false, error: "supabase_admin_not_configured" }, { status: 503 });
 

@@ -1,9 +1,14 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
-export async function GET() {
+import { jsonAccessDenied, requireInternalAccess } from "@/lib/api-security";
+export async function GET(request: NextRequest) {
+  const access = await requireInternalAccess(request);
+  if (!access.ok) return jsonAccessDenied(access);
   return NextResponse.json({ ok: false, error: "legacy_budget_detail_disabled_use_proposals" }, { status: 410 });
 }
 
-export async function PATCH() {
+export async function PATCH(request: NextRequest) {
+  const access = await requireInternalAccess(request);
+  if (!access.ok) return jsonAccessDenied(access);
   return NextResponse.json({ ok: false, error: "legacy_budget_detail_disabled_use_proposals" }, { status: 410 });
 }

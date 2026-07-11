@@ -1,12 +1,8 @@
-import { NextResponse } from "next/server";
-import { getCaseDetail, statusConfig } from "@/lib/case-master";
+import { NextRequest, NextResponse } from "next/server";
+import { jsonAccessDenied, requireInternalAccess } from "@/lib/api-security";
 
-export async function POST(request: Request, { params }: { params: Promise<{ caseId: string }> }) {
-  const { caseId } = await params;
-  const body = await request.json();
-  const detail = getCaseDetail(decodeURIComponent(caseId));
-  if (!detail) return NextResponse.json({ error: "Case not found" }, { status: 404 });
-  const nextStatus = body.status || detail.expediente.status;
-  const nextAction = statusConfig[nextStatus as keyof typeof statusConfig]?.nextAction || detail.expediente.nextAction;
-  return NextResponse.json({ ok: true, expediente: { ...detail.expediente, status: nextStatus, nextAction, updatedAt: "Ahora", lastActivityAt: "Ahora" }, timelineEvent: { type: "status_changed", title: "Estado cambiado", description: body.reason, userName: "María García", createdAt: "Ahora" } });
+export async function POST(request: NextRequest) {
+  const access = await requireInternalAccess(request);
+  if (!access.ok) return jsonAccessDenied(access);
+  return NextResponse.json({ ok: false, error: "deprecated_endpoint_use_case_patch" }, { status: 410 });
 }

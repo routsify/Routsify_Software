@@ -26,7 +26,7 @@ async function fullProposal(proposalId: string) {
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ proposalId: string }> }) {
-  const access = requireInternalAccess(request);
+  const access = await requireInternalAccess(request);
   if (!access.ok) return jsonAccessDenied(access);
 
   const { proposalId } = await params;

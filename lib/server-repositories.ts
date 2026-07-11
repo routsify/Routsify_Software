@@ -29,7 +29,7 @@ type ClientRepositoryInput = {
 
 type CaseRepositoryInput = { organization_id?: string; client_id?: string | null; client_name?: string | null; title?: string | null; destination?: string | null; trip_start?: string | null; trip_end?: string | null; status?: string | null; next_action?: string | null; blocker?: string | null; final_notes?: string | null };
 type ProposalRepositoryInput = { organization_id?: string; case_id?: string; status?: string | null };
-type BudgetLineInput = { organization_id?: string; proposal_id?: string; proposal_version_id?: string; service_type_code?: string; description_public?: string; supplier_name?: string | null; cost_budget?: number; margin_applied?: number; sale_price?: number };
+type BudgetLineInput = { organization_id?: string; proposal_id?: string; proposal_version_id?: string; stable_line_id?: string; service_type_code?: string; description_public?: string; description_internal?: string | null; supplier_id?: string | null; supplier_name?: string | null; destination_segment?: string | null; start_date?: string | null; end_date?: string | null; cost_budget?: number; margin_applied?: number; margin_rule_id?: string | null; margin_snapshot?: Record<string, unknown>; sale_price?: number; creates_expected_purchase?: boolean };
 
 function canUseSupabase() {
   return hasSupabaseAdminEnv();
@@ -169,7 +169,7 @@ async function recalculateProposalVersion(versionId: string) {
   const { data: lines } = await supabase.from("budget_lines").select("cost_budget,sale_price").eq("proposal_version_id", versionId);
   const totalCost = (lines || []).reduce((sum, line) => sum + normalizeMoney(line.cost_budget), 0);
   const totalSale = (lines || []).reduce((sum, line) => sum + normalizeMoney(line.sale_price), 0);
-  await supabase.from("proposal_versions").update({ total_cost: totalCost, total_sale: totalSale }).eq("id", versionId);
+  await supabase.from("proposal_versions").update({ total_cost: totalCost, total_cost_budget: totalCost, total_sale: totalSale, budgeted_profit: totalSale - totalCost }).eq("id", versionId);
 }
 
 export async function addBudgetLineRepository(input: BudgetLineInput): Promise<RepositoryResult<unknown>> {
@@ -188,7 +188,27 @@ export async function addBudgetLineRepository(input: BudgetLineInput): Promise<R
   const cost = normalizeMoney(input.cost_budget);
   const margin = normalizeMoney(input.margin_applied);
   const sale = input.sale_price !== undefined ? normalizeMoney(input.sale_price) : cost > 0 ? cost / (1 - Math.min(margin, 95) / 100) : 0;
-  const { data, error } = await supabase.from("budget_lines").insert({ organization_id: input.organization_id, proposal_version_id: targetVersionId, service_type_code: input.service_type_code || "custom", description_public: input.description_public || "Servicio", supplier_name: input.supplier_name || null, cost_budget: cost, margin_applied: margin / 100, sale_price: sale }).select("*").single();
+  const { count } = await supabase.from("budget_lines").select("id", { count: "exact", head: true }).eq("proposal_version_id", targetVersionId);
+  const { data, error } = await supabase.from("budget_lines").insert({
+    organization_id: input.organization_id,
+    proposal_version_id: targetVersionId,
+    stable_line_id: input.stable_line_id || crypto.randomUUID(),
+    service_type_code: input.service_type_code || "custom",
+    description_public: input.description_public || "Servicio",
+    description_internal: input.description_internal || null,
+    supplier_id: input.supplier_id || null,
+    supplier_name: input.supplier_name || null,
+    destination_segment: input.destination_segment || null,
+    start_date: input.start_date || null,
+    end_date: input.end_date || null,
+    cost_budget: cost,
+    margin_applied: margin / 100,
+    margin_rule_id: input.margin_rule_id || null,
+    margin_snapshot: input.margin_snapshot || {},
+    sale_price: sale,
+    creates_expected_purchase: input.creates_expected_purchase ?? Boolean(input.supplier_id || input.supplier_name),
+    sort_order: count || 0,
+  }).select("*").single();
   if (error) return { ok: false, mode: "supabase", error: error.message };
   await recalculateProposalVersion(targetVersionId);
   return { ok: true, mode: "supabase", data };
@@ -231,11 +251,38 @@ export async function searchGlobalRepository(query: string): Promise<RepositoryR
   return { ok: true, mode: "supabase", data: results.slice(0, 20) };
 }
 
-export async function confirmDocumentUploadRepository(input: { organizationId: string; caseId?: string | null; ownerType: "case" | "traveler" | "supplier_invoice"; ownerId?: string | null; title: string; type: string; storagePath: string; fileName: string; mimeType: string; sizeBytes: number; checksum?: string | null; sensitivity?: "private" | "sensitive" | "public"; retentionDays?: number; actorId?: string | null }): Promise<RepositoryResult<unknown>> {
-  const retentionUntil = new Date(Date.now() + (input.retentionDays || 60) * 24 * 60 * 60 * 1000).toISOString();
+export async function confirmDocumentUploadRepository(input: { organizationId: string; caseId?: string | null; ownerType: "case" | "traveler" | "supplier_invoice"; ownerId?: string | null; title: string; type: string; bucket: string; storagePath: string; fileName: string; mimeType: string; sizeBytes: number; checksum?: string | null; sensitivity?: "private" | "sensitive" | "public"; retentionDays?: number; actorId?: string | null; invoiceNumber?: string | null; invoiceDate?: string | null; invoiceBase?: number | null; invoiceTax?: number | null; invoiceTotal?: number | null; currency?: string | null }): Promise<RepositoryResult<unknown>> {
+  const retentionDays = Math.max(1, Math.min(input.retentionDays || (input.ownerType === "supplier_invoice" ? 365 : 60), 3650));
+  const retentionUntil = new Date(Date.now() + retentionDays * 24 * 60 * 60 * 1000).toISOString();
   if (!canUseSupabase()) return { ok: false, mode: "supabase", error: "supabase_admin_not_configured" };
+  if (!input.storagePath.startsWith(`${input.organizationId}/`)) return { ok: false, mode: "supabase", error: "storage_path_scope_mismatch" };
   const supabase = getSupabaseAdminClient();
-  const { data, error } = await supabase.from("documents").insert({ organization_id: input.organizationId, case_id: input.caseId || null, owner_type: input.ownerType, owner_id: input.ownerId || null, title: input.title, type: input.type, status: "reviewing", file_name: input.fileName, storage_path: input.storagePath, mime_type: input.mimeType, size_bytes: input.sizeBytes, checksum: input.checksum || null, sensitivity: input.sensitivity || "private", retention_until: retentionUntil, access_purpose: "post_upload_confirmation", required: true }).select("*").single();
+
+  if (input.ownerType === "supplier_invoice") {
+    if (!input.ownerId || !input.caseId) return { ok: false, mode: "supabase", error: "purchase_and_case_required" };
+    const { data, error } = await supabase.rpc("confirm_supplier_invoice_upload", {
+      target_org: input.organizationId,
+      target_purchase: input.ownerId,
+      target_case: input.caseId,
+      document_title: input.title,
+      storage_bucket: input.bucket,
+      object_path: input.storagePath,
+      original_file_name: input.fileName,
+      object_mime_type: input.mimeType,
+      object_size_bytes: input.sizeBytes,
+      object_checksum: input.checksum || null,
+      invoice_number_value: input.invoiceNumber || null,
+      invoice_date_value: input.invoiceDate || null,
+      invoice_base_value: input.invoiceBase ?? null,
+      invoice_tax_value: input.invoiceTax ?? null,
+      invoice_total_value: input.invoiceTotal ?? null,
+      invoice_currency_value: input.currency || "EUR",
+      retention_days: retentionDays,
+    });
+    return error ? { ok: false, mode: "supabase", error: error.message } : { ok: true, mode: "supabase", data };
+  }
+
+  const { data, error } = await supabase.from("documents").insert({ organization_id: input.organizationId, case_id: input.caseId || null, owner_type: input.ownerType, owner_id: input.ownerId || null, title: input.title, type: input.type, status: "reviewing", bucket: input.bucket, file_name: input.fileName, storage_path: input.storagePath, mime_type: input.mimeType, size_bytes: input.sizeBytes, checksum: input.checksum || null, sensitivity: input.sensitivity || "private", retention_until: retentionUntil, access_purpose: "post_upload_confirmation", required: true, uploaded_at: new Date().toISOString() }).select("*").single();
   if (error) return { ok: false, mode: "supabase", error: error.message };
   await supabase.from("document_access_log").insert({ organization_id: input.organizationId, document_id: data.id, case_id: input.caseId || null, actor_id: input.actorId || null, purpose: "post_upload_confirmed", action: "document_record_created" });
   return { ok: true, mode: "supabase", data };

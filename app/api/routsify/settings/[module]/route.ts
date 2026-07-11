@@ -5,7 +5,7 @@ import { getSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase-admi
 import { defaultSettings, moduleFor } from "@/lib/settings-master";
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ module: string }> }) {
-  const access = requireInternalAccess(request);
+  const access = await requireInternalAccess(request);
   if (!access.ok) return jsonAccessDenied(access);
   const { module } = await params;
 

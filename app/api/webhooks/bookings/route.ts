@@ -1,13 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { enqueueOutboxEvent } from "@/lib/outbox-server";
-import { getSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase-admin";
 import { providerIdempotencyKey, verifyWebhookRequest } from "@/lib/webhook-security";
 
 async function resolveWebhookOrganizationId() {
-  if (process.env.ROUTSIFY_DEFAULT_ORGANIZATION_ID) return process.env.ROUTSIFY_DEFAULT_ORGANIZATION_ID;
-  if (!hasSupabaseAdminEnv()) return "";
-  const { data } = await getSupabaseAdminClient().from("organizations").select("id").order("created_at", { ascending: true }).limit(1).maybeSingle();
-  return String(data?.id || "");
+  return process.env.ROUTSIFY_DEFAULT_ORGANIZATION_ID || "";
 }
 
 export async function POST(request: NextRequest) {

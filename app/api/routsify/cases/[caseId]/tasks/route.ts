@@ -6,7 +6,7 @@ import { resolveOrganizationId } from "@/lib/request-context";
 const priorities = new Set(["low", "normal", "high", "urgent"]);
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ caseId: string }> }) {
-  const access = requireInternalAccess(request);
+  const access = await requireInternalAccess(request);
   if (!access.ok) return jsonAccessDenied(access);
   const { caseId } = await params;
   const body = await request.json().catch(() => null);

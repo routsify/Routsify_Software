@@ -22,7 +22,7 @@ const allowedStatuses = new Set([
 type CasePatch = Parameters<typeof updateCaseRepository>[1];
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ caseId: string }> }) {
-  const access = requireInternalAccess(request);
+  const access = await requireInternalAccess(request);
   if (!access.ok) return jsonAccessDenied(access);
 
   const { caseId } = await params;
@@ -52,7 +52,19 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if ("status" in source) {
     const status = String(source.status || "");
     if (!allowedStatuses.has(status)) return NextResponse.json({ ok: false, error: "invalid_status" }, { status: 400 });
-    updates.status = status;
+    if (status === "ready_to_close" || status === "closed") {
+      const { data: preflight, error: preflightError } = await getSupabaseAdminClient().rpc("operational_close_preflight", { target_case: caseId });
+      if (preflightError) return NextResponse.json({ ok: false, error: preflightError.message }, { status: 400 });
+      const closeResult = preflight as { ready?: boolean; blockers?: string[] } | null;
+      if (!closeResult?.ready) return NextResponse.json({ ok: false, error: "operational_close_blocked", blockers: closeResult?.blockers || [] }, { status: 409 });
+      updates.status = status;
+      updates.next_action = status === "closed" ? "Expediente cerrado" : "Revisar y cerrar expediente";
+      if (status === "closed") {
+        await getSupabaseAdminClient().from("cases").update({ operational_closed_at: new Date().toISOString(), closed_at: new Date().toISOString() }).eq("id", caseId).eq("organization_id", organizationId);
+      }
+    } else {
+      updates.status = status;
+    }
   }
 
   const result = await updateCaseRepository(caseId, updates);
