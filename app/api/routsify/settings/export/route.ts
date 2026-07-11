@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "server";
+import { NextRequest, NextResponse } from "next/server";
 
 import { jsonAccessDenied, requireInternalAccess } from "@/lib/api-security";
 export async function GET(request: NextRequest) {
