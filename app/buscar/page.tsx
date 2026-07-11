@@ -1,25 +1,19 @@
 import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
-import { searchGlobalRepository } from "@/lib/server-repositories";
-
-function stableHref(href: string) {
-  if (href.startsWith("/expedientes/")) return "/expedientes";
-  if (href.startsWith("/clientes/")) return "/clientes";
-  if (href.startsWith("/propuestas/")) return "/propuestas";
-  if (href.startsWith("/compras/")) return "/compras";
-  return href;
-}
+import { requireAppSession } from "@/lib/app-auth";
+import { searchOrganization } from "@/lib/organization-repositories";
 
 export default async function SearchPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
+  const session = await requireAppSession();
   const params = await searchParams;
   const query = (params.q || "").trim();
-  const result = await searchGlobalRepository(query);
+  const result = await searchOrganization(session.organizationId, query);
   const items = result.ok ? result.data : [];
 
   return (
     <AppShell>
-      <PageHeader eyebrow="Buscar" title={query ? `Resultados para “${query}”` : "Buscar"} description="Encuentra clientes, expedientes y compras dentro del sistema." />
+      <PageHeader eyebrow="Buscar" title={query ? `Resultados para “${query}”` : "Buscar"} description="Encuentra clientes, expedientes, presupuestos y compras de tu organización." />
 
       <section className="card dashboard-table-card">
         {!query ? (
@@ -27,7 +21,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
         ) : items.length === 0 ? (
           <div className="empty-state"><h2>No hay resultados</h2><p>No se han encontrado coincidencias para esta búsqueda.</p></div>
         ) : (
-          <table>
+          <div className="table-scroll"><table>
             <thead><tr><th>Tipo</th><th>Resultado</th><th>Detalle</th><th></th></tr></thead>
             <tbody>
               {items.map((item, index) => (
@@ -35,11 +29,11 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
                   <td><span className="status-pill status-progress">{item.type}</span></td>
                   <td><strong>{item.title}</strong></td>
                   <td>{item.subtitle}</td>
-                  <td><Link className="btn secondary" href={stableHref(item.href)}>Abrir</Link></td>
+                  <td><Link className="btn secondary" href={item.href}>Abrir</Link></td>
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         )}
       </section>
     </AppShell>
