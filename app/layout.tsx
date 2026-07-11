@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import "./operational.css";
+import "./legacy-form-fix.css";
 
 export const metadata: Metadata = {
   title: "Routsify Software",
