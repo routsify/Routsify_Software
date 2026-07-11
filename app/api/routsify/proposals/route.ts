@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonAccessDenied, requireInternalAccess } from "@/lib/api-security";
-import { createProposalRepository, listProposalsRepository } from "@/lib/server-repositories";
+import { createProposalRepository } from "@/lib/server-repositories";
+import { listOrganizationProposals } from "@/lib/organization-repositories";
 import { resolveOrganizationId } from "@/lib/request-context";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 
 export async function GET(request: NextRequest) {
   const access = requireInternalAccess(request);
   if (!access.ok) return jsonAccessDenied(access);
-  const result = await listProposalsRepository();
+  const organizationId = await resolveOrganizationId(request, access.organizationId);
+  const result = await listOrganizationProposals(organizationId);
   return NextResponse.json(result);
 }
 
