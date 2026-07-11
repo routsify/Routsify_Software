@@ -1,8 +1,7 @@
 import { createHmac, timingSafeEqual } from "crypto";
-import { isPublicDemoAllowed, shouldBlockDemoInProduction } from "@/lib/runtime-mode";
 
 export type WebhookVerification =
-  | { ok: true; mode: "hmac" | "demo"; timestamp?: string; eventId?: string }
+  | { ok: true; mode: "hmac"; timestamp?: string; eventId?: string }
   | { ok: false; status: number; error: string };
 
 function safeEqual(left: string, right: string) {
@@ -24,11 +23,7 @@ export function canonicalJsonStringify(value: unknown): string {
 }
 
 export function verifyWebhookRequest(input: { rawBody: string; secret?: string; signature?: string | null; timestamp?: string | null; eventId?: string | null; toleranceSeconds?: number }): WebhookVerification {
-  if (!input.secret) {
-    if (shouldBlockDemoInProduction()) return { ok: false, status: 503, error: "webhook_secret_required" };
-    if (isPublicDemoAllowed()) return { ok: true, mode: "demo", timestamp: input.timestamp || undefined, eventId: input.eventId || undefined };
-    return { ok: false, status: 401, error: "webhook_secret_required" };
-  }
+  if (!input.secret) return { ok: false, status: 503, error: "webhook_secret_required" };
 
   if (!input.signature || !input.timestamp) return { ok: false, status: 401, error: "missing_signature_or_timestamp" };
   const timestampMs = Number(input.timestamp) * 1000;
