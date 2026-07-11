@@ -1,0 +1,26 @@
+.new-client-drawer[open] {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+
+.new-client-drawer[open] summary {
+  width: fit-content;
+  margin-left: auto;
+}
+
+.new-client-drawer form {
+  position: static;
+  width: 100%;
+  max-height: none;
+  margin-top: 14px;
+  overflow: visible;
+  background: var(--soft);
+  box-shadow: none;
+}
+
+@media (max-width: 900px) {
+  .new-client-drawer[open] summary {
+    width: 100%;
+    margin-left: 0;
+  }
+}
