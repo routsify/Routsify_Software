@@ -64,11 +64,19 @@ function clientInitials(client?: ClientRow) {
   return client.display_name.split(" ").filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("");
 }
 
+function apiErrorMessage(result: unknown) {
+  const error = String((result as { error?: unknown } | null)?.error || "");
+  if (error.includes("duplicate") || error.includes("unique")) return "Ya existe un cliente con esos datos de contacto.";
+  if (error === "client_name_required") return "Introduce el nombre del cliente.";
+  return "No se pudo crear el cliente. Revisa los datos e inténtalo de nuevo.";
+}
+
 export function ClientsManager({ initialClients = [] }: { initialClients?: unknown[] }) {
   const [clients, setClients] = useState<ClientRow[]>(() => initialClients.map(normalizeClient));
   const [selectedId, setSelectedId] = useState<string | null>(() => clients[0]?.id || null);
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState<Draft>(emptyDraft);
+  const [showCreate, setShowCreate] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -85,6 +93,12 @@ export function ClientsManager({ initialClients = [] }: { initialClients?: unkno
 
   function updateDraft<K extends keyof Draft>(key: K, value: Draft[K]) {
     setDraft((current) => ({ ...current, [key]: value }));
+  }
+
+  function closeCreate() {
+    if (saving) return;
+    setShowCreate(false);
+    setDraft(emptyDraft);
   }
 
   async function createClient(event: FormEvent<HTMLFormElement>) {
@@ -108,7 +122,7 @@ export function ClientsManager({ initialClients = [] }: { initialClients?: unkno
         client_type: draft.client_type,
         tax_id: draft.tax_id.trim() || null,
         billing_address: draft.billing_address.trim() ? { address: draft.billing_address.trim() } : {},
-        country: draft.country.trim() || "ES",
+        country: draft.country.trim().toUpperCase() || "ES",
         notes: draft.notes.trim() || null,
         source: "manual",
       }),
@@ -118,7 +132,7 @@ export function ClientsManager({ initialClients = [] }: { initialClients?: unkno
     setSaving(false);
 
     if (!response.ok || !result?.ok) {
-      setMessage("No se pudo crear el cliente. Revisa los datos e inténtalo de nuevo.");
+      setMessage(apiErrorMessage(result));
       return;
     }
 
@@ -126,6 +140,7 @@ export function ClientsManager({ initialClients = [] }: { initialClients?: unkno
     setClients((current) => [created, ...current.filter((client) => client.id !== created.id)]);
     setSelectedId(created.id);
     setDraft(emptyDraft);
+    setShowCreate(false);
     setMessage("Cliente creado correctamente.");
   }
 
@@ -141,31 +156,49 @@ export function ClientsManager({ initialClients = [] }: { initialClients?: unkno
       <section className="clients-layout">
         <div className="card clients-main" id="clientes-listado">
           <div className="client-filters client-filters-simple">
-            <input className="input" placeholder="Buscar cliente..." value={query} onChange={(event) => setQuery(event.target.value)} />
-            <details className="new-client-drawer">
-              <summary className="btn">Nuevo cliente</summary>
-              <form className="form" onSubmit={createClient}>
-                <label>Nombre<input className="input" value={draft.display_name} onChange={(event) => updateDraft("display_name", event.target.value)} /></label>
-                <div className="grid grid-2"><label>Email<input className="input" type="email" value={draft.email} onChange={(event) => updateDraft("email", event.target.value)} /></label><label>Teléfono<input className="input" value={draft.phone} onChange={(event) => updateDraft("phone", event.target.value)} /></label></div>
-                <div className="grid grid-2"><label>Tipo<select value={draft.client_type} onChange={(event) => updateDraft("client_type", event.target.value)}><option value="person">Persona</option><option value="company">Empresa</option></select></label><label>País<input className="input" value={draft.country} onChange={(event) => updateDraft("country", event.target.value)} /></label></div>
-                <div className="grid grid-2"><label>NIF/DNI/CIF<input className="input" value={draft.tax_id} onChange={(event) => updateDraft("tax_id", event.target.value)} /></label><label>Dirección fiscal<input className="input" value={draft.billing_address} onChange={(event) => updateDraft("billing_address", event.target.value)} /></label></div>
-                <label>Notas<textarea className="input" value={draft.notes} onChange={(event) => updateDraft("notes", event.target.value)} rows={3} /></label>
-                <button className="btn" type="submit" disabled={saving}>{saving ? "Guardando..." : "Guardar cliente"}</button>
-              </form>
-            </details>
+            <input className="input" placeholder="Buscar por nombre, email, teléfono o NIF..." value={query} onChange={(event) => setQuery(event.target.value)} />
+            <button className={showCreate ? "btn secondary" : "btn"} type="button" onClick={() => setShowCreate((current) => !current)} aria-expanded={showCreate}>
+              {showCreate ? "Cerrar formulario" : "Nuevo cliente"}
+            </button>
           </div>
 
-          {message ? <p className="client-message">{message}</p> : null}
+          {showCreate ? (
+            <section className="creation-panel" aria-label="Crear nuevo cliente">
+              <div className="creation-panel-header">
+                <div><div className="eyebrow">Nuevo cliente</div><h2>Datos básicos y fiscales</h2><p>Guarda primero los datos disponibles. Los campos fiscales pueden completarse más adelante.</p></div>
+                <button className="btn secondary" type="button" onClick={closeCreate} disabled={saving}>Cancelar</button>
+              </div>
+              <form className="form" onSubmit={createClient}>
+                <label>Nombre o razón social *<input className="input" autoFocus required autoComplete="name" value={draft.display_name} onChange={(event) => updateDraft("display_name", event.target.value)} /></label>
+                <div className="grid grid-2">
+                  <label>Email<input className="input" type="email" autoComplete="email" value={draft.email} onChange={(event) => updateDraft("email", event.target.value)} /></label>
+                  <label>Teléfono<input className="input" type="tel" autoComplete="tel" value={draft.phone} onChange={(event) => updateDraft("phone", event.target.value)} /></label>
+                </div>
+                <div className="grid grid-2">
+                  <label>Tipo<select value={draft.client_type} onChange={(event) => updateDraft("client_type", event.target.value)}><option value="person">Persona</option><option value="company">Empresa</option></select></label>
+                  <label>País<input className="input" maxLength={2} value={draft.country} onChange={(event) => updateDraft("country", event.target.value)} /></label>
+                </div>
+                <div className="grid grid-2">
+                  <label>NIF / DNI / CIF<input className="input" value={draft.tax_id} onChange={(event) => updateDraft("tax_id", event.target.value)} /></label>
+                  <label>Dirección fiscal<input className="input" autoComplete="street-address" value={draft.billing_address} onChange={(event) => updateDraft("billing_address", event.target.value)} /></label>
+                </div>
+                <label>Notas internas<textarea className="input" value={draft.notes} onChange={(event) => updateDraft("notes", event.target.value)} rows={3} /></label>
+                <div className="form-actions"><button className="btn secondary" type="button" onClick={closeCreate} disabled={saving}>Cancelar</button><button className="btn" type="submit" disabled={saving}>{saving ? "Guardando..." : "Guardar cliente"}</button></div>
+              </form>
+            </section>
+          ) : null}
+
+          {message ? <p className="client-message" role="status">{message}</p> : null}
 
           {clients.length === 0 ? (
             <div className="empty-state"><h2>Todavía no hay clientes</h2><p>Crea tu primer cliente para empezar a trabajar con expedientes y presupuestos.</p></div>
           ) : filtered.length === 0 ? (
             <div className="empty-state"><h2>No hay coincidencias</h2><p>Cambia la búsqueda para ver otros clientes.</p></div>
           ) : (
-            <table>
+            <div className="table-scroll"><table>
               <thead><tr><th>Cliente</th><th>Email</th><th>Teléfono</th><th>País</th><th>Fiscal</th></tr></thead>
-              <tbody>{filtered.map((client) => <tr key={client.id} className={client.id === selected?.id ? "selected-row" : ""}><td><button className="table-link" type="button" onClick={() => setSelectedId(client.id)}><strong>{client.display_name}</strong></button></td><td>{client.email || "—"}</td><td>{client.phone || "—"}</td><td>{client.country || "—"}</td><td>{client.tax_id ? "Completo" : "Pendiente"}</td></tr>)}</tbody>
-            </table>
+              <tbody>{filtered.map((client) => <tr key={client.id} className={client.id === selected?.id ? "selected-row" : ""}><td><button className="table-link" type="button" onClick={() => setSelectedId(client.id)}><strong>{client.display_name}</strong></button></td><td>{client.email || "—"}</td><td>{client.phone || "—"}</td><td>{client.country || "—"}</td><td>{client.tax_id && billingAddressText(client.billing_address) !== "—" ? "Completo" : "Pendiente"}</td></tr>)}</tbody>
+            </table></div>
           )}
         </div>
 
@@ -176,7 +209,7 @@ export function ClientsManager({ initialClients = [] }: { initialClients?: unkno
               <div className="client-badges"><span className="badge">Cliente</span><span className="badge">{selected.client_type === "company" ? "Empresa" : "Persona"}</span></div>
               <section className="side-section"><h3>Datos fiscales</h3><table><tbody><tr><th>NIF/DNI/CIF</th><td>{selected.tax_id || "Pendiente"}</td></tr><tr><th>Dirección fiscal</th><td>{billingAddressText(selected.billing_address)}</td></tr><tr><th>País</th><td>{selected.country || "—"}</td></tr></tbody></table></section>
               <section className="side-section"><h3>Notas</h3><p>{selected.notes || "Sin notas internas."}</p></section>
-              <section className="side-actions"><h3>Acciones</h3><a className="quick-action primary" href="/expedientes">Crear expediente <span>→</span></a><a className="quick-action" href="/propuestas">Crear presupuesto <span>→</span></a></section>
+              <section className="side-actions"><h3>Acciones</h3><a className="quick-action primary" href={`/expedientes?clientId=${encodeURIComponent(selected.id)}`}>Crear expediente <span>→</span></a><a className="quick-action" href="/propuestas">Ver presupuestos <span>→</span></a></section>
             </>
           ) : (
             <div className="empty-state"><h2>Sin cliente seleccionado</h2><p>Selecciona o crea un cliente para ver su ficha.</p></div>
