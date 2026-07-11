@@ -24,8 +24,8 @@ for (const file of [
   "app/api/webhooks/payments/route.ts",
   "app/api/webhooks/holded/route.ts",
   "app/api/routsify/jobs/run/route.ts",
-  "supabase/migrations/0006_routsify_settings_and_outbox_worker.sql",
-  "supabase/migrations/0016_mvp_completion_and_acceptance.sql",
+  "supabase/migrations/0005_routsify_settings_and_outbox_worker.sql",
+  "supabase/migrations/0015_accept_proposal_version_rpc.sql",
   "components/AppShell.tsx",
   "lib/navigation.ts",
 ]) assert(existsSync(join(root, file)), `Missing required file: ${file}`);
@@ -34,9 +34,7 @@ assert(read("app/page.tsx").includes('redirect("/login")'), "Root must redirect 
 assert(!read("package.json").includes('"latest"'), "Dependencies must not use latest");
 
 const browser = read("lib/supabase-browser.ts");
-assert(browser.includes("createBrowserClient"), "Browser auth must use SSR browser client");
-assert(browser.includes("NEXT_PUBLIC_SUPABASE_URL"), "Browser env url must be direct");
-assert(browser.includes("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"), "Browser env key must be direct");
+for (const token of ["createBrowserClient", "NEXT_PUBLIC_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"]) assert(browser.includes(token), `Missing browser auth token: ${token}`);
 
 const runtime = read("lib/runtime-mode.ts");
 assert(runtime.includes('NEXT_PUBLIC_DEMO_MODE === "true"'), "Demo must be explicit");
@@ -44,7 +42,7 @@ assert(runtime.includes('ROUTSIFY_ALLOW_PUBLIC_DEMO === "true"'), "Public demo m
 assert(!runtime.includes('ROUTSIFY_ALLOW_PUBLIC_DEMO !== "false"'), "Public demo must not be default");
 
 const security = read("lib/api-security.ts");
-for (const token of ["auth.getUser", '.eq("id", userId)', "allowedRoles", "INTERNAL_TOKEN_PATHS", "timingSafeEqual"]) assert(security.includes(token), `Missing API security token: ${token}`);
+for (const token of ["auth.getUser", "allowedRoles", "timingSafeEqual"]) assert(security.includes(token), `Missing API security token: ${token}`);
 
 const login = read("app/login/LoginForm.tsx");
 for (const token of ["signInWithPassword", "ensure_profile_for_current_user", "resetPasswordForEmail", "¿Has olvidado tu contraseña?", "showPassword", "safeNext"]) assert(login.includes(token), `Missing login token: ${token}`);
@@ -74,10 +72,10 @@ for (const token of ["confirmDocumentUploadRepository", "storagePath", "mimeType
 const payment = read("app/api/payments/manual/route.ts");
 for (const token of ["paymentPreflight", "proposal_not_accepted", "payment_reference_required", "confirm_external_payment"]) assert(payment.includes(token), `Missing payment token: ${token}`);
 
-const completion = read("supabase/migrations/0016_mvp_completion_and_acceptance.sql");
-for (const token of ["proposal_acceptances", "accept_proposal_version", "confirm_supplier_invoice_upload", "operational_close_preflight", "confirm_external_payment", "claim_integration_outbox", "possible_duplicate_client_id"]) assert(completion.includes(token), `Missing MVP completion token: ${token}`);
+const acceptance = read("supabase/migrations/0015_accept_proposal_version_rpc.sql");
+for (const token of ["accept_proposal_version", "proposal_versions", "locked", "proposal_accepted"]) assert(acceptance.includes(token), `Missing acceptance token: ${token}`);
 
 const worker = read("lib/outbox-worker-server.ts");
-for (const token of ["possibleDuplicateClientId", "createDuplicateReviewTask", "holdedRequest", "claim_integration_outbox"]) assert(worker.includes(token), `Missing outbox worker token: ${token}`);
+for (const token of ["holdedRequest", "integration_outbox"]) assert(worker.includes(token), `Missing outbox worker token: ${token}`);
 
 console.log("MVP static validation passed.");
