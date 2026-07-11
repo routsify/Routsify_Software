@@ -3,11 +3,7 @@
 import { FormEvent, useMemo, useState } from "react";
 import type { Client } from "@/lib/types";
 
-type ClientRow = Client & {
-  created_at?: string | null;
-  updated_at?: string | null;
-};
-
+type ClientRow = Client & { created_at?: string | null; updated_at?: string | null };
 type Draft = {
   display_name: string;
   email: string;
@@ -19,16 +15,7 @@ type Draft = {
   notes: string;
 };
 
-const emptyDraft: Draft = {
-  display_name: "",
-  email: "",
-  phone: "",
-  client_type: "person",
-  tax_id: "",
-  billing_address: "",
-  country: "ES",
-  notes: "",
-};
+const emptyDraft: Draft = { display_name: "", email: "", phone: "", client_type: "person", tax_id: "", billing_address: "", country: "ES", notes: "" };
 
 function normalizeClient(input: unknown): ClientRow {
   const row = input as Record<string, unknown>;
@@ -59,16 +46,31 @@ function billingAddressText(value: unknown) {
   return "—";
 }
 
+function draftFromClient(client: ClientRow): Draft {
+  return {
+    display_name: client.display_name || "",
+    email: client.email || "",
+    phone: client.phone || "",
+    client_type: client.client_type || "person",
+    tax_id: client.tax_id || "",
+    billing_address: billingAddressText(client.billing_address) === "—" ? "" : billingAddressText(client.billing_address),
+    country: client.country || "ES",
+    notes: client.notes || "",
+  };
+}
+
 function clientInitials(client?: ClientRow) {
   if (!client?.display_name) return "--";
   return client.display_name.split(" ").filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("");
 }
 
-function apiErrorMessage(result: unknown) {
+function apiErrorMessage(result: unknown, action: "create" | "update") {
   const error = String((result as { error?: unknown } | null)?.error || "");
-  if (error.includes("duplicate") || error.includes("unique")) return "Ya existe un cliente con esos datos de contacto.";
+  if (error.includes("duplicate") || error.includes("unique")) return "Ya existe un cliente con ese email.";
+  if (error === "invalid_email") return "El email no tiene un formato válido.";
+  if (error === "invalid_country") return "El país debe indicarse con dos letras, por ejemplo ES.";
   if (error === "client_name_required") return "Introduce el nombre del cliente.";
-  return "No se pudo crear el cliente. Revisa los datos e inténtalo de nuevo.";
+  return action === "create" ? "No se pudo crear el cliente." : "No se pudieron guardar los cambios.";
 }
 
 export function ClientsManager({ initialClients = [] }: { initialClients?: unknown[] }) {
@@ -76,7 +78,9 @@ export function ClientsManager({ initialClients = [] }: { initialClients?: unkno
   const [selectedId, setSelectedId] = useState<string | null>(() => clients[0]?.id || null);
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState<Draft>(emptyDraft);
+  const [editDraft, setEditDraft] = useState<Draft>(emptyDraft);
   const [showCreate, setShowCreate] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -95,23 +99,29 @@ export function ClientsManager({ initialClients = [] }: { initialClients?: unkno
     setDraft((current) => ({ ...current, [key]: value }));
   }
 
+  function updateEditDraft<K extends keyof Draft>(key: K, value: Draft[K]) {
+    setEditDraft((current) => ({ ...current, [key]: value }));
+  }
+
   function closeCreate() {
     if (saving) return;
     setShowCreate(false);
     setDraft(emptyDraft);
   }
 
+  function startEdit() {
+    if (!selected) return;
+    setEditDraft(draftFromClient(selected));
+    setShowEdit(true);
+    setMessage(null);
+  }
+
   async function createClient(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const displayName = draft.display_name.trim();
-    if (!displayName) {
-      setMessage("Introduce el nombre del cliente.");
-      return;
-    }
-
+    if (!displayName) return setMessage("Introduce el nombre del cliente.");
     setSaving(true);
     setMessage(null);
-
     const response = await fetch("/api/routsify/clients", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -127,15 +137,9 @@ export function ClientsManager({ initialClients = [] }: { initialClients?: unkno
         source: "manual",
       }),
     });
-
     const result = await response.json().catch(() => null);
     setSaving(false);
-
-    if (!response.ok || !result?.ok) {
-      setMessage(apiErrorMessage(result));
-      return;
-    }
-
+    if (!response.ok || !result?.ok) return setMessage(apiErrorMessage(result, "create"));
     const created = normalizeClient(result.data);
     setClients((current) => [created, ...current.filter((client) => client.id !== created.id)]);
     setSelectedId(created.id);
@@ -143,6 +147,46 @@ export function ClientsManager({ initialClients = [] }: { initialClients?: unkno
     setShowCreate(false);
     setMessage("Cliente creado correctamente.");
   }
+
+  async function saveClient(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selected) return;
+    if (!editDraft.display_name.trim()) return setMessage("Introduce el nombre del cliente.");
+    setSaving(true);
+    setMessage(null);
+    const response = await fetch(`/api/routsify/clients/${encodeURIComponent(selected.id)}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        display_name: editDraft.display_name.trim(),
+        email: editDraft.email.trim() || null,
+        phone: editDraft.phone.trim() || null,
+        client_type: editDraft.client_type,
+        tax_id: editDraft.tax_id.trim() || null,
+        billing_address: editDraft.billing_address.trim() ? { address: editDraft.billing_address.trim() } : {},
+        country: editDraft.country.trim().toUpperCase() || "ES",
+        notes: editDraft.notes.trim() || null,
+      }),
+    });
+    const result = await response.json().catch(() => null);
+    setSaving(false);
+    if (!response.ok || !result?.ok) return setMessage(apiErrorMessage(result, "update"));
+    const updated = normalizeClient(result.data);
+    setClients((current) => current.map((client) => client.id === updated.id ? updated : client));
+    setSelectedId(updated.id);
+    setShowEdit(false);
+    setMessage("Cliente actualizado correctamente.");
+  }
+
+  const clientForm = (value: Draft, update: <K extends keyof Draft>(key: K, value: Draft[K]) => void) => (
+    <>
+      <label>Nombre o razón social *<input className="input" required autoComplete="name" value={value.display_name} onChange={(event) => update("display_name", event.target.value)} /></label>
+      <div className="grid grid-2"><label>Email<input className="input" type="email" autoComplete="email" value={value.email} onChange={(event) => update("email", event.target.value)} /></label><label>Teléfono<input className="input" type="tel" autoComplete="tel" value={value.phone} onChange={(event) => update("phone", event.target.value)} /></label></div>
+      <div className="grid grid-2"><label>Tipo<select value={value.client_type} onChange={(event) => update("client_type", event.target.value)}><option value="person">Persona</option><option value="company">Empresa</option></select></label><label>País<input className="input" maxLength={2} value={value.country} onChange={(event) => update("country", event.target.value)} /></label></div>
+      <div className="grid grid-2"><label>NIF / DNI / CIF<input className="input" value={value.tax_id} onChange={(event) => update("tax_id", event.target.value)} /></label><label>Dirección fiscal<input className="input" autoComplete="street-address" value={value.billing_address} onChange={(event) => update("billing_address", event.target.value)} /></label></div>
+      <label>Notas internas<textarea className="input" value={value.notes} onChange={(event) => update("notes", event.target.value)} rows={3} /></label>
+    </>
+  );
 
   return (
     <div className="clients-page">
@@ -157,63 +201,17 @@ export function ClientsManager({ initialClients = [] }: { initialClients?: unkno
         <div className="card clients-main" id="clientes-listado">
           <div className="client-filters client-filters-simple">
             <input className="input" placeholder="Buscar por nombre, email, teléfono o NIF..." value={query} onChange={(event) => setQuery(event.target.value)} />
-            <button className={showCreate ? "btn secondary" : "btn"} type="button" onClick={() => setShowCreate((current) => !current)} aria-expanded={showCreate}>
-              {showCreate ? "Cerrar formulario" : "Nuevo cliente"}
-            </button>
+            <button className={showCreate ? "btn secondary" : "btn"} type="button" onClick={() => setShowCreate((current) => !current)} aria-expanded={showCreate}>{showCreate ? "Cerrar formulario" : "Nuevo cliente"}</button>
           </div>
 
-          {showCreate ? (
-            <section className="creation-panel" aria-label="Crear nuevo cliente">
-              <div className="creation-panel-header">
-                <div><div className="eyebrow">Nuevo cliente</div><h2>Datos básicos y fiscales</h2><p>Guarda primero los datos disponibles. Los campos fiscales pueden completarse más adelante.</p></div>
-                <button className="btn secondary" type="button" onClick={closeCreate} disabled={saving}>Cancelar</button>
-              </div>
-              <form className="form" onSubmit={createClient}>
-                <label>Nombre o razón social *<input className="input" autoFocus required autoComplete="name" value={draft.display_name} onChange={(event) => updateDraft("display_name", event.target.value)} /></label>
-                <div className="grid grid-2">
-                  <label>Email<input className="input" type="email" autoComplete="email" value={draft.email} onChange={(event) => updateDraft("email", event.target.value)} /></label>
-                  <label>Teléfono<input className="input" type="tel" autoComplete="tel" value={draft.phone} onChange={(event) => updateDraft("phone", event.target.value)} /></label>
-                </div>
-                <div className="grid grid-2">
-                  <label>Tipo<select value={draft.client_type} onChange={(event) => updateDraft("client_type", event.target.value)}><option value="person">Persona</option><option value="company">Empresa</option></select></label>
-                  <label>País<input className="input" maxLength={2} value={draft.country} onChange={(event) => updateDraft("country", event.target.value)} /></label>
-                </div>
-                <div className="grid grid-2">
-                  <label>NIF / DNI / CIF<input className="input" value={draft.tax_id} onChange={(event) => updateDraft("tax_id", event.target.value)} /></label>
-                  <label>Dirección fiscal<input className="input" autoComplete="street-address" value={draft.billing_address} onChange={(event) => updateDraft("billing_address", event.target.value)} /></label>
-                </div>
-                <label>Notas internas<textarea className="input" value={draft.notes} onChange={(event) => updateDraft("notes", event.target.value)} rows={3} /></label>
-                <div className="form-actions"><button className="btn secondary" type="button" onClick={closeCreate} disabled={saving}>Cancelar</button><button className="btn" type="submit" disabled={saving}>{saving ? "Guardando..." : "Guardar cliente"}</button></div>
-              </form>
-            </section>
-          ) : null}
+          {showCreate ? <section className="creation-panel"><div className="creation-panel-header"><div><div className="eyebrow">Nuevo cliente</div><h2>Datos básicos y fiscales</h2><p>Guarda los datos disponibles; podrás completarlos después.</p></div><button className="btn secondary" type="button" onClick={closeCreate} disabled={saving}>Cancelar</button></div><form className="form" onSubmit={createClient}>{clientForm(draft, updateDraft)}<div className="form-actions"><button className="btn secondary" type="button" onClick={closeCreate} disabled={saving}>Cancelar</button><button className="btn" type="submit" disabled={saving}>{saving ? "Guardando..." : "Guardar cliente"}</button></div></form></section> : null}
 
           {message ? <p className="client-message" role="status">{message}</p> : null}
-
-          {clients.length === 0 ? (
-            <div className="empty-state"><h2>Todavía no hay clientes</h2><p>Crea tu primer cliente para empezar a trabajar con expedientes y presupuestos.</p></div>
-          ) : filtered.length === 0 ? (
-            <div className="empty-state"><h2>No hay coincidencias</h2><p>Cambia la búsqueda para ver otros clientes.</p></div>
-          ) : (
-            <div className="table-scroll"><table>
-              <thead><tr><th>Cliente</th><th>Email</th><th>Teléfono</th><th>País</th><th>Fiscal</th></tr></thead>
-              <tbody>{filtered.map((client) => <tr key={client.id} className={client.id === selected?.id ? "selected-row" : ""}><td><button className="table-link" type="button" onClick={() => setSelectedId(client.id)}><strong>{client.display_name}</strong></button></td><td>{client.email || "—"}</td><td>{client.phone || "—"}</td><td>{client.country || "—"}</td><td>{client.tax_id && billingAddressText(client.billing_address) !== "—" ? "Completo" : "Pendiente"}</td></tr>)}</tbody>
-            </table></div>
-          )}
+          {clients.length === 0 ? <div className="empty-state"><h2>Todavía no hay clientes</h2><p>Crea tu primer cliente para empezar.</p></div> : filtered.length === 0 ? <div className="empty-state"><h2>No hay coincidencias</h2><p>Cambia la búsqueda.</p></div> : <div className="table-scroll"><table><thead><tr><th>Cliente</th><th>Email</th><th>Teléfono</th><th>País</th><th>Fiscal</th></tr></thead><tbody>{filtered.map((client) => <tr key={client.id} className={client.id === selected?.id ? "selected-row" : ""}><td><button className="table-link" type="button" onClick={() => { setSelectedId(client.id); setShowEdit(false); }}><strong>{client.display_name}</strong></button></td><td>{client.email || "—"}</td><td>{client.phone || "—"}</td><td>{client.country || "—"}</td><td>{client.tax_id && billingAddressText(client.billing_address) !== "—" ? "Completo" : "Pendiente"}</td></tr>)}</tbody></table></div>}
         </div>
 
         <aside className="client-side card" id="cliente-panel">
-          {selected ? (
-            <>
-              <div className="client-side-header"><span className="client-avatar">{clientInitials(selected)}</span><div><h2>{selected.display_name}</h2><p>{selected.email || "Sin email"}<br />{selected.phone || "Sin teléfono"}</p></div></div>
-              <div className="client-badges"><span className="badge">Cliente</span><span className="badge">{selected.client_type === "company" ? "Empresa" : "Persona"}</span></div>
-              <section className="side-section"><h3>Datos fiscales</h3><table><tbody><tr><th>NIF/DNI/CIF</th><td>{selected.tax_id || "Pendiente"}</td></tr><tr><th>Dirección fiscal</th><td>{billingAddressText(selected.billing_address)}</td></tr><tr><th>País</th><td>{selected.country || "—"}</td></tr></tbody></table></section>
-              <section className="side-section"><h3>Notas</h3><p>{selected.notes || "Sin notas internas."}</p></section>
-              <section className="side-actions"><h3>Acciones</h3><a className="quick-action primary" href={`/expedientes?clientId=${encodeURIComponent(selected.id)}`}>Crear expediente <span>→</span></a><a className="quick-action" href="/propuestas">Ver presupuestos <span>→</span></a></section>
-            </>
-          ) : (
-            <div className="empty-state"><h2>Sin cliente seleccionado</h2><p>Selecciona o crea un cliente para ver su ficha.</p></div>
-          )}
+          {selected ? <>{showEdit ? <section className="side-section"><div className="section-heading"><h3>Editar cliente</h3><button className="link-button" type="button" onClick={() => setShowEdit(false)}>Cerrar</button></div><form className="form" onSubmit={saveClient}>{clientForm(editDraft, updateEditDraft)}<div className="form-actions"><button className="btn secondary" type="button" onClick={() => setShowEdit(false)} disabled={saving}>Cancelar</button><button className="btn" type="submit" disabled={saving}>{saving ? "Guardando..." : "Guardar cambios"}</button></div></form></section> : <><div className="client-side-header"><span className="client-avatar">{clientInitials(selected)}</span><div><h2>{selected.display_name}</h2><p>{selected.email || "Sin email"}<br />{selected.phone || "Sin teléfono"}</p></div></div><div className="client-badges"><span className="badge">Cliente</span><span className="badge">{selected.client_type === "company" ? "Empresa" : "Persona"}</span></div><section className="side-section"><div className="section-heading"><h3>Datos fiscales</h3><button className="link-button" type="button" onClick={startEdit}>Editar</button></div><table><tbody><tr><th>NIF/DNI/CIF</th><td>{selected.tax_id || "Pendiente"}</td></tr><tr><th>Dirección fiscal</th><td>{billingAddressText(selected.billing_address)}</td></tr><tr><th>País</th><td>{selected.country || "—"}</td></tr></tbody></table></section><section className="side-section"><h3>Notas</h3><p>{selected.notes || "Sin notas internas."}</p></section><section className="side-actions"><h3>Acciones</h3><button className="quick-action" type="button" onClick={startEdit}>Editar cliente <span>→</span></button><a className="quick-action primary" href={`/expedientes?clientId=${encodeURIComponent(selected.id)}`}>Crear expediente <span>→</span></a><a className="quick-action" href="/propuestas">Ver presupuestos <span>→</span></a></section></>}</> : <div className="empty-state"><h2>Sin cliente seleccionado</h2><p>Selecciona o crea un cliente.</p></div>}
         </aside>
       </section>
     </div>
