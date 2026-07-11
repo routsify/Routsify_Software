@@ -1,0 +1,103 @@
+.creation-panel {
+  padding: 22px;
+  border-bottom: 1px solid var(--line);
+  background: var(--soft);
+}
+
+.creation-panel-header,
+.section-heading,
+.form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.creation-panel-header {
+  align-items: flex-start;
+  margin-bottom: 18px;
+}
+
+.creation-panel-header h2,
+.section-heading h3 {
+  margin: 4px 0;
+}
+
+.form-actions {
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.form-warning,
+.field-help {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fff8e7;
+  color: #8a5a00;
+  font-size: 13px;
+}
+
+.field-help {
+  background: #eef8ee;
+  color: var(--brand-dark);
+}
+
+.table-scroll {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.table-scroll table {
+  min-width: 720px;
+}
+
+.client-filters-wide {
+  grid-template-columns: minmax(260px, 1fr) minmax(170px, 220px) auto;
+}
+
+.client-side-header.compact {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.client-side-header.compact .status-pill {
+  align-self: start;
+}
+
+.client-message {
+  margin: 0;
+  padding-top: 14px;
+  padding-bottom: 14px;
+}
+
+@media (max-width: 900px) {
+  .creation-panel {
+    padding: 18px;
+  }
+
+  .creation-panel-header,
+  .form-actions,
+  .section-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .form-actions .btn,
+  .creation-panel-header .btn {
+    width: 100%;
+  }
+
+  .client-filters-wide,
+  .client-filters-simple {
+    grid-template-columns: 1fr;
+  }
+
+  .client-side-header.compact {
+    grid-template-columns: 1fr;
+  }
+
+  .table-scroll table {
+    min-width: 640px;
+  }
+}
