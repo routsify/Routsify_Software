@@ -34,7 +34,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const rule = await resolveMarginRule({ organizationId, explicitMarginPercent: explicitMargin, supplierId, serviceTypeCode, destination: source.destination_segment ? String(source.destination_segment) : null });
     const salePrice = source.sale_price === undefined || source.sale_price === null || source.sale_price === "" ? calculateSalePrice(cost, rule.percent, rule.formula) : Number(source.sale_price);
     if (!Number.isFinite(salePrice) || salePrice < 0) return NextResponse.json({ ok: false, error: "invalid_sale_price" }, { status: 400 });
-    const result = await addBudgetLineRepository({
+    const lineInput = {
       organization_id: organizationId, proposal_id: proposalId, proposal_version_id: versionId || undefined,
       service_type_code: serviceTypeCode, description_public: description,
       description_internal: source.description_internal ? String(source.description_internal) : null,
@@ -43,7 +43,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       start_date: source.start_date ? String(source.start_date) : null, end_date: source.end_date ? String(source.end_date) : null,
       cost_budget: cost, margin_applied: rule.percent, margin_rule_id: rule.ruleId, margin_snapshot: rule.snapshot,
       sale_price: salePrice, creates_expected_purchase: source.creates_expected_purchase === undefined ? Boolean(supplierId || String(source.supplier_name || "").trim()) : Boolean(source.creates_expected_purchase),
-    });
+    } as Parameters<typeof addBudgetLineRepository>[0];
+    const result = await addBudgetLineRepository(lineInput);
     return NextResponse.json(result, { status: result.ok ? 201 : 400 });
   } catch (error) {
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "margin_resolution_failed" }, { status: 400 });
