@@ -56,36 +56,6 @@ begin
       last_event_at = v_now
   where id = v_proposal.case_id;
 
-  insert into public.expected_purchases(
-    organization_id,
-    case_id,
-    proposal_version_id,
-    budget_line_id,
-    supplier_id,
-    status,
-    expected_amount,
-    amount,
-    currency,
-    supplier_name,
-    service
-  )
-  select
-    line.organization_id,
-    v_proposal.case_id,
-    target_version,
-    line.id,
-    line.supplier_id,
-    'expected'::public.expected_purchase_status,
-    line.cost_budget,
-    line.cost_budget,
-    'EUR',
-    line.supplier_name,
-    line.description_public
-  from public.budget_lines line
-  where line.proposal_version_id = target_version
-    and coalesce(line.cost_budget, 0) > 0
-  on conflict (case_id, budget_line_id, supplier_id) do nothing;
-
   return jsonb_build_object(
     'proposal_id', v_proposal.id,
     'version_id', target_version,
