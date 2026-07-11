@@ -18,23 +18,24 @@ export default async function PublicProposalPage({ params }: { params: Promise<{
             <div className="eyebrow" style={{ marginTop: 24 }}>Propuesta privada para {proposal.client}</div>
             <h1>{proposal.title}</h1>
             <p style={{ fontSize: 20 }}>{proposal.headline}</p>
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 24 }}>
-              <span className="badge">{proposal.destination}</span><span className="badge">{proposal.dates}</span><span className="badge">{proposal.travelers}</span>
-            </div>
-            <p style={{ marginTop: 12 }}><small>Acceso validado · versión {resolved.versionId} · token hash {resolved.tokenHash.slice(0, 10)}…</small></p>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 24 }}><span className="badge">{proposal.destination}</span><span className="badge">{proposal.dates}</span><span className="badge">{proposal.travelers}</span></div>
+            <p style={{ marginTop: 12 }}><small>Acceso privado validado · propuesta preparada por Routsify</small></p>
           </div>
-          <div className="card">
-            <AcceptProposalBox total={proposal.total} token={token} />
-          </div>
+          <div className="card"><AcceptProposalBox total={proposal.total} token={token} initialAccepted={resolved.accepted} clientName={proposal.client} clientEmail={proposal.clientEmail || ""} /></div>
         </section>
-        <section className="grid grid-2" style={{ marginTop: 28 }}>
-          <div className="card"><div className="eyebrow">Highlights</div><h2>Lo que hace especial este viaje</h2>{proposal.highlights.map((h) => <p key={h}>✓ {h}</p>)}</div>
-          <div className="card"><div className="eyebrow">Itinerario</div><div className="timeline">{proposal.itinerary.map(([place, text]) => <div key={place}><strong>{place}</strong><p>{text}</p></div>)}</div></div>
-        </section>
+
+        {(proposal.highlights.length > 0 || proposal.itinerary.length > 0) ? <section className="grid grid-2" style={{ marginTop: 28 }}>
+          <div className="card"><div className="eyebrow">Resumen</div><h2>Lo más importante</h2>{proposal.highlights.length ? proposal.highlights.map((item) => <p key={item}>✓ {item}</p>) : <p>Los detalles principales están incluidos en los servicios de la propuesta.</p>}</div>
+          <div className="card"><div className="eyebrow">Itinerario</div>{proposal.itinerary.length ? <div className="timeline">{proposal.itinerary.map(([place, text]) => <div key={`${place}-${text}`}><strong>{place}</strong><p>{text}</p></div>)}</div> : <p>El itinerario detallado se concretará durante la coordinación del viaje.</p>}</div>
+        </section> : null}
+
         <section className="card" style={{ marginTop: 28 }}>
           <div className="eyebrow">Servicios incluidos</div>
-          <table><thead><tr><th>Servicio</th><th>Detalle</th><th>Precio</th></tr></thead><tbody>{proposal.lines.map(([name, text, price]) => <tr key={String(name)}><td><strong>{name}</strong></td><td>{text}</td><td>{Number(price).toLocaleString("es-ES")} €</td></tr>)}</tbody></table>
+          <h2>Detalle económico</h2>
+          <div className="table-scroll"><table><thead><tr><th>Servicio</th><th>Detalle</th><th>Precio</th></tr></thead><tbody>{proposal.lines.map(([name, text, price], index) => <tr key={`${name}-${index}`}><td><strong>{name}</strong></td><td>{text}</td><td>{Number(price).toLocaleString("es-ES", { style: "currency", currency: "EUR" })}</td></tr>)}</tbody><tfoot><tr><th colSpan={2}>Total</th><th>{proposal.total.toLocaleString("es-ES", { style: "currency", currency: "EUR" })}</th></tr></tfoot></table></div>
         </section>
+
+        <section className="card" style={{ marginTop: 28 }}><div className="eyebrow">Condiciones</div><h2>Aceptación y siguientes pasos</h2><p>La aceptación confirma la conformidad con los servicios e importes mostrados. A continuación, Routsify preparará el contrato, solicitará la documentación necesaria y coordinará los pagos y reservas correspondientes.</p></section>
       </div>
     </div>
   );
