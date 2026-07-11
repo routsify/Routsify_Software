@@ -8,16 +8,22 @@ const versionStatus: Record<string, string> = {
   draft: "draft",
   internal_review: "internal_review",
   sent: "sent",
-  accepted: "accepted",
   rejected: "lost",
 };
 const caseStatus: Record<string, { status: string; next_action: string }> = {
   draft: { status: "budget_draft", next_action: "Completar presupuesto" },
   internal_review: { status: "budget_draft", next_action: "Revisar presupuesto internamente" },
   sent: { status: "proposal_sent", next_action: "Hacer seguimiento al cliente" },
-  accepted: { status: "proposal_accepted", next_action: "Preparar contrato" },
   rejected: { status: "call_done", next_action: "Replantear propuesta o cerrar oportunidad" },
 };
+
+async function fullProposal(proposalId: string) {
+  return getSupabaseAdminClient()
+    .from("proposals")
+    .select("*, cases(id,case_code,title,destination,trip_start,trip_end,clients(display_name,email)), proposal_versions(*, budget_lines(*))")
+    .eq("id", proposalId)
+    .single();
+}
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ proposalId: string }> }) {
   const access = requireInternalAccess(request);
@@ -32,16 +38,20 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const supabase = getSupabaseAdminClient();
   const { data: proposal, error: proposalError } = await supabase
     .from("proposals")
-    .select("id,case_id,organization_id")
+    .select("id,case_id,organization_id,status,current_version_id")
     .eq("id", proposalId)
     .eq("organization_id", organizationId)
     .maybeSingle();
   if (proposalError) return NextResponse.json({ ok: false, error: proposalError.message }, { status: 400 });
   if (!proposal) return NextResponse.json({ ok: false, error: "proposal_not_found" }, { status: 404 });
 
+  if (proposal.status === "accepted" && status !== "accepted") {
+    return NextResponse.json({ ok: false, error: "accepted_proposal_locked" }, { status: 409 });
+  }
+
   const { data: version, error: versionError } = await supabase
     .from("proposal_versions")
-    .select("id,total_sale")
+    .select("id,total_sale,locked,status")
     .eq("proposal_id", proposalId)
     .eq("organization_id", organizationId)
     .order("version_number", { ascending: false })
@@ -50,37 +60,44 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (versionError) return NextResponse.json({ ok: false, error: versionError.message }, { status: 400 });
   if (!version) return NextResponse.json({ ok: false, error: "proposal_version_not_found" }, { status: 400 });
 
-  if (["internal_review", "sent", "accepted"].includes(status)) {
+  if (status === "accepted") {
+    if (Number(version.total_sale || 0) <= 0) return NextResponse.json({ ok: false, error: "proposal_total_required" }, { status: 400 });
+    const { count, error: lineError } = await supabase.from("budget_lines").select("id", { count: "exact", head: true }).eq("proposal_version_id", version.id);
+    if (lineError) return NextResponse.json({ ok: false, error: lineError.message }, { status: 400 });
+    if (!count) return NextResponse.json({ ok: false, error: "proposal_requires_lines" }, { status: 400 });
+
+    const { error: acceptError } = await supabase.rpc("accept_proposal_version", { target_version: version.id });
+    if (acceptError) return NextResponse.json({ ok: false, error: acceptError.message }, { status: 400 });
+
+    const { data, error } = await fullProposal(proposalId);
+    if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
+    return NextResponse.json({ ok: true, mode: "supabase", data });
+  }
+
+  if (["internal_review", "sent"].includes(status)) {
     const { count, error: lineError } = await supabase.from("budget_lines").select("id", { count: "exact", head: true }).eq("proposal_version_id", version.id);
     if (lineError) return NextResponse.json({ ok: false, error: lineError.message }, { status: 400 });
     if (!count) return NextResponse.json({ ok: false, error: "proposal_requires_lines" }, { status: 400 });
   }
-  if (status === "accepted" && Number(version.total_sale || 0) <= 0) return NextResponse.json({ ok: false, error: "proposal_total_required" }, { status: 400 });
+
+  if (version.locked || version.status === "accepted") {
+    return NextResponse.json({ ok: false, error: "accepted_version_locked" }, { status: 409 });
+  }
 
   const now = new Date().toISOString();
   const { error: updateProposalError } = await supabase.from("proposals").update({ status, updated_at: now }).eq("id", proposalId).eq("organization_id", organizationId);
   if (updateProposalError) return NextResponse.json({ ok: false, error: updateProposalError.message }, { status: 400 });
 
-  const versionPatch: Record<string, unknown> = { status: versionStatus[status] };
-  if (status === "accepted") {
-    versionPatch.accepted_at = now;
-    versionPatch.locked_at = now;
-    versionPatch.locked = true;
-  }
-  const { error: updateVersionError } = await supabase.from("proposal_versions").update(versionPatch).eq("id", version.id).eq("organization_id", organizationId);
+  const { error: updateVersionError } = await supabase.from("proposal_versions").update({ status: versionStatus[status] }).eq("id", version.id).eq("organization_id", organizationId);
   if (updateVersionError) return NextResponse.json({ ok: false, error: updateVersionError.message }, { status: 400 });
 
   const workflow = caseStatus[status];
-  const casePatch: Record<string, unknown> = { status: workflow.status, next_action: workflow.next_action, updated_at: now };
-  if (status === "accepted") casePatch.accepted_value = Number(version.total_sale || 0);
-  const { error: updateCaseError } = await supabase.from("cases").update(casePatch).eq("id", proposal.case_id).eq("organization_id", organizationId);
-  if (updateCaseError) return NextResponse.json({ ok: false, error: updateCaseError.message }, { status: 400 });
+  if (workflow) {
+    const { error: updateCaseError } = await supabase.from("cases").update({ status: workflow.status, next_action: workflow.next_action, updated_at: now }).eq("id", proposal.case_id).eq("organization_id", organizationId);
+    if (updateCaseError) return NextResponse.json({ ok: false, error: updateCaseError.message }, { status: 400 });
+  }
 
-  const { data, error } = await supabase
-    .from("proposals")
-    .select("*, cases(id,case_code,title,destination,trip_start,trip_end,clients(display_name,email)), proposal_versions(*, budget_lines(*))")
-    .eq("id", proposalId)
-    .single();
+  const { data, error } = await fullProposal(proposalId);
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
   return NextResponse.json({ ok: true, mode: "supabase", data });
 }
