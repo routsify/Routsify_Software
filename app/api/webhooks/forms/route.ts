@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { enqueueOutboxEvent } from "@/lib/outbox-server";
-import { demoOrganizationId } from "@/lib/runtime-mode";
+import { getSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase-admin";
 import { providerIdempotencyKey, verifyWebhookRequest } from "@/lib/webhook-security";
+
+async function resolveWebhookOrganizationId() {
+  if (process.env.ROUTSIFY_DEFAULT_ORGANIZATION_ID) return process.env.ROUTSIFY_DEFAULT_ORGANIZATION_ID;
+  if (!hasSupabaseAdminEnv()) return "";
+  const { data } = await getSupabaseAdminClient().from("organizations").select("id").order("created_at", { ascending: true }).limit(1).maybeSingle();
+  return String(data?.id || "");
+}
 
 export async function POST(request: NextRequest) {
   const rawBody = await request.text();
@@ -28,8 +35,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "invalid_payload" }, { status: 400 });
   }
 
+  const organizationId = await resolveWebhookOrganizationId();
+  if (!organizationId) return NextResponse.json({ ok: false, error: "organization_not_configured" }, { status: 503 });
+
   const result = await enqueueOutboxEvent({
-    organizationId: demoOrganizationId(),
+    organizationId,
     channel: "form",
     eventType: "lead.created",
     payload: { ...payload, verificationMode: verification.mode },
