@@ -1,7 +1,7 @@
 import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
 import { listCasesRepository, listPurchasesRepository } from "@/lib/server-repositories";
-import { PurchasesManager } from "./PurchasesManager";
+import { PurchasesManagerOperational } from "./PurchasesManagerOperational";
 
 export default async function PurchasesPage({ searchParams }: { searchParams: Promise<{ caseId?: string }> }) {
   const [{ caseId }, purchaseResult, caseResult] = await Promise.all([
@@ -19,7 +19,7 @@ export default async function PurchasesPage({ searchParams }: { searchParams: Pr
         title="Compras y proveedores"
         description="Controla cada compra prevista, su expediente, proveedor, importe y estado."
       />
-      <PurchasesManager initialPurchases={purchases} initialCases={cases} initialCaseId={caseId || ""} />
+      <PurchasesManagerOperational initialPurchases={purchases} initialCases={cases} initialCaseId={caseId || ""} />
     </AppShell>
   );
 }
