@@ -68,7 +68,7 @@ async function authenticatedUser(request: NextRequest) {
     if (!error && data.user) userId = data.user.id;
   }
   if (!userId) return null;
-  const { data: profile, error } = await getSupabaseAdminClient().from("profiles").select("organization_id,role").eq("id", userId).maybeSingle();
+  const { data: profile, error } = await getSupabaseAdminClient().from("profiles").select("organization_id,role").eq("user_id", userId).maybeSingle();
   if (error || !profile?.organization_id) return null;
   return { userId, organizationId: String(profile.organization_id), role: String(profile.role || "viewer") as AppRole };
 }
