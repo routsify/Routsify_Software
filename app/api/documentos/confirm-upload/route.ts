@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
   const bucket = typeof body.bucket === "string" ? body.bucket : expectedBucket;
   if (bucket !== expectedBucket) return NextResponse.json({ ok: false, error: "bucket_owner_mismatch" }, { status: 400 });
 
-  const result = await confirmDocumentUploadRepository({
+  const repositoryInput = {
     organizationId: access.organizationId,
     caseId: typeof body.caseId === "string" ? body.caseId : null,
     ownerType,
@@ -59,7 +59,8 @@ export async function POST(request: NextRequest) {
     invoiceTax: optionalNumber(body.invoiceTax),
     invoiceTotal: optionalNumber(body.invoiceTotal),
     currency: typeof body.currency === "string" ? body.currency.toUpperCase() : "EUR",
-  });
+  } as Parameters<typeof confirmDocumentUploadRepository>[0];
 
+  const result = await confirmDocumentUploadRepository(repositoryInput);
   return NextResponse.json(result, { status: result.ok ? 200 : 400 });
 }
