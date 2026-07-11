@@ -1,13 +1,15 @@
 import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
-import { listCasesRepository, listPurchasesRepository } from "@/lib/server-repositories";
+import { requireAppSession } from "@/lib/app-auth";
+import { listOrganizationCases, listOrganizationPurchases } from "@/lib/organization-repositories";
 import { PurchasesManagerOperational } from "./PurchasesManagerOperational";
 
 export default async function PurchasesPage({ searchParams }: { searchParams: Promise<{ caseId?: string }> }) {
+  const session = await requireAppSession();
   const [{ caseId }, purchaseResult, caseResult] = await Promise.all([
     searchParams,
-    listPurchasesRepository(),
-    listCasesRepository(),
+    listOrganizationPurchases(session.organizationId),
+    listOrganizationCases(session.organizationId),
   ]);
   const purchases = purchaseResult.ok ? purchaseResult.data : [];
   const cases = caseResult.ok ? caseResult.data : [];
