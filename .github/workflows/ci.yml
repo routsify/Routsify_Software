@@ -16,17 +16,9 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - name: Export exact source snapshot
-        uses: actions/upload-artifact@v4
-        with:
-          name: routsify-partial-source
-          path: .
-          include-hidden-files: true
-          retention-days: 1
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
       - run: npm install --package-lock-only --ignore-scripts
       - run: npm ci --ignore-scripts
       - run: npm run validate:platform
