@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonAccessDenied, requireInternalAccess } from "@/lib/api-security";
-import { createCaseRepository, listCasesRepository } from "@/lib/server-repositories";
+import { createCaseRepository } from "@/lib/server-repositories";
+import { listOrganizationCases } from "@/lib/organization-repositories";
 import { resolveOrganizationId } from "@/lib/request-context";
+import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 
 export async function GET(request: NextRequest) {
   const access = requireInternalAccess(request);
   if (!access.ok) return jsonAccessDenied(access);
-  const result = await listCasesRepository();
+  const organizationId = await resolveOrganizationId(request, access.organizationId);
+  const result = await listOrganizationCases(organizationId);
   return NextResponse.json(result);
 }
 
@@ -26,6 +29,9 @@ export async function POST(request: NextRequest) {
   if (tripStart && tripEnd && tripStart > tripEnd) return NextResponse.json({ ok: false, error: "invalid_date_range" }, { status: 400 });
 
   const organizationId = await resolveOrganizationId(request, access.organizationId);
+  const { data: client } = await getSupabaseAdminClient().from("clients").select("id").eq("id", clientId).eq("organization_id", organizationId).maybeSingle();
+  if (!client) return NextResponse.json({ ok: false, error: "client_not_found" }, { status: 404 });
+
   const result = await createCaseRepository({
     organization_id: organizationId,
     client_id: clientId,
