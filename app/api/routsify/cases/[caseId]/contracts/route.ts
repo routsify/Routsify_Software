@@ -6,7 +6,7 @@ import { resolveOrganizationId, getRequestUserId } from "@/lib/request-context";
 const statuses = new Set(["draft", "sent", "signed", "cancelled"]);
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ caseId: string }> }) {
-  const access = requireInternalAccess(request);
+  const access = await requireInternalAccess(request);
   if (!access.ok) return jsonAccessDenied(access);
   const { caseId } = await params;
   const body = await request.json().catch(() => null);

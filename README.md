@@ -1,62 +1,76 @@
-# Routsify_Software
+# Routsify Software
 
-MVP de Routsify como aplicación nueva con Next.js, TypeScript y Supabase preparado. El despliegue lo gestionan Vercel y Netlify automáticamente cuando detectan cambios en GitHub; el repositorio no contiene scripts de despliegue manual.
+MVP operativo de Routsify construido con Next.js, TypeScript y Supabase. Holded se mantiene como fuente fiscal/contable y Routsify como fuente de verdad de la operación del viaje.
 
-## Estado actual
+## Estado
 
-- Demo navegable con datos ficticios mientras se termina el paso a Supabase real.
-- Login real preparado para Supabase Auth, perfiles y RLS.
-- No usar datos reales con modo demo activo.
-- Módulos visibles definitivos: Inicio, Clientes, Expedientes, Presupuestos, Compras / Proveedores, Informes y Ajustes.
-- Viajeros, documentos, contrato, firma, pago, fiscalidad, tareas y comunicaciones viven dentro de Cliente o Expediente.
+La rama del MVP incorpora autenticación y roles, clientes/leads/bookings con deduplicación, expedientes, presupuesto nativo y versionado, propuesta pública segura, compras esperadas, facturas de proveedor privadas, pagos, fiscalidad en `manual_review`, outbox Holded, jobs, cierre operativo e informes mínimos.
 
-## Despliegue
+No se deben usar datos reales mientras `NEXT_PUBLIC_DEMO_MODE` o `ROUTSIFY_ALLOW_PUBLIC_DEMO` estén activos.
 
-- No se debe ejecutar deploy manual desde código.
-- Vercel y Netlify publican automáticamente al actualizar GitHub.
-- `netlify.toml` solo define cómo construir en Netlify; no despliega por sí mismo.
-- GitHub Actions queda como validación manual bajo demanda, no automática en cada push.
-- Comando común de build para plataformas: `npm run platform:build`.
+## Módulos principales
 
-## Hardening incorporado
+- Inicio
+- Clientes
+- Expedientes
+- Presupuestos
+- Compras / Proveedores
+- Informes
+- Ajustes
 
-- Middleware para rutas internas y APIs privadas.
-- Health público mínimo y health interno protegido en `/api/health/internal`.
-- Webhooks con firma HMAC, timestamp e idempotencia por evento externo.
-- Upload de documentos con guard de acceso, validación de archivo y organización derivada del contexto.
-- Confirmación post-upload documental con metadatos, retención y auditoría preparada.
-- Propuesta pública validada antes de renderizar y preparada para resolver versión real desde Supabase.
-- Outbox worker preparado para procesar eventos con estados `processing`, `done`, `failed` y `manual_review`.
-- Migraciones de hardening con campos económicos, auditoría de acceso documental, settings persistentes, perfil de usuario y RLS más granular.
-- Dependencias sin `latest`; CI manual genera lockfile temporal y ejecuta `npm ci` hasta commitear un lockfile completo.
+Viajeros, documentos, contrato, pago, tareas y comunicaciones se gestionan dentro del expediente.
 
 ## Arranque local
 
 ```bash
 cp .env.example .env.local
-npm install
+npm ci
 npm run validate:platform
 npm run typecheck
 npm run build
 npm run dev
 ```
 
-## Endpoints técnicos preparados
+## Validaciones
 
-- `GET /api/health`: salud pública mínima.
-- `GET /api/health/internal`: salud interna protegida.
-- `POST /api/documentos/upload-url`: URL firmada de subida.
-- `POST /api/documentos/confirm-upload`: registro documental post-subida.
-- `POST /api/routsify/outbox/process`: worker outbox protegido.
-- `POST /api/webhooks/forms`: webhook Fillout con HMAC.
-- `POST /api/webhooks/bookings`: webhook Booking con HMAC.
+- `npm run validate:mvp`: comprueba piezas funcionales y de seguridad obligatorias.
+- `npm run validate:migrations`: comprueba versiones únicas y contenido crítico del esquema.
+- `npm run validate:platform`: ejecuta ambas validaciones y revisa la configuración de despliegue.
+- `npm run typecheck`: valida TypeScript.
+- `npm run build`: genera el build de Next.js.
 
-## Criterio para salir de demo
+GitHub Actions ejecuta validación, typecheck y build en pull requests y cambios a `main`.
 
-1. Aplicar migraciones `0001` a `0005` en Supabase real.
-2. Crear usuarios internos y perfiles por rol.
-3. Validar RLS y acceso por rol con pruebas negativas.
-4. Configurar buckets privados y auditoría de documentos.
-5. Probar token público, webhooks duplicados, subida no autorizada, confirm-upload y pago duplicado.
-6. Activar Holded solo con outbox worker idempotente y revisión fiscal manual.
-7. Cambiar `ROUTSIFY_ALLOW_PUBLIC_DEMO=false` y `NEXT_PUBLIC_DEMO_MODE=false` solo cuando Supabase Auth esté validado.
+## Despliegue
+
+Vercel/Netlify pueden desplegar automáticamente desde GitHub. La aplicación requiere Supabase real, migraciones aplicadas, usuarios/perfiles por rol, buckets privados y secretos configurados. La integración Holded y los jobs se activan solo después de validarlos en staging.
+
+Documentación:
+
+- `docs/MVP_GAP_AUDIT_AND_PHASES.md`
+- `docs/PRODUCTION_CUTOVER.md`
+- `docs/SCHEDULED_JOBS.md`
+
+## Endpoints técnicos principales
+
+- `GET /api/health`
+- `GET /api/health/internal`
+- `POST /api/documentos/upload-url`
+- `POST /api/documentos/confirm-upload`
+- `POST /api/routsify/outbox/process`
+- `POST /api/routsify/jobs/run`
+- `POST /api/webhooks/forms`
+- `POST /api/webhooks/bookings`
+- `POST /api/webhooks/payments`
+- `POST /api/webhooks/holded`
+
+## Criterio de salida de demo
+
+1. Aplicar migraciones en staging y luego producción.
+2. Crear usuarios y perfiles por rol.
+3. Probar RLS con casos positivos y negativos.
+4. Probar buckets privados, URLs firmadas, caducidad y auditoría.
+5. Probar webhooks duplicados, aceptación duplicada, pago duplicado y reintentos Holded.
+6. Mantener fiscalidad en `manual_review` hasta validación de asesoría.
+7. Configurar jobs y observar ejecuciones.
+8. Establecer `NEXT_PUBLIC_DEMO_MODE=false` y `ROUTSIFY_ALLOW_PUBLIC_DEMO=false`.

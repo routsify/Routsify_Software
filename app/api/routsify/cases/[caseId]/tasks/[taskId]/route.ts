@@ -6,7 +6,7 @@ import { resolveOrganizationId } from "@/lib/request-context";
 const statuses = new Set(["pending", "in_progress", "done", "cancelled"]);
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ caseId: string; taskId: string }> }) {
-  const access = requireInternalAccess(request);
+  const access = await requireInternalAccess(request);
   if (!access.ok) return jsonAccessDenied(access);
   const { caseId, taskId } = await params;
   const body = await request.json().catch(() => null);

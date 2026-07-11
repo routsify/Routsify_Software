@@ -4,7 +4,7 @@ import { resolveOrganizationId } from "@/lib/request-context";
 import { getSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase-admin";
 
 export async function GET(request: NextRequest) {
-  const access = requireInternalAccess(request);
+  const access = await requireInternalAccess(request);
   if (!access.ok) return jsonAccessDenied(access);
   if (!hasSupabaseAdminEnv()) return NextResponse.json({ data: [] });
 

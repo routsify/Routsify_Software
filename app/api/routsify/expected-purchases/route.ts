@@ -11,14 +11,14 @@ function numberValue(value: unknown) {
 }
 
 export async function GET(request: NextRequest) {
-  const access = requireInternalAccess(request);
+  const access = await requireInternalAccess(request);
   if (!access.ok) return jsonAccessDenied(access);
   if (!hasSupabaseAdminEnv()) return NextResponse.json({ ok: false, error: "supabase_admin_not_configured" }, { status: 503 });
 
   const organizationId = await resolveOrganizationId(request, access.organizationId);
   const { data, error } = await getSupabaseAdminClient()
     .from("expected_purchases")
-    .select("*, cases(case_code,title)")
+    .select("*, cases(case_code,title), supplier_invoices(id,status,invoice_number,invoice_date,total,currency,storage_path,created_at)")
     .eq("organization_id", organizationId)
     .order("created_at", { ascending: false })
     .limit(100);
@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const access = requireInternalAccess(request);
+  const access = await requireInternalAccess(request);
   if (!access.ok) return jsonAccessDenied(access);
   if (!hasSupabaseAdminEnv()) return NextResponse.json({ ok: false, error: "supabase_admin_not_configured" }, { status: 503 });
 
@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
     status,
     review_notes: String(source.review_notes || "").trim() || null,
   };
-  const { data, error } = await supabase.from("expected_purchases").insert(payload).select("*, cases(case_code,title)").single();
+  const { data, error } = await supabase.from("expected_purchases").insert(payload).select("*, cases(case_code,title), supplier_invoices(id,status,invoice_number,invoice_date,total,currency,storage_path,created_at)").single();
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
   return NextResponse.json({ ok: true, data }, { status: 201 });
 }

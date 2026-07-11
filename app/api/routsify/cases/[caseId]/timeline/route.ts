@@ -4,7 +4,7 @@ import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { resolveOrganizationId, getRequestUserId } from "@/lib/request-context";
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ caseId: string }> }) {
-  const access = requireInternalAccess(request);
+  const access = await requireInternalAccess(request);
   if (!access.ok) return jsonAccessDenied(access);
   const { caseId } = await params;
   const organizationId = await resolveOrganizationId(request, access.organizationId);
@@ -14,7 +14,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 }
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ caseId: string }> }) {
-  const access = requireInternalAccess(request);
+  const access = await requireInternalAccess(request);
   if (!access.ok) return jsonAccessDenied(access);
   const { caseId } = await params;
   const body = await request.json().catch(() => null);

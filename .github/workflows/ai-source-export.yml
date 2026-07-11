@@ -4,9 +4,6 @@ on:
   push:
     branches:
       - ai/mvp-audit-implementation-20260711
-  pull_request:
-    branches:
-      - main
   workflow_dispatch:
 
 permissions:
@@ -21,7 +18,7 @@ jobs:
       - name: Upload source snapshot
         uses: actions/upload-artifact@v4
         with:
-          name: routsify-source
+          name: routsify-partial-source
           path: .
           include-hidden-files: true
           retention-days: 1

@@ -7,7 +7,7 @@ const travelerTypes = new Set(["adult", "child", "infant"]);
 function text(value: unknown) { return String(value || "").trim(); }
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ caseId: string }> }) {
-  const access = requireInternalAccess(request);
+  const access = await requireInternalAccess(request);
   if (!access.ok) return jsonAccessDenied(access);
   const { caseId } = await params;
   const body = await request.json().catch(() => null);
@@ -42,7 +42,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ caseId: string }> }) {
-  const access = requireInternalAccess(request);
+  const access = await requireInternalAccess(request);
   if (!access.ok) return jsonAccessDenied(access);
   const { caseId } = await params;
   const body = await request.json().catch(() => null);
