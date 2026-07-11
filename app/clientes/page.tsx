@@ -1,10 +1,12 @@
 import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
-import { listClientsRepository } from "@/lib/server-repositories";
+import { requireAppSession } from "@/lib/app-auth";
+import { listOrganizationClients } from "@/lib/organization-repositories";
 import { ClientsManager } from "./ClientsManager";
 
 export default async function ClientsPage() {
-  const result = await listClientsRepository();
+  const session = await requireAppSession();
+  const result = await listOrganizationClients(session.organizationId);
   const clients = result.ok ? result.data : [];
 
   return (
