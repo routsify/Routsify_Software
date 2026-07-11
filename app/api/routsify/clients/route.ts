@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonAccessDenied, requireInternalAccess } from "@/lib/api-security";
-import { createClientRepository, listClientsRepository } from "@/lib/server-repositories";
+import { createClientRepository } from "@/lib/server-repositories";
+import { listOrganizationClients } from "@/lib/organization-repositories";
 import { resolveOrganizationId } from "@/lib/request-context";
 
 export async function GET(request: NextRequest) {
   const access = requireInternalAccess(request);
   if (!access.ok) return jsonAccessDenied(access);
-  const result = await listClientsRepository();
+  const organizationId = await resolveOrganizationId(request, access.organizationId);
+  const result = await listOrganizationClients(organizationId);
   return NextResponse.json(result);
 }
 
