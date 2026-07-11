@@ -17,21 +17,25 @@ export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== "object") return NextResponse.json({ ok: false, error: "invalid_body" }, { status: 400 });
 
-  const clientName = String(body.client_name || body.clientName || "").trim();
-  const destination = String(body.destination || "").trim();
-  if (clientName.length < 2 || destination.length < 2) return NextResponse.json({ ok: false, error: "required_fields" }, { status: 400 });
+  const source = body as Record<string, unknown>;
+  const clientId = String(source.client_id || "").trim();
+  const destination = String(source.destination || "").trim();
+  const tripStart = source.trip_start ? String(source.trip_start) : null;
+  const tripEnd = source.trip_end ? String(source.trip_end) : null;
+  if (!clientId || destination.length < 2) return NextResponse.json({ ok: false, error: "client_and_destination_required" }, { status: 400 });
+  if (tripStart && tripEnd && tripStart > tripEnd) return NextResponse.json({ ok: false, error: "invalid_date_range" }, { status: 400 });
 
   const organizationId = await resolveOrganizationId(request, access.organizationId);
   const result = await createCaseRepository({
     organization_id: organizationId,
-    client_name: clientName,
+    client_id: clientId,
     destination,
-    title: body.title || destination,
-    trip_start: body.trip_start || body.startDate || null,
-    trip_end: body.trip_end || body.endDate || null,
-    final_notes: body.final_notes || body.notes || null,
+    title: String(source.title || destination).trim(),
+    trip_start: tripStart,
+    trip_end: tripEnd,
+    final_notes: source.final_notes ? String(source.final_notes) : null,
     status: "new_lead",
-    next_action: "Revisar expediente",
+    next_action: "Cualificar solicitud",
   });
   return NextResponse.json(result, { status: result.ok ? 201 : 400 });
 }
