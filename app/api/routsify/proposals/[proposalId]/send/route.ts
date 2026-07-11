@@ -4,6 +4,13 @@ import { createProposalToken, hashProposalToken } from "@/lib/proposal-token";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { resolveOrganizationId, getRequestUserId } from "@/lib/request-context";
 
+type RelationRow = Record<string, unknown>;
+
+function firstRelation(value: unknown): RelationRow | null {
+  if (Array.isArray(value)) return value.length && value[0] && typeof value[0] === "object" ? value[0] as RelationRow : null;
+  return value && typeof value === "object" ? value as RelationRow : null;
+}
+
 export async function POST(request: NextRequest, { params }: { params: Promise<{ proposalId: string }> }) {
   const access = requireInternalAccess(request);
   if (!access.ok) return jsonAccessDenied(access);
@@ -41,8 +48,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (countError) return NextResponse.json({ ok: false, error: countError.message }, { status: 400 });
   if (!count || Number(version.total_sale || 0) <= 0) return NextResponse.json({ ok: false, error: "proposal_requires_priced_lines" }, { status: 400 });
 
-  const caseRow = Array.isArray(proposal.cases) ? proposal.cases[0] : proposal.cases;
-  const clientRow = caseRow && Array.isArray(caseRow.clients) ? caseRow.clients[0] : caseRow?.clients;
+  const caseRow = firstRelation(proposal.cases);
+  const clientRow = firstRelation(caseRow?.clients);
+  const clientName = String(clientRow?.display_name || "Cliente Routsify");
+  const clientEmail = clientRow?.email ? String(clientRow.email) : null;
+  const clientPhone = clientRow?.phone ? String(clientRow.phone) : null;
   const { count: travelersCount } = await supabase.from("travelers").select("id", { count: "exact", head: true }).eq("case_id", proposal.case_id).eq("organization_id", organizationId);
   const expiresAt = new Date(Date.now() + validityDays * 24 * 60 * 60 * 1000);
   const token = createProposalToken({ proposalId, versionId: version.id, expiresAt });
@@ -50,9 +60,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const now = new Date().toISOString();
   const snapshot = {
     ...(version.snapshot && typeof version.snapshot === "object" ? version.snapshot as Record<string, unknown> : {}),
-    title: caseRow?.title || "Propuesta de viaje Routsify",
-    destination: caseRow?.destination || "",
-    client: clientRow?.display_name || "Cliente Routsify",
+    title: String(caseRow?.title || "Propuesta de viaje Routsify"),
+    destination: String(caseRow?.destination || ""),
+    client: clientName,
     travelers: travelersCount ? `${travelersCount} viajero${travelersCount === 1 ? "" : "s"}` : "Viajeros por confirmar",
     sent_at: now,
     valid_until: expiresAt.toISOString(),
@@ -64,21 +74,21 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (proposalUpdateError) return NextResponse.json({ ok: false, error: proposalUpdateError.message }, { status: 400 });
 
   await supabase.from("cases").update({ status: "proposal_sent", next_action: "Hacer seguimiento al cliente", updated_at: now }).eq("id", proposal.case_id).eq("organization_id", organizationId);
-  await supabase.from("timeline_events").insert({ organization_id: organizationId, case_id: proposal.case_id, client_id: null, event_type: "proposal.sent", title: `Presupuesto v${version.version_number} preparado para envío`, payload: { proposal_id: proposalId, version_id: version.id, expires_at: expiresAt.toISOString(), recipient_email: clientRow?.email || null }, created_by: actorId });
+  await supabase.from("timeline_events").insert({ organization_id: organizationId, case_id: proposal.case_id, client_id: null, event_type: "proposal.sent", title: `Presupuesto v${version.version_number} preparado para envío`, payload: { proposal_id: proposalId, version_id: version.id, expires_at: expiresAt.toISOString(), recipient_email: clientEmail }, created_by: actorId });
 
   const origin = new URL(request.url).origin;
   const publicUrl = `${origin}/propuestas/${encodeURIComponent(token)}`;
-  const message = `Hola ${clientRow?.display_name || ""}, te compartimos tu propuesta de viaje Routsify: ${publicUrl}`.trim();
-  const whatsappPhone = String(clientRow?.phone || "").replace(/\D/g, "");
+  const message = `Hola ${clientName}, te compartimos tu propuesta de viaje Routsify: ${publicUrl}`;
+  const whatsappPhone = String(clientPhone || "").replace(/\D/g, "");
   return NextResponse.json({
     ok: true,
     data: {
       url: publicUrl,
       expires_at: expiresAt.toISOString(),
-      email: clientRow?.email || null,
-      phone: clientRow?.phone || null,
-      mailto_url: clientRow?.email ? `mailto:${encodeURIComponent(clientRow.email)}?subject=${encodeURIComponent("Tu propuesta de viaje Routsify")}&body=${encodeURIComponent(message)}` : null,
-      whatsapp_url: `https://wa.me/${whatsappPhone}?text=${encodeURIComponent(message)}`,
+      email: clientEmail,
+      phone: clientPhone,
+      mailto_url: clientEmail ? `mailto:${encodeURIComponent(clientEmail)}?subject=${encodeURIComponent("Tu propuesta de viaje Routsify")}&body=${encodeURIComponent(message)}` : null,
+      whatsapp_url: whatsappPhone ? `https://wa.me/${whatsappPhone}?text=${encodeURIComponent(message)}` : null,
     },
   });
 }
