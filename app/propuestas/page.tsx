@@ -1,13 +1,15 @@
 import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
-import { listCasesRepository, listProposalsRepository } from "@/lib/server-repositories";
+import { requireAppSession } from "@/lib/app-auth";
+import { listOrganizationCases, listOrganizationProposals } from "@/lib/organization-repositories";
 import { BudgetManager } from "./BudgetManager";
 
 export default async function ProposalsPage({ searchParams }: { searchParams: Promise<{ caseId?: string }> }) {
+  const session = await requireAppSession();
   const [{ caseId }, proposalResult, caseResult] = await Promise.all([
     searchParams,
-    listProposalsRepository(),
-    listCasesRepository(),
+    listOrganizationProposals(session.organizationId),
+    listOrganizationCases(session.organizationId),
   ]);
   const proposals = proposalResult.ok ? proposalResult.data : [];
   const cases = caseResult.ok ? caseResult.data : [];
