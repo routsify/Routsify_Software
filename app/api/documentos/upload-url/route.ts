@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createPrivateDocumentUploadUrl, type PrivateDocumentOwner } from "@/lib/storage-server";
-import { jsonAccessDenied, requireInternalAccess, sanitizeFileName, validatePrivateUpload } from "@/lib/api-security";
+import { canAccessSensitiveTravelerData, jsonAccessDenied, requireInternalAccess, sanitizeFileName, validatePrivateUpload } from "@/lib/api-security";
 
 const allowedOwnerTypes = new Set<PrivateDocumentOwner>(["case", "traveler", "supplier_invoice", "proposal_asset"]);
 
@@ -12,6 +12,7 @@ export async function POST(request: NextRequest) {
   const error = validatePrivateUpload(body || {});
   if (error || !body?.caseCode || !body.fileName) return NextResponse.json({ ok: false, error: error || "caseCode_fileName_required" }, { status: 400 });
   const ownerType = body.ownerType || "case";
+  if (ownerType === "traveler" && !canAccessSensitiveTravelerData(access.role)) return NextResponse.json({ ok: false, error: "sensitive_document_access_denied" }, { status: 403 });
   if (!allowedOwnerTypes.has(ownerType)) return NextResponse.json({ ok: false, error: "invalid_owner_type" }, { status: 400 });
   if (ownerType !== "case" && !body.ownerId) return NextResponse.json({ ok: false, error: "owner_id_required" }, { status: 400 });
 
