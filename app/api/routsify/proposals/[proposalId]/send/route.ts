@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { jsonAccessDenied, requireInternalAccess } from "@/lib/api-security";
 import { createProposalToken, hashProposalToken } from "@/lib/proposal-token";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
+import { enqueueOutboxEvent } from "@/lib/outbox-server";
 import { resolveOrganizationId, getRequestUserId } from "@/lib/request-context";
 
 type RelationRow = Record<string, unknown>;
@@ -75,6 +76,17 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   await supabase.from("cases").update({ status: "proposal_sent", next_action: "Hacer seguimiento al cliente", updated_at: now }).eq("id", proposal.case_id).eq("organization_id", organizationId);
   await supabase.from("timeline_events").insert({ organization_id: organizationId, case_id: proposal.case_id, client_id: null, event_type: "proposal.sent", title: `Presupuesto v${version.version_number} preparado para envío`, payload: { proposal_id: proposalId, version_id: version.id, expires_at: expiresAt.toISOString(), recipient_email: clientEmail }, created_by: actorId });
+  await enqueueOutboxEvent({
+    organizationId,
+    channel: "holded",
+    eventType: "estimate.sync",
+    relatedCaseId: proposal.case_id,
+    idempotencyKey: `holded-estimate:${organizationId}:${version.id}`,
+    payload: { proposal_id: proposalId, proposal_version_id: version.id, case_id: proposal.case_id },
+    risk: "low",
+    businessRule: "Sincronizar en Holded el presupuesto enviado sin bloquear el flujo comercial.",
+    nextAction: "Crear o actualizar el presupuesto en Holded.",
+  });
 
   const origin = new URL(request.url).origin;
   const publicUrl = `${origin}/propuestas/${encodeURIComponent(token)}`;

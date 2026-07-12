@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonAccessDenied, requireInternalAccess } from "@/lib/api-security";
-import { processOutboxBatch } from "@/lib/outbox-worker-server";
+import { processOutboxBatch } from "@/lib/outbox-worker-v11-server";
 
 export const dynamic = "force-dynamic";
 

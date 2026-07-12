@@ -6,7 +6,7 @@ const read = (path) => readFileSync(join(root, path), "utf8");
 const assert = (condition, message) => { if (!condition) throw new Error(message); };
 
 for (const file of [
-  "middleware.ts",
+  "proxy.ts",
   "app/page.tsx",
   "app/login/page.tsx",
   "app/login/LoginForm.tsx",
@@ -18,12 +18,20 @@ for (const file of [
   "lib/economics-server.ts",
   "lib/expected-purchases-server.ts",
   "lib/jobs-server.ts",
+  "lib/organization-secrets-server.ts",
+  "lib/openai-ocr-server.ts",
+  "lib/payment-workflow-server.ts",
+  "lib/fiscal-workflow-server.ts",
   "app/api/documentos/upload-url/route.ts",
   "app/api/documentos/confirm-upload/route.ts",
   "app/api/payments/manual/route.ts",
   "app/api/webhooks/payments/route.ts",
   "app/api/webhooks/holded/route.ts",
   "app/api/routsify/jobs/run/route.ts",
+  "app/api/routsify/settings/secrets/[secretKey]/route.ts",
+  "app/api/routsify/proposals/[proposalId]/payment-link/route.ts",
+  "app/api/routsify/clients/documents/[documentId]/ocr/route.ts",
+  "supabase/migrations/0018_integrations_fiscal_ocr_privacy.sql",
   "supabase/migrations/0005_routsify_settings_and_outbox_worker.sql",
   "supabase/migrations/0015_accept_proposal_version_rpc.sql",
   "components/AppShell.tsx",
@@ -49,8 +57,8 @@ for (const token of ["signInWithPassword", "ensure_profile_for_current_user", "r
 assert(!login.includes("disabled={!canUseAuth}"), "Login inputs must remain writable");
 for (const forbidden of ["Supabase Auth", ">RLS<", "middleware de autenticación"]) assert(!login.includes(forbidden), `Public login must not expose implementation detail: ${forbidden}`);
 
-const middleware = read("middleware.ts");
-for (const token of ["/api/routsify", "/api/documentos/confirm-upload", "authentication_required", "isPublicDemoAllowed"]) assert(middleware.includes(token), `Missing middleware token: ${token}`);
+const middleware = read("proxy.ts");
+for (const token of ["/api/routsify", "/api/documentos/confirm-upload", "authentication_required", "isPublicDemoAllowed"]) assert(middleware.includes(token), `Missing proxy token: ${token}`);
 
 const nav = read("lib/navigation.ts");
 for (const label of ["Inicio", "Clientes", "Expedientes", "Presupuestos", "Compras / Proveedores", "Informes", "Ajustes"]) assert(nav.includes(label), `Missing module: ${label}`);

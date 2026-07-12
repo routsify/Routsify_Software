@@ -20,7 +20,7 @@ function isPrivateApi(pathname: string) {
   return PRIVATE_API_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   const internalToken = request.headers.get("x-routsify-internal-token");
   if (internalToken && ["/api/health/internal", "/api/routsify/outbox/process", "/api/routsify/jobs/run"].includes(pathname)) return NextResponse.next();

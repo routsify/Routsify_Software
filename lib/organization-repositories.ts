@@ -36,7 +36,7 @@ export async function listOrganizationProposals(organizationId: string): Promise
   if (!hasSupabaseAdminEnv()) return unavailable();
   const { data, error } = await getSupabaseAdminClient()
     .from("proposals")
-    .select("*, cases(id,case_code,title,destination,trip_start,trip_end,clients(display_name,email)), proposal_versions(*, budget_lines(*))")
+    .select("*, cases(id,case_code,title,destination,trip_start,trip_end,clients(display_name,email)), proposal_versions(*, budget_lines(*), payment_links(*))")
     .eq("organization_id", organizationId)
     .order("created_at", { ascending: false })
     .limit(200);

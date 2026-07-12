@@ -42,10 +42,13 @@ function allowedRoles(request: NextRequest): AppRole[] {
   const path = request.nextUrl.pathname;
   const method = request.method.toUpperCase();
   const isRead = method === "GET" || method === "HEAD";
+  if (path.startsWith("/api/routsify/settings/secrets") || path.startsWith("/api/routsify/settings/integrations")) return ["admin"];
   if (path.startsWith("/api/routsify/settings") || path.startsWith("/api/routsify/system") || path.startsWith("/api/routsify/outbox")) return ["admin", "direction"];
+  if (path.startsWith("/api/routsify/payment-links") || path.includes("/payment-link")) return ["admin", "direction", "sales"];
   if (path.startsWith("/api/payments") || path.includes("/fiscal")) return ["admin", "direction", "billing"];
   if (path.startsWith("/api/routsify/proposals") || path.startsWith("/api/routsify/budgets")) return isRead ? ["admin", "direction", "sales", "operations", "billing", "viewer"] : ["admin", "direction", "sales"];
-  if (path.startsWith("/api/routsify/expected-purchases") || path.startsWith("/api/documentos") || path.includes("/travelers") || path.includes("/contracts")) return isRead ? ["admin", "direction", "sales", "operations", "billing"] : ["admin", "direction", "operations", "billing"];
+  if (path.startsWith("/api/routsify/documents") || path.startsWith("/api/routsify/ocr") || path.startsWith("/api/documentos")) return ["admin", "sales"];
+  if (path.startsWith("/api/routsify/expected-purchases") || path.includes("/travelers") || path.includes("/contracts")) return isRead ? ["admin", "direction", "sales", "operations", "billing"] : ["admin", "direction", "sales", "operations", "billing"];
   if (path.includes("/tasks") || path.includes("/timeline")) return isRead ? ["admin", "direction", "sales", "operations", "billing", "viewer"] : ["admin", "direction", "sales", "operations", "billing"];
   if (path.startsWith("/api/routsify/reports")) return ["admin", "direction", "sales", "operations", "billing"];
   if (path.startsWith("/api/routsify/clients") || path.startsWith("/api/routsify/cases")) return isRead ? ["admin", "direction", "sales", "operations", "billing", "viewer"] : ["admin", "direction", "sales", "operations"];

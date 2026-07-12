@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { jsonAccessDenied, requireInternalAccess } from "@/lib/api-security";
 import { getSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase-admin";
 import { resolveOrganizationId, getRequestUserId } from "@/lib/request-context";
+import { enqueueOutboxEvent } from "@/lib/outbox-server";
 
 function normalizedPhone(value: unknown) {
   return String(value || "").replace(/\D/g, "") || null;
@@ -83,6 +84,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     payload: { changed_fields: Object.keys(payload) },
     created_by: actorId,
   });
+  await enqueueOutboxEvent({ organizationId, channel: "holded", eventType: "contact.sync", idempotencyKey: `holded-contact:${organizationId}:${clientId}:${data.updated_at || Date.now()}`, payload: { client_id: clientId }, risk: "low", businessRule: "Actualizar el contacto de Holded tras cambiar la ficha fiscal o comercial.", nextAction: "Actualizar contacto en Holded." });
 
   return NextResponse.json({ ok: true, data });
 }
