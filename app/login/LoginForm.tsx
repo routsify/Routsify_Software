@@ -52,14 +52,6 @@ export function LoginForm() {
       return;
     }
 
-    const { error: profileError } = await supabase.rpc("ensure_profile_for_current_user");
-    if (profileError) {
-      await supabase.auth.signOut();
-      setLoading(false);
-      setNotice({ tone: "error", text: "No se ha podido iniciar sesión." });
-      return;
-    }
-
     router.replace(nextPath);
     router.refresh();
   }
