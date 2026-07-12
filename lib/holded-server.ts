@@ -2,7 +2,7 @@ import { getOrganizationSecret } from "@/lib/organization-secrets-server";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 
 type HoldedRequest = {
-  organizationId: string;
+  organizationId?: string;
   method?: "GET" | "POST" | "PUT" | "DELETE";
   path: string;
   body?: Record<string, unknown>;
@@ -45,9 +45,11 @@ function sleep(ms: number) {
 }
 
 export async function holdedRequest(input: HoldedRequest) {
-  const apiKey = await getOrganizationSecret(input.organizationId, "holded_api_key");
+  const organizationId = input.organizationId || process.env.ROUTSIFY_DEFAULT_ORGANIZATION_ID || "";
+  if (!organizationId) return { ok: false as const, mode: "unconfigured" as const, status: 503, error: "organization_not_configured", payload: null };
+  const apiKey = await getOrganizationSecret(organizationId, "holded_api_key");
   if (!apiKey) return { ok: false as const, mode: "unconfigured" as const, status: 503, error: "holded_api_key_not_configured", payload: null };
-  const { baseUrl } = await holdedConfiguration(input.organizationId);
+  const { baseUrl } = await holdedConfiguration(organizationId);
   const timeoutMs = Math.min(Math.max(input.timeoutMs || 15_000, 2_000), 30_000);
   const retries = Math.min(Math.max(input.retries ?? 2, 0), 4);
   let lastStatus = 0;
