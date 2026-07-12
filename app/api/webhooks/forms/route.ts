@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getWebhookIntegrationConfig } from "@/lib/integration-config-server";
 import { enqueueOutboxEvent } from "@/lib/outbox-server";
 import { providerIdempotencyKey, verifyWebhookRequest } from "@/lib/webhook-security";
 
@@ -8,17 +9,21 @@ async function resolveWebhookOrganizationId() {
 
 export async function POST(request: NextRequest) {
   const rawBody = await request.text();
+  const organizationId = await resolveWebhookOrganizationId();
+  if (!organizationId) return NextResponse.json({ ok: false, error: "organization_not_configured" }, { status: 503 });
+
+  const configuration = await getWebhookIntegrationConfig(organizationId, "fillout");
+  if (!configuration.enabled) return NextResponse.json({ ok: false, error: "fillout_integration_disabled" }, { status: 503 });
+
   const verification = verifyWebhookRequest({
     rawBody,
-    secret: process.env.FORM_WEBHOOK_SECRET,
+    secret: configuration.secret || undefined,
     signature: request.headers.get("x-routsify-signature"),
     timestamp: request.headers.get("x-routsify-timestamp"),
     eventId: request.headers.get("x-routsify-event-id") || request.headers.get("x-idempotency-key"),
   });
 
-  if (!verification.ok) {
-    return NextResponse.json({ ok: false, error: verification.error }, { status: verification.status });
-  }
+  if (!verification.ok) return NextResponse.json({ ok: false, error: verification.error }, { status: verification.status });
 
   let payload: Record<string, unknown> | null = null;
   try {
@@ -27,12 +32,7 @@ export async function POST(request: NextRequest) {
   } catch {
     payload = null;
   }
-  if (!payload) {
-    return NextResponse.json({ ok: false, error: "invalid_payload" }, { status: 400 });
-  }
-
-  const organizationId = await resolveWebhookOrganizationId();
-  if (!organizationId) return NextResponse.json({ ok: false, error: "organization_not_configured" }, { status: 503 });
+  if (!payload) return NextResponse.json({ ok: false, error: "invalid_payload" }, { status: 400 });
 
   const result = await enqueueOutboxEvent({
     organizationId,

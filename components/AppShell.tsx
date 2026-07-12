@@ -2,7 +2,9 @@ import Link from "next/link";
 import { AuthStatus } from "@/components/AuthStatus";
 import { GlobalSearch } from "@/components/GlobalSearch";
 import { Logo } from "@/components/Logo";
+import { ThemeShell } from "@/components/ThemeShell";
 import { requireAppSession } from "@/lib/app-auth";
+import { loadAppTheme } from "@/lib/app-theme-server";
 
 const nav = [
   ["/hoy", "Inicio"],
@@ -12,20 +14,23 @@ const nav = [
   ["/compras", "Compras / Proveedores"],
   ["/informes", "Informes"],
   ["/ajustes", "Ajustes"],
-];
+] as const;
 
 export async function AppShell({ children }: { children: React.ReactNode }) {
-  await requireAppSession();
+  const session = await requireAppSession();
+  const theme = await loadAppTheme(session.organizationId);
+  const visibleLabels = new Set(theme.navigation || nav.map((item) => item[1]));
+  visibleLabels.add("Ajustes");
 
   return (
-    <div className="shell">
+    <ThemeShell theme={theme}>
       <aside className="sidebar">
         <Link className="brand" href="/hoy">
           <Logo size={34} />
-          <span>Routsify</span>
+          <span>{theme.companyName}</span>
         </Link>
         <nav className="nav">
-          {nav.map(([href, label], index) => (
+          {nav.filter(([, label]) => visibleLabels.has(label)).map(([href, label], index) => (
             <Link key={href} href={href}>
               <span className="nav-index">{index + 1}</span>
               <span>{label}</span>
@@ -40,6 +45,6 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
         </div>
         {children}
       </main>
-    </div>
+    </ThemeShell>
   );
 }

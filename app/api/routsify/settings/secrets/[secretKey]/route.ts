@@ -3,12 +3,17 @@ import { jsonAccessDenied, requireInternalAccess } from "@/lib/api-security";
 import { deleteOrganizationSecret, isOrganizationSecretKey, setOrganizationSecret } from "@/lib/organization-secrets-server";
 import { resolveOrganizationId } from "@/lib/request-context";
 
+function isDeferredWebhookKey(value: string) {
+  return value === "fillout_webhook_secret" || value === "booking_webhook_secret";
+}
+
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ secretKey: string }> }) {
   const access = await requireInternalAccess(request);
   if (!access.ok) return jsonAccessDenied(access);
   if (access.role !== "admin") return NextResponse.json({ ok: false, error: "admin_required" }, { status: 403 });
   const { secretKey } = await params;
   if (!isOrganizationSecretKey(secretKey)) return NextResponse.json({ ok: false, error: "unsupported_secret" }, { status: 404 });
+  if (isDeferredWebhookKey(secretKey)) return NextResponse.json({ ok: false, error: "La conexión está preparada. La clave se habilitará cuando se active la API correspondiente." }, { status: 409 });
   const body = await request.json().catch(() => null);
   const value = String(body?.value || "").trim();
   const organizationId = await resolveOrganizationId(request, access.organizationId);
@@ -26,6 +31,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
   if (access.role !== "admin") return NextResponse.json({ ok: false, error: "admin_required" }, { status: 403 });
   const { secretKey } = await params;
   if (!isOrganizationSecretKey(secretKey)) return NextResponse.json({ ok: false, error: "unsupported_secret" }, { status: 404 });
+  if (isDeferredWebhookKey(secretKey)) return NextResponse.json({ ok: false, error: "La conexión aún no está activada." }, { status: 409 });
   const organizationId = await resolveOrganizationId(request, access.organizationId);
   try {
     await deleteOrganizationSecret({ organizationId, secretKey, actorId: access.actorId });
