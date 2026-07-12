@@ -1,8 +1,11 @@
 import { defaultSettings, moduleFor, settingValueToText, type AppSetting } from "@/lib/settings-master";
+import { IntegrationSecretsPanel } from "./IntegrationSecretsPanel";
 
 const visibleModules = new Set(["general", "appearance", "clients", "cases", "budgets", "margins", "purchases", "integrations", "fiscal"]);
 
-export function ProductionSettings({ storedRows = [] }: { storedRows?: Record<string, unknown>[] }) {
+type SecretStatus = { key: "holded_api_key" | "openai_api_key"; configured: boolean; updatedAt: string | null };
+
+export function ProductionSettings({ storedRows = [], secretStatuses = [], canManageSecrets = false }: { storedRows?: Record<string, unknown>[]; secretStatuses?: SecretStatus[]; canManageSecrets?: boolean }) {
   const settings = defaultSettings
     .filter((setting) => visibleModules.has(setting.module) && setting.editable && !setting.isSensitive)
     .map((setting) => {
@@ -22,6 +25,8 @@ export function ProductionSettings({ storedRows = [] }: { storedRows?: Record<st
       <div className="kpi-card"><span className="kpi-icon">F</span><span className="kpi-copy"><strong>Fiscalidad</strong><b>{settingValueToText(fiscal?.value ?? "—")}</b><small>Revisión manual</small></span></div>
       <div className="kpi-card"><span className="kpi-icon">H</span><span className="kpi-copy"><strong>Holded</strong><b>{settingValueToText(holded?.value ?? "—")}</b><small>Sin automatismos ocultos</small></span></div>
     </section>
+
+    <IntegrationSecretsPanel initialStatuses={secretStatuses} canManage={canManageSecrets} />
 
     <section className="card">
       <div className="panel-head"><div><h2>Configuración de lanzamiento</h2><p>Valores efectivos para esta organización. Las credenciales y secretos nunca se muestran en esta pantalla.</p></div></div>

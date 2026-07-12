@@ -4,6 +4,7 @@ import { createClientRepository } from "@/lib/server-repositories";
 import { listOrganizationClients } from "@/lib/organization-repositories";
 import { resolveOrganizationId } from "@/lib/request-context";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
+import { enqueueOutboxEvent } from "@/lib/outbox-server";
 
 export async function GET(request: NextRequest) {
   const access = await requireInternalAccess(request);
@@ -42,5 +43,9 @@ export async function POST(request: NextRequest) {
   }
 
   const result = await createClientRepository({ ...source, display_name: displayName, email, phone, organization_id: organizationId });
+  if (result.ok && result.data && typeof result.data === "object" && "id" in result.data) {
+    const clientId = String((result.data as { id?: unknown }).id || "");
+    if (clientId) await enqueueOutboxEvent({ organizationId, channel: "holded", eventType: "contact.sync", idempotencyKey: `holded-contact:${organizationId}:${clientId}`, payload: { client_id: clientId }, risk: "low", businessRule: "Mantener el contacto de Holded alineado con Routsify.", nextAction: "Crear o actualizar contacto en Holded." });
+  }
   return NextResponse.json(result, { status: result.ok ? 201 : 400 });
 }
