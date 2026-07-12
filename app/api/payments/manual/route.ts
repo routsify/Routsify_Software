@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonAccessDenied, requireInternalAccess } from "@/lib/api-security";
+import { ensureProformaForCase } from "@/lib/fiscal-workflow-server";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { resolveOrganizationId } from "@/lib/request-context";
 
@@ -41,7 +42,13 @@ export async function POST(request: NextRequest) {
     currency_value: String(body?.currency || preflight.caseRow.currency || "EUR"),
     provider_value: String(body?.method || "manual"),
     confirmed_timestamp: receivedAt,
-    payment_payload: { notes: String(body?.notes || "").trim() || null, actor_id: access.actorId, confirmation_mode: "manual_review" },
+    payment_payload: { notes: String(body?.notes || "").trim() || null, actor_id: access.actorId, confirmation_mode: "manual" },
   });
-  return error ? NextResponse.json({ ok: false, error: error.message }, { status: 400 }) : NextResponse.json({ ok: true, data }, { status: 201 });
+  if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
+  try {
+    const proforma = await ensureProformaForCase({ organizationId, caseId, actorId: access.actorId, paymentReference: reference });
+    return NextResponse.json({ ok: true, data, proforma }, { status: 201 });
+  } catch (caught) {
+    return NextResponse.json({ ok: false, error: caught instanceof Error ? caught.message : "proforma_queue_failed", payment_confirmed: true, data }, { status: 500 });
+  }
 }
