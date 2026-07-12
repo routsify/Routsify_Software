@@ -1,5 +1,6 @@
 import { queueEligibleFinalInvoices } from "@/lib/fiscal-workflow-server";
-import { processOutboxBatch, syncHoldedPurchaseCandidates } from "@/lib/outbox-worker-server";
+import { processHoldedOutboxBatch, syncHoldedPurchaseCandidates } from "@/lib/holded-outbox-worker-server";
+import { processOutboxBatch } from "@/lib/outbox-worker-server";
 import { getSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase-admin";
 
 export type RoutsifyJob = "holded_sync_pending" | "sync_holded_purchases" | "pre_trip_supplier_check" | "post_trip_supplier_check" | "operational_close_check" | "fiscal_final_invoice_check" | "privacy_retention_review";
@@ -61,7 +62,11 @@ async function retentionReview() {
 export async function runRoutsifyJob(job: RoutsifyJob) {
   if (!hasSupabaseAdminEnv()) return { ok: false as const, error: "supabase_admin_not_configured" };
   try {
-    if (job === "holded_sync_pending") return { ok: true as const, job, data: await processOutboxBatch(50) };
+    if (job === "holded_sync_pending") {
+      const holded = await processHoldedOutboxBatch(30);
+      const generic = await processOutboxBatch(50);
+      return { ok: generic.ok, job, data: { holded, generic } };
+    }
     if (job === "sync_holded_purchases") return { ok: true as const, job, data: await syncPurchaseCandidatesForAllOrganizations() };
     if (job === "pre_trip_supplier_check") return { ok: true as const, job, data: await createSupplierTasks("pre") };
     if (job === "post_trip_supplier_check") return { ok: true as const, job, data: await createSupplierTasks("post") };
