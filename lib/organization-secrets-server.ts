@@ -1,7 +1,15 @@
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 
-export const organizationSecretKeys = ["holded_api_key", "openai_api_key"] as const;
+export const organizationSecretKeys = ["holded_api_key", "openai_api_key", "fillout_webhook_secret", "booking_webhook_secret"] as const;
 export type OrganizationSecretKey = (typeof organizationSecretKeys)[number];
+
+function environmentFallback(secretKey: OrganizationSecretKey) {
+  if (secretKey === "holded_api_key") return process.env.HOLDED_API_KEY || null;
+  if (secretKey === "openai_api_key") return process.env.OPENAI_API_KEY || null;
+  if (secretKey === "fillout_webhook_secret") return process.env.FORM_WEBHOOK_SECRET || null;
+  if (secretKey === "booking_webhook_secret") return process.env.BOOKING_WEBHOOK_SECRET || null;
+  return null;
+}
 
 export function isOrganizationSecretKey(value: string): value is OrganizationSecretKey {
   return (organizationSecretKeys as readonly string[]).includes(value);
@@ -20,7 +28,7 @@ export async function listOrganizationSecretStatuses(organizationId: string): Pr
     .eq("organization_id", organizationId);
   if (error) throw new Error(error.message);
   const rows = new Map((data || []).map((row) => [String(row.secret_key), String(row.updated_at || "")]));
-  return organizationSecretKeys.map((key) => ({ key, configured: rows.has(key), updatedAt: rows.get(key) || null }));
+  return organizationSecretKeys.map((key) => ({ key, configured: rows.has(key) || Boolean(environmentFallback(key)), updatedAt: rows.get(key) || null }));
 }
 
 export async function getOrganizationSecret(organizationId: string, secretKey: OrganizationSecretKey): Promise<string | null> {
@@ -28,17 +36,9 @@ export async function getOrganizationSecret(organizationId: string, secretKey: O
     target_org: organizationId,
     target_key: secretKey,
   });
-  if (error) {
-    // Backwards-compatible server-only fallback while a project is finishing the Vault migration.
-    if (secretKey === "holded_api_key") return process.env.HOLDED_API_KEY || null;
-    if (secretKey === "openai_api_key") return process.env.OPENAI_API_KEY || null;
-    throw new Error(error.message);
-  }
+  if (error) return environmentFallback(secretKey);
   const value = typeof data === "string" ? data.trim() : "";
-  if (value) return value;
-  if (secretKey === "holded_api_key") return process.env.HOLDED_API_KEY || null;
-  if (secretKey === "openai_api_key") return process.env.OPENAI_API_KEY || null;
-  return null;
+  return value || environmentFallback(secretKey);
 }
 
 export async function setOrganizationSecret(input: {
