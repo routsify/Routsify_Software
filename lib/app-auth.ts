@@ -26,7 +26,6 @@ export async function requireAppSession() {
   const { data, error } = await supabase.auth.getUser();
   if (error || !data.user) redirect("/login");
 
-  await supabase.rpc("ensure_profile_for_current_user");
   const { data: profile, error: profileError } = await getSupabaseAdminClient()
     .from("profiles")
     .select("organization_id,role,full_name")
