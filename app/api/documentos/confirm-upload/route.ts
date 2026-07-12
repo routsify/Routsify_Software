@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { jsonAccessDenied, requireInternalAccess, sanitizeFileName } from "@/lib/api-security";
+import { canAccessSensitiveTravelerData, jsonAccessDenied, requireInternalAccess, sanitizeFileName } from "@/lib/api-security";
 import { confirmDocumentUploadRepository } from "@/lib/server-repositories";
 import { bucketForOwner } from "@/lib/storage-server";
 
@@ -33,6 +33,7 @@ export async function POST(request: NextRequest) {
   if (validationError) return NextResponse.json({ ok: false, error: validationError }, { status: 400 });
 
   const ownerType = body.ownerType as "case" | "traveler" | "supplier_invoice";
+  if (ownerType === "traveler" && !canAccessSensitiveTravelerData(access.role)) return NextResponse.json({ ok: false, error: "sensitive_document_access_denied" }, { status: 403 });
   const expectedBucket = bucketForOwner(ownerType);
   const bucket = typeof body.bucket === "string" ? body.bucket : expectedBucket;
   if (bucket !== expectedBucket) return NextResponse.json({ ok: false, error: "bucket_owner_mismatch" }, { status: 400 });
@@ -51,7 +52,7 @@ export async function POST(request: NextRequest) {
     sizeBytes: Number(body.sizeBytes),
     checksum: typeof body.checksum === "string" ? body.checksum : null,
     sensitivity: body.sensitivity === "sensitive" || body.sensitivity === "public" ? body.sensitivity : "private",
-    retentionDays: typeof body.retentionDays === "number" ? body.retentionDays : ownerType === "supplier_invoice" ? 365 : 60,
+    retentionDays: typeof body.retentionDays === "number" ? body.retentionDays : 1825,
     actorId: access.actorId,
     invoiceNumber: typeof body.invoiceNumber === "string" ? body.invoiceNumber.trim() || null : null,
     invoiceDate: typeof body.invoiceDate === "string" ? body.invoiceDate : null,
