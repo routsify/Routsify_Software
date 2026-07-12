@@ -1,0 +1,13 @@
+name: Publish Routsify MVP v1.1
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  staged:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Publisher is staged and will be enabled only after the final source is ready."

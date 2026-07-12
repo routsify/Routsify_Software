@@ -7,17 +7,17 @@
     "build": "next build",
     "platform:build": "npm run validate:platform && npm run typecheck && next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "validate:mvp": "node scripts/validate-mvp.mjs",
     "validate:platform": "npm run validate:mvp && node scripts/validate-platform.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "0.7.0",
-    "@supabase/supabase-js": "2.48.1",
-    "echarts": "5.6.0",
+    "@supabase/supabase-js": "^2.110.2",
+    "echarts": "^6.1.0",
     "lucide-react": "0.468.0",
-    "next": "16.2.1",
+    "next": "^16.2.10",
     "react": "19.2.1",
     "react-dom": "19.2.1"
   },
@@ -28,6 +28,10 @@
     "@types/react-dom": "19.0.3",
     "eslint": "9.17.0",
     "eslint-config-next": "16.2.1",
+    "postcss": "8.5.17",
     "typescript": "5.7.3"
+  },
+  "overrides": {
+    "postcss": "8.5.17"
   }
 }
