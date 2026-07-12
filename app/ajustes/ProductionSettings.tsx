@@ -22,13 +22,7 @@ function sameValue(left: AppSetting["value"], right: AppSetting["value"]) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-function displayValue(value: AppSetting["value"]) {
-  if (typeof value === "boolean") return value ? "Activo" : "Inactivo";
-  if (Array.isArray(value)) return `${value.length} seleccionados`;
-  return String(value || "Pendiente");
-}
-
-export function ProductionSettings({ storedRows = [], secretStatuses = [], canManageSecrets = false, isAdmin = false }: { storedRows?: Record<string, unknown>[]; secretStatuses?: SecretStatus[]; canManageSecrets?: boolean; isAdmin?: boolean }) {
+export function ProductionSettings({ storedRows = [], secretStatuses = [], canManageSecrets = false, isAdmin = canManageSecrets }: { storedRows?: Record<string, unknown>[]; secretStatuses?: SecretStatus[]; canManageSecrets?: boolean; isAdmin?: boolean }) {
   const router = useRouter();
   const initialSettings = useMemo(() => defaultSettings.map((setting) => {
     const stored = storedRows.find((row) => String(row.key || "") === setting.key);
