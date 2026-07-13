@@ -1,6 +1,8 @@
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 
 const numeric = (value: unknown) => Number.isFinite(Number(value)) ? Number(value) : 0;
+const stages = ["new_lead", "call_booked", "call_done", "budget_draft", "proposal_sent", "proposal_accepted", "contract_ready", "contract_sent", "contract_signed", "payment_pending", "payment_confirmed", "confirmed", "suppliers_pending", "traveling", "post_trip", "ready_to_close"];
+const stageRank = (status: unknown) => { const index = stages.indexOf(String(status || "new_lead")); return index < 0 ? 0 : index; };
 
 export async function loadOperationalHealth(organizationId: string) {
   const db = getSupabaseAdminClient();
@@ -12,7 +14,7 @@ export async function loadOperationalHealth(organizationId: string) {
     db.from("payments").select("case_id,status,amount").eq("organization_id", organizationId),
     db.from("expected_purchases").select("case_id,status,required,active").eq("organization_id", organizationId),
     db.from("documents").select("case_id,status,required,purged_at").eq("organization_id", organizationId).is("purged_at", null),
-    db.from("tasks").select("id,case_id,title,status,priority,due_at").eq("organization_id", organizationId).neq("status", "done"),
+    db.from("tasks").select("id,case_id,client_id,title,status,priority,due_at").eq("organization_id", organizationId).in("status", ["pending", "in_progress"]),
     db.from("integration_outbox").select("id,channel,event_type,status,last_error,created_at").eq("organization_id", organizationId).in("status", ["pending", "retry", "failed", "manual_review"]).limit(100),
     db.from("integration_runs").select("id,integration,status,started_at,finished_at").order("started_at", { ascending: false }).limit(10),
   ]);
@@ -29,22 +31,25 @@ export async function loadOperationalHealth(organizationId: string) {
   const paymentMap = grouped(payments);
   const purchaseMap = grouped(purchases);
   const documentMap = grouped(documents);
-  const active = new Set(["new_lead", "call_booked", "call_done", "budget_draft", "proposal_sent", "proposal_accepted", "contract_ready", "contract_sent", "contract_signed", "payment_pending", "payment_confirmed", "confirmed", "suppliers_pending", "traveling", "post_trip", "ready_to_close"]);
+  const active = new Set(stages);
 
   const caseHealth = (cases || []).filter((row) => active.has(String(row.status))).map((row) => {
+    const rank = stageRank(row.status);
     const requiredDocuments = (documentMap.get(row.id) || []).filter((item) => item.required);
     const requiredPurchases = (purchaseMap.get(row.id) || []).filter((item) => item.required && item.active);
     const paid = (paymentMap.get(row.id) || []).filter((item) => ["confirmed", "paid", "received"].includes(String(item.status))).reduce((sum, item) => sum + numeric(item.amount), 0);
     const checks: Array<[string, boolean]> = [
-      ["próxima acción", Boolean(row.next_action)],
-      ["presupuesto aceptado", (proposalMap.get(row.id) || []).some((item) => item.status === "accepted") || numeric(row.accepted_value) > 0],
-      ["viajeros", (travelerMap.get(row.id) || []).length > 0],
-      ["documentación", requiredDocuments.every((item) => ["uploaded", "verified", "approved"].includes(String(item.status)))],
-      ["contrato firmado", (contractMap.get(row.id) || []).some((item) => item.status === "signed")],
-      ["pago", numeric(row.accepted_value) <= 0 || paid >= numeric(row.accepted_value)],
-      ["compras", requiredPurchases.every((item) => ["approved", "not_required", "cancelled"].includes(String(item.status)))],
+      ["próxima acción", Boolean(String(row.next_action || "").trim())],
       ["sin bloqueos", !row.blocker && !(Array.isArray(row.close_blockers) && row.close_blockers.length)],
     ];
+    if (rank >= stageRank("proposal_accepted")) {
+      checks.push(["presupuesto aceptado", (proposalMap.get(row.id) || []).some((item) => item.status === "accepted") || numeric(row.accepted_value) > 0]);
+      checks.push(["viajeros", (travelerMap.get(row.id) || []).length > 0]);
+    }
+    if (rank >= stageRank("contract_signed")) checks.push(["contrato firmado", (contractMap.get(row.id) || []).some((item) => item.status === "signed")]);
+    if (rank >= stageRank("payment_confirmed")) checks.push(["pago", numeric(row.accepted_value) > 0 && paid >= numeric(row.accepted_value)]);
+    if (rank >= stageRank("suppliers_pending")) checks.push(["compras", requiredPurchases.every((item) => ["approved", "not_required", "cancelled"].includes(String(item.status)))]);
+    if (rank >= stageRank("ready_to_close")) checks.push(["documentación", requiredDocuments.every((item) => ["uploaded", "verified", "approved"].includes(String(item.status)))]);
     const completed = checks.filter(([, ok]) => ok).length;
     return { id: row.id, caseCode: row.case_code, title: row.title, status: row.status, destination: row.destination, tripStart: row.trip_start, score: Math.round(completed / checks.length * 100), missing: checks.filter(([, ok]) => !ok).map(([label]) => label) };
   }).sort((a, b) => a.score - b.score);
@@ -53,7 +58,7 @@ export async function loadOperationalHealth(organizationId: string) {
   const failedOutbox = (outbox || []).filter((item) => ["failed", "manual_review"].includes(String(item.status)));
   const alerts = [
     ...caseHealth.filter((item) => item.score < 100).map((item) => ({ id: `case:${item.id}`, severity: item.score < 50 ? "high" : "medium", title: `${item.caseCode} · salud ${item.score}%`, detail: `Falta: ${item.missing.join(", ")}`, href: `/expedientes?caseId=${encodeURIComponent(String(item.id))}` })),
-    ...overdueTasks.map((item) => ({ id: `task:${item.id}`, severity: item.priority === "urgent" ? "critical" : "high", title: `Tarea vencida · ${item.title}`, detail: "Requiere revisión inmediata.", href: item.case_id ? `/expedientes?caseId=${encodeURIComponent(String(item.case_id))}` : "/hoy" })),
+    ...overdueTasks.map((item) => ({ id: `task:${item.id}`, severity: item.priority === "urgent" ? "critical" : "high", title: `Tarea vencida · ${item.title}`, detail: "Requiere revisión inmediata.", href: item.case_id ? `/expedientes?caseId=${encodeURIComponent(String(item.case_id))}` : item.client_id ? "/clientes" : "/hoy" })),
     ...failedOutbox.map((item) => ({ id: `outbox:${item.id}`, severity: "high", title: `Integración pendiente · ${item.channel || item.event_type}`, detail: item.last_error || "Revisión manual necesaria.", href: "/control" })),
   ];
 
