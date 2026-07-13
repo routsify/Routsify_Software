@@ -1,7 +1,6 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { getSupabaseBrowserClient, hasSupabaseBrowserEnv } from "@/lib/supabase-browser";
 
 type Mode = "login" | "forgot";
@@ -12,8 +11,14 @@ function safeNext(value: string | null) {
   return value;
 }
 
+function loginErrorMessage(error: { code?: string; status?: number } | null) {
+  if (!error) return "No se ha podido iniciar sesión.";
+  if (error.code === "invalid_credentials" || error.status === 400) return "Email o contraseña incorrectos.";
+  if (error.status === 429) return "Demasiados intentos. Espera un momento y vuelve a probar.";
+  return "No se ha podido conectar con el servicio de acceso. Vuelve a intentarlo.";
+}
+
 export function LoginForm() {
-  const router = useRouter();
   const [mode, setMode] = useState<Mode>("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -24,8 +29,17 @@ export function LoginForm() {
   const canUseAuth = hasSupabaseBrowserEnv();
 
   useEffect(() => {
-    setNextPath(safeNext(new URLSearchParams(window.location.search).get("next")));
-  }, []);
+    const resolvedNext = safeNext(new URLSearchParams(window.location.search).get("next"));
+    setNextPath(resolvedNext);
+
+    if (!canUseAuth) return;
+    let cancelled = false;
+    const supabase = getSupabaseBrowserClient();
+    void supabase.auth.getSession().then(({ data }) => {
+      if (!cancelled && data.session) window.location.replace(resolvedNext);
+    });
+    return () => { cancelled = true; };
+  }, [canUseAuth]);
 
   async function login(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -38,22 +52,35 @@ export function LoginForm() {
     }
 
     if (!canUseAuth) {
-      setNotice({ tone: "error", text: "No se ha podido iniciar sesión." });
+      setNotice({ tone: "error", text: "El acceso no está configurado correctamente." });
       return;
     }
 
     setLoading(true);
-    const supabase = getSupabaseBrowserClient();
-    const { data, error } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password });
+    try {
+      const supabase = getSupabaseBrowserClient();
+      const { data, error } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password });
 
-    if (error || !data.session) {
+      if (error || !data.session) {
+        setLoading(false);
+        setNotice({ tone: "error", text: loginErrorMessage(error) });
+        return;
+      }
+
+      const { data: verified, error: verificationError } = await supabase.auth.getUser();
+      if (verificationError || !verified.user) {
+        await supabase.auth.signOut({ scope: "local" });
+        setLoading(false);
+        setNotice({ tone: "error", text: "La sesión no se ha podido verificar. Vuelve a intentarlo." });
+        return;
+      }
+
+      setNotice({ tone: "ok", text: "Acceso correcto. Entrando…" });
+      window.location.replace(nextPath);
+    } catch {
       setLoading(false);
-      setNotice({ tone: "error", text: "Email o contraseña incorrectos." });
-      return;
+      setNotice({ tone: "error", text: "No se ha podido conectar con el servicio de acceso. Vuelve a intentarlo." });
     }
-
-    router.replace(nextPath);
-    router.refresh();
   }
 
   async function recover(event: FormEvent<HTMLFormElement>) {
