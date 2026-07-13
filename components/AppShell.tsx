@@ -27,13 +27,13 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <ThemeShell theme={theme}>
       <aside className="sidebar">
-        <Link className="brand" href="/hoy">
+        <Link className="brand" href="/hoy" prefetch={false}>
           <Logo size={34} />
           <span>{theme.companyName}</span>
         </Link>
         <nav className="nav">
           {nav.filter(([, label]) => visibleLabels.has(label)).map(([href, label], index) => (
-            <Link key={href} href={href}>
+            <Link key={href} href={href} prefetch={false}>
               <span className="nav-index">{index + 1}</span>
               <span>{label}</span>
             </Link>
@@ -43,7 +43,7 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
       <main className="main">
         <div className="topbar">
           <GlobalSearch />
-          <div className="topbar-actions"><AuthStatus /></div>
+          <div className="topbar-actions"><AuthStatus email={session.email} role={session.role} /></div>
         </div>
         {children}
       </main>
