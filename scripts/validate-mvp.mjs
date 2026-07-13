@@ -62,9 +62,9 @@ const security = read("lib/api-security.ts");
 for (const token of ["auth.getUser", "allowedRoles", "timingSafeEqual"]) assert(security.includes(token), `Missing API security token: ${token}`);
 
 const login = read("app/login/LoginForm.tsx");
-for (const token of ["signInWithPassword", "ensure_profile_for_current_user", "resetPasswordForEmail", "¿Has olvidado tu contraseña?", "showPassword", "safeNext"]) assert(login.includes(token), `Missing login token: ${token}`);
+for (const token of ["signInWithPassword", "resetPasswordForEmail", "¿Has olvidado tu contraseña?", "showPassword", "safeNext"]) assert(login.includes(token), `Missing login token: ${token}`);
 assert(!login.includes("disabled={!canUseAuth}"), "Login inputs must remain writable");
-for (const forbidden of ["Supabase Auth", ">RLS<", "middleware de autenticación"]) assert(!login.includes(forbidden), `Public login must not expose implementation detail: ${forbidden}`);
+for (const forbidden of ["Supabase Auth", ">RLS<", "middleware de autenticación", "ensure_profile_for_current_user"]) assert(!login.includes(forbidden), `Public login must not expose implementation detail: ${forbidden}`);
 
 const middleware = read("proxy.ts");
 for (const token of ["/api/routsify", "/api/documentos/confirm-upload", "authentication_required", "isPublicDemoAllowed"]) assert(middleware.includes(token), `Missing proxy token: ${token}`);
