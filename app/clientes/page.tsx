@@ -2,6 +2,7 @@ import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
 import { requireAppSession } from "@/lib/app-auth";
 import { listOrganizationClientActivity, listOrganizationClients } from "@/lib/organization-repositories";
+import { ClientOperationsOverview } from "./ClientOperationsOverview";
 import { ClientsManager } from "./ClientsManager";
 
 export default async function ClientsPage() {
@@ -20,13 +21,13 @@ export default async function ClientsPage() {
         title="Clientes"
         description="Ficha única con contacto, solicitudes, llamadas, tareas y expedientes relacionados."
       />
-      <ClientsManager
+      <ClientsManager initialClients={clients} />
+      <ClientOperationsOverview
         initialClients={clients}
         initialLeads={activity.leads}
         initialBookings={activity.bookings}
         initialTasks={activity.tasks}
         initialCases={activity.cases}
-        initialTimeline={activity.timeline}
         filloutUrl={activity.filloutUrl}
       />
     </AppShell>
