@@ -16,6 +16,10 @@ async function paymentPreflight(organizationId: string, caseId: string, amount: 
   if (numeric(caseRow.accepted_value) <= 0) return { ok: false as const, error: "proposal_not_accepted" };
   const { data: accepted } = await supabase.from("proposals").select("id,current_version_id").eq("case_id", caseId).eq("organization_id", organizationId).eq("status", "accepted").maybeSingle();
   if (!accepted?.current_version_id) return { ok: false as const, error: "proposal_not_accepted" };
+  const { data: signedContract } = await supabase.from("contracts").select("id").eq("case_id", caseId).eq("organization_id", organizationId).eq("status", "signed").limit(1).maybeSingle();
+  if (!signedContract) return { ok: false as const, error: "signed_contract_required" };
+  const { data: existingPayment } = await supabase.from("payments").select("id").eq("organization_id", organizationId).eq("payment_reference", reference).limit(1).maybeSingle();
+  if (existingPayment) return { ok: false as const, error: "payment_reference_already_exists" };
   return { ok: true as const, caseRow };
 }
 
