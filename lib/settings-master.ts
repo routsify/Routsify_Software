@@ -40,7 +40,7 @@ export const appRoleLabels: Record<AppRole, string> = {
   viewer: "Solo lectura",
 };
 
-export const visibleNavigationModules = ["Inicio", "Clientes", "Expedientes", "Presupuestos", "Compras / Proveedores", "Informes", "Ajustes"];
+export const visibleNavigationModules = ["Inicio", "Control operativo", "Clientes", "Expedientes", "Presupuestos", "Compras / Proveedores", "Informes", "Ajustes"];
 
 export const settingsModules: SettingsModule[] = [
   { id: "general", label: "General", description: "Empresa, idioma, moneda, fechas y comportamiento base.", icon: "⚙", eventName: "system_settings.updated" },
@@ -96,6 +96,7 @@ export const defaultSettings: AppSetting[] = [
 
   { id: "fillout_enabled", key: "integrations.fillout.enabled", module: "integrations", label: "Activar Fillout", description: "Acepta solicitudes firmadas desde el webhook de Fillout.", value: true, defaultValue: true, valueType: "boolean", scope: "global", editable: true, eventName: "integration.updated", affectedModules: ["clients", "leads"] },
   { id: "fillout_form_id", key: "integrations.fillout.form_id", module: "integrations", label: "ID del formulario Fillout", description: "Opcional hasta configurar el formulario definitivo.", value: "", defaultValue: "", valueType: "string", scope: "global", editable: true, validationRules: { allowEmpty: true }, eventName: "integration.updated", affectedModules: ["clients", "leads"] },
+  { id: "fillout_public_url", key: "integrations.fillout.public_url", module: "integrations", label: "URL pública del formulario Fillout", description: "Enlace que aparece en la tarea y en los mensajes de recordatorio tras reservar una llamada.", value: "", defaultValue: "", valueType: "string", scope: "global", editable: true, validationRules: { allowEmpty: true }, eventName: "integration.updated", affectedModules: ["clients", "bookings", "tasks"] },
   { id: "fillout_source", key: "integrations.fillout.source_label", module: "integrations", label: "Nombre del origen Fillout", value: "Fillout", defaultValue: "Fillout", valueType: "string", scope: "global", editable: true, eventName: "integration.updated", affectedModules: ["clients", "reports"] },
   { id: "booking_enabled", key: "integrations.booking.enabled", module: "integrations", label: "Activar Routsify Booking", description: "Acepta altas y cambios de reservas desde el webhook de Booking.", value: true, defaultValue: true, valueType: "boolean", scope: "global", editable: true, eventName: "integration.updated", affectedModules: ["clients", "bookings"] },
   { id: "booking_base_url", key: "integrations.booking.base_url", module: "integrations", label: "URL de Routsify Booking", description: "URL base del sistema de reservas; puede dejarse vacía hasta conectar la API.", value: "", defaultValue: "", valueType: "string", scope: "global", editable: true, validationRules: { allowEmpty: true }, eventName: "integration.updated", affectedModules: ["bookings"] },
