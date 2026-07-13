@@ -26,20 +26,18 @@ export async function listOrganizationClientActivity(organizationId: string): Pr
   bookings: unknown[];
   tasks: unknown[];
   cases: unknown[];
-  timeline: unknown[];
   filloutUrl: string;
 }>> {
   if (!hasSupabaseAdminEnv()) return unavailable();
   const db = getSupabaseAdminClient();
-  const [leadsResult, bookingsResult, tasksResult, casesResult, timelineResult, settingResult] = await Promise.all([
-    db.from("leads").select("id,client_id,source,status,destination,travel_start,travel_end,travelers,budget_hint,created_at,updated_at").eq("organization_id", organizationId).order("created_at", { ascending: false }).limit(500),
-    db.from("bookings").select("id,client_id,lead_id,external_booking_id,event_type,starts_at,ends_at,status,source,created_at,updated_at").eq("organization_id", organizationId).order("event_timestamp", { ascending: false }).limit(500),
-    db.from("tasks").select("id,client_id,case_id,title,status,priority,due_at,payload,created_at,updated_at").eq("organization_id", organizationId).order("created_at", { ascending: false }).limit(500),
-    db.from("cases").select("id,client_id,case_code,title,status,destination,trip_start,trip_end,created_at").eq("organization_id", organizationId).order("created_at", { ascending: false }).limit(500),
-    db.from("timeline_events").select("id,client_id,case_id,event_type,title,payload,created_at").eq("organization_id", organizationId).order("created_at", { ascending: false }).limit(500),
+  const [leadsResult, bookingsResult, tasksResult, casesResult, settingResult] = await Promise.all([
+    db.from("leads").select("id,client_id,source,status,destination,travel_start,travel_end,travelers,budget_hint,created_at,updated_at").eq("organization_id", organizationId).order("created_at", { ascending: false }).limit(200),
+    db.from("bookings").select("id,client_id,lead_id,external_booking_id,event_type,starts_at,ends_at,status,source,created_at,updated_at").eq("organization_id", organizationId).order("event_timestamp", { ascending: false }).limit(200),
+    db.from("tasks").select("id,client_id,case_id,title,status,priority,due_at,payload,created_at,updated_at").eq("organization_id", organizationId).in("status", ["pending", "in_progress"]).order("created_at", { ascending: false }).limit(200),
+    db.from("cases").select("id,client_id,case_code,title,status,destination,trip_start,trip_end,created_at").eq("organization_id", organizationId).order("created_at", { ascending: false }).limit(200),
     db.from("routsify_settings").select("value").eq("organization_id", organizationId).eq("key", "integrations.fillout.public_url").maybeSingle(),
   ]);
-  const firstError = [leadsResult.error, bookingsResult.error, tasksResult.error, casesResult.error, timelineResult.error].find(Boolean);
+  const firstError = [leadsResult.error, bookingsResult.error, tasksResult.error, casesResult.error].find(Boolean);
   if (firstError) return { ok: false, mode: "supabase", error: firstError.message };
   const rawSetting = settingResult.data?.value;
   const filloutUrl = typeof rawSetting === "string" ? rawSetting : rawSetting && typeof rawSetting === "object" && "value" in rawSetting ? String((rawSetting as { value?: unknown }).value || "") : "";
@@ -51,7 +49,6 @@ export async function listOrganizationClientActivity(organizationId: string): Pr
       bookings: bookingsResult.data || [],
       tasks: tasksResult.data || [],
       cases: casesResult.data || [],
-      timeline: timelineResult.data || [],
       filloutUrl,
     },
   };
@@ -72,10 +69,10 @@ export async function listOrganizationProposals(organizationId: string): Promise
   if (!hasSupabaseAdminEnv()) return unavailable();
   const { data, error } = await getSupabaseAdminClient()
     .from("proposals")
-    .select("*, cases(id,case_code,title,destination,trip_start,trip_end,clients(display_name,email)), proposal_versions(*, budget_lines(*), payment_links(*))")
+    .select("id,organization_id,case_id,status,current_version_id,created_at,updated_at,cases(id,case_code,title,destination,trip_start,trip_end,client_id,clients(display_name,email)),proposal_versions(id,proposal_id,version_number,status,locked,created_at,expires_at,total_sale,total_cost,total_cost_budget,budgeted_profit,budget_lines(id,proposal_version_id,stable_line_id,service_type_code,description_public,description_internal,supplier_id,supplier_name,destination_segment,start_date,end_date,cost_budget,margin_applied,sale_price,creates_expected_purchase,sort_order,created_at))")
     .eq("organization_id", organizationId)
     .order("created_at", { ascending: false })
-    .limit(200);
+    .limit(100);
   return error ? { ok: false, mode: "supabase", error: error.message } : { ok: true, mode: "supabase", data: data || [] };
 }
 
