@@ -8,6 +8,7 @@ import { loadAppTheme } from "@/lib/app-theme-server";
 
 const nav = [
   ["/hoy", "Inicio"],
+  ["/control", "Control operativo"],
   ["/clientes", "Clientes"],
   ["/expedientes", "Expedientes"],
   ["/propuestas", "Presupuestos"],
@@ -20,6 +21,7 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
   const session = await requireAppSession();
   const theme = await loadAppTheme(session.organizationId);
   const visibleLabels = new Set(theme.navigation || nav.map((item) => item[1]));
+  visibleLabels.add("Control operativo");
   visibleLabels.add("Ajustes");
 
   return (
