@@ -3,6 +3,7 @@ import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
 import { requireAppSession } from "@/lib/app-auth";
 import { loadOperationalHealth } from "@/lib/operational-health-server";
+import "./control.css";
 
 function severityLabel(value: string) {
   if (value === "critical") return "Crítica";
