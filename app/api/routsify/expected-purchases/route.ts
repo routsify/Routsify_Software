@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonAccessDenied, requireInternalAccess } from "@/lib/api-security";
-import { resolveOrganizationId } from "@/lib/request-context";
+import { PURCHASE_WITH_RELATIONS_SELECT } from "@/lib/query-selects";
 import { getSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase-admin";
 
 const allowedStatuses = new Set(["expected", "requested", "uploaded", "holded_candidate", "matched", "review_needed", "approved", "not_required", "cancelled"]);
-const PURCHASE_SELECT = "*, cases(id,case_code,title), budget_lines(id,service_type_code,description_public,description_internal,destination_segment,start_date,end_date,cost_budget,sale_price), supplier_invoices(id,status,invoice_number,invoice_date,total,currency,storage_path,created_at)";
 
 function numberValue(value: unknown) {
   const number = Number(value || 0);
@@ -16,11 +15,10 @@ export async function GET(request: NextRequest) {
   if (!access.ok) return jsonAccessDenied(access);
   if (!hasSupabaseAdminEnv()) return NextResponse.json({ ok: false, error: "supabase_admin_not_configured" }, { status: 503 });
 
-  const organizationId = await resolveOrganizationId(request, access.organizationId);
   const { data, error } = await getSupabaseAdminClient()
     .from("expected_purchases")
-    .select(PURCHASE_SELECT)
-    .eq("organization_id", organizationId)
+    .select(PURCHASE_WITH_RELATIONS_SELECT)
+    .eq("organization_id", access.organizationId)
     .order("created_at", { ascending: false })
     .limit(100);
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
@@ -45,7 +43,7 @@ export async function POST(request: NextRequest) {
   if (!allowedStatuses.has(status)) return NextResponse.json({ ok: false, error: "invalid_status" }, { status: 400 });
   if (amount < 0) return NextResponse.json({ ok: false, error: "invalid_amount" }, { status: 400 });
 
-  const organizationId = await resolveOrganizationId(request, access.organizationId);
+  const organizationId = access.organizationId;
   const supabase = getSupabaseAdminClient();
   const { data: caseRow } = await supabase.from("cases").select("id").eq("id", caseId).eq("organization_id", organizationId).maybeSingle();
   if (!caseRow) return NextResponse.json({ ok: false, error: "case_not_found" }, { status: 404 });
@@ -61,7 +59,7 @@ export async function POST(request: NextRequest) {
     status,
     review_notes: String(source.review_notes || "").trim() || null,
   };
-  const { data, error } = await supabase.from("expected_purchases").insert(payload).select(PURCHASE_SELECT).single();
+  const { data, error } = await supabase.from("expected_purchases").insert(payload).select(PURCHASE_WITH_RELATIONS_SELECT).single();
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
   return NextResponse.json({ ok: true, data }, { status: 201 });
 }

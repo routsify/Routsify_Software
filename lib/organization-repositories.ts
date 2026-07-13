@@ -1,10 +1,8 @@
+import { PROPOSAL_WITH_VERSIONS_SELECT, PURCHASE_WITH_RELATIONS_SELECT } from "@/lib/query-selects";
 import { getSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase-admin";
 import type { GlobalSearchResult, RepositoryResult } from "@/lib/server-repositories";
 
-function unavailable<T>(): RepositoryResult<T> {
-  return { ok: false, mode: "supabase", error: "supabase_admin_not_configured" };
-}
-
+function unavailable<T>(): RepositoryResult<T> { return { ok: false, mode: "supabase", error: "supabase_admin_not_configured" }; }
 function oneRecord(value: unknown): Record<string, unknown> | null {
   if (Array.isArray(value)) return value.length && value[0] && typeof value[0] === "object" ? value[0] as Record<string, unknown> : null;
   return value && typeof value === "object" ? value as Record<string, unknown> : null;
@@ -12,22 +10,11 @@ function oneRecord(value: unknown): Record<string, unknown> | null {
 
 export async function listOrganizationClients(organizationId: string): Promise<RepositoryResult<unknown[]>> {
   if (!hasSupabaseAdminEnv()) return unavailable();
-  const { data, error } = await getSupabaseAdminClient()
-    .from("clients")
-    .select("*")
-    .eq("organization_id", organizationId)
-    .order("created_at", { ascending: false })
-    .limit(200);
+  const { data, error } = await getSupabaseAdminClient().from("clients").select("*").eq("organization_id", organizationId).order("created_at", { ascending: false }).limit(200);
   return error ? { ok: false, mode: "supabase", error: error.message } : { ok: true, mode: "supabase", data: data || [] };
 }
 
-export async function listOrganizationClientActivity(organizationId: string): Promise<RepositoryResult<{
-  leads: unknown[];
-  bookings: unknown[];
-  tasks: unknown[];
-  cases: unknown[];
-  filloutUrl: string;
-}>> {
+export async function listOrganizationClientActivity(organizationId: string): Promise<RepositoryResult<{ leads: unknown[]; bookings: unknown[]; tasks: unknown[]; cases: unknown[]; filloutUrl: string }>> {
   if (!hasSupabaseAdminEnv()) return unavailable();
   const db = getSupabaseAdminClient();
   const [leadsResult, bookingsResult, tasksResult, casesResult, settingResult] = await Promise.all([
@@ -41,49 +28,24 @@ export async function listOrganizationClientActivity(organizationId: string): Pr
   if (firstError) return { ok: false, mode: "supabase", error: firstError.message };
   const rawSetting = settingResult.data?.value;
   const filloutUrl = typeof rawSetting === "string" ? rawSetting : rawSetting && typeof rawSetting === "object" && "value" in rawSetting ? String((rawSetting as { value?: unknown }).value || "") : "";
-  return {
-    ok: true,
-    mode: "supabase",
-    data: {
-      leads: leadsResult.data || [],
-      bookings: bookingsResult.data || [],
-      tasks: tasksResult.data || [],
-      cases: casesResult.data || [],
-      filloutUrl,
-    },
-  };
+  return { ok: true, mode: "supabase", data: { leads: leadsResult.data || [], bookings: bookingsResult.data || [], tasks: tasksResult.data || [], cases: casesResult.data || [], filloutUrl } };
 }
 
 export async function listOrganizationCases(organizationId: string): Promise<RepositoryResult<unknown[]>> {
   if (!hasSupabaseAdminEnv()) return unavailable();
-  const { data, error } = await getSupabaseAdminClient()
-    .from("cases")
-    .select("*, clients(display_name,email,phone,holded_contact_id)")
-    .eq("organization_id", organizationId)
-    .order("created_at", { ascending: false })
-    .limit(200);
+  const { data, error } = await getSupabaseAdminClient().from("cases").select("*, clients(display_name,email,phone,holded_contact_id)").eq("organization_id", organizationId).order("created_at", { ascending: false }).limit(200);
   return error ? { ok: false, mode: "supabase", error: error.message } : { ok: true, mode: "supabase", data: data || [] };
 }
 
 export async function listOrganizationProposals(organizationId: string): Promise<RepositoryResult<unknown[]>> {
   if (!hasSupabaseAdminEnv()) return unavailable();
-  const { data, error } = await getSupabaseAdminClient()
-    .from("proposals")
-    .select("id,organization_id,case_id,status,current_version_id,created_at,updated_at,cases(id,case_code,title,destination,trip_start,trip_end,client_id,clients(display_name,email)),proposal_versions(id,proposal_id,version_number,status,locked,created_at,expires_at,total_sale,total_cost,total_cost_budget,budgeted_profit,budget_lines(id,proposal_version_id,stable_line_id,service_type_code,description_public,description_internal,supplier_id,supplier_name,destination_segment,start_date,end_date,cost_budget,margin_applied,sale_price,creates_expected_purchase,sort_order,created_at))")
-    .eq("organization_id", organizationId)
-    .order("created_at", { ascending: false })
-    .limit(100);
+  const { data, error } = await getSupabaseAdminClient().from("proposals").select(PROPOSAL_WITH_VERSIONS_SELECT).eq("organization_id", organizationId).order("created_at", { ascending: false }).limit(100);
   return error ? { ok: false, mode: "supabase", error: error.message } : { ok: true, mode: "supabase", data: data || [] };
 }
 
 export async function listOrganizationPurchases(organizationId: string): Promise<RepositoryResult<unknown[]>> {
   if (!hasSupabaseAdminEnv()) return unavailable();
-  const { data, error } = await getSupabaseAdminClient()
-    .from("expected_purchases")
-    .select("*, cases(id,case_code,title), budget_lines(id,service_type_code,description_public,description_internal,destination_segment,start_date,end_date,cost_budget,sale_price), supplier_invoices(id,status,invoice_number,invoice_date,total,currency,storage_path,created_at)")
-    .eq("organization_id", organizationId)
-    .order("created_at", { ascending: false })
-    .limit(200);
+  const { data, error } = await getSupabaseAdminClient().from("expected_purchases").select(PURCHASE_WITH_RELATIONS_SELECT).eq("organization_id", organizationId).order("created_at", { ascending: false }).limit(200);
   return error ? { ok: false, mode: "supabase", error: error.message } : { ok: true, mode: "supabase", data: data || [] };
 }
 
@@ -91,46 +53,21 @@ export async function searchOrganization(organizationId: string, query: string):
   const cleaned = query.trim().slice(0, 80).replaceAll("%", "").replaceAll(",", " ");
   if (!cleaned) return { ok: true, mode: "supabase", data: [] };
   if (!hasSupabaseAdminEnv()) return unavailable();
-
   const supabase = getSupabaseAdminClient();
   const like = `%${cleaned}%`;
   const results: GlobalSearchResult[] = [];
-
   const [{ data: clients }, { data: cases }, { data: proposals }, { data: purchases }] = await Promise.all([
     supabase.from("clients").select("id,display_name,email,phone").eq("organization_id", organizationId).or(`display_name.ilike.${like},email.ilike.${like},phone.ilike.${like},tax_id.ilike.${like}`).limit(8),
     supabase.from("cases").select("id,case_code,title,destination,status").eq("organization_id", organizationId).or(`case_code.ilike.${like},title.ilike.${like},destination.ilike.${like}`).limit(8),
     supabase.from("proposals").select("id,status,cases(id,case_code,title,clients(display_name))").eq("organization_id", organizationId).limit(50),
     supabase.from("expected_purchases").select("id,supplier_name,service,status,cases(case_code)").eq("organization_id", organizationId).or(`supplier_name.ilike.${like},service.ilike.${like}`).limit(8),
   ]);
-
   for (const client of clients || []) results.push({ type: "cliente", title: String(client.display_name || "Cliente"), subtitle: String(client.email || client.phone || "Cliente"), href: "/clientes" });
   for (const item of cases || []) results.push({ type: "expediente", title: String(item.case_code || "Expediente"), subtitle: String(item.title || item.destination || "Expediente"), href: `/expedientes?caseId=${item.id}` });
-
   for (const rawProposal of proposals || []) {
-    const proposal = rawProposal as Record<string, unknown>;
-    const caseRow = oneRecord(proposal.cases);
-    const clientRow = oneRecord(caseRow?.clients);
-    const haystack = [caseRow?.case_code, caseRow?.title, clientRow?.display_name, proposal.status].filter(Boolean).join(" ").toLowerCase();
-    if (haystack.includes(cleaned.toLowerCase())) {
-      results.push({
-        type: "presupuesto",
-        title: String(caseRow?.case_code || "Presupuesto"),
-        subtitle: `${String(clientRow?.display_name || caseRow?.title || "Expediente")} · ${String(proposal.status || "draft")}`,
-        href: caseRow?.id ? `/propuestas?caseId=${caseRow.id}` : "/propuestas",
-      });
-    }
+    const proposal = rawProposal as Record<string, unknown>; const caseRow = oneRecord(proposal.cases); const clientRow = oneRecord(caseRow?.clients);
+    if ([caseRow?.case_code, caseRow?.title, clientRow?.display_name, proposal.status].filter(Boolean).join(" ").toLowerCase().includes(cleaned.toLowerCase())) results.push({ type: "presupuesto", title: String(caseRow?.case_code || "Presupuesto"), subtitle: `${String(clientRow?.display_name || caseRow?.title || "Expediente")} · ${String(proposal.status || "draft")}`, href: caseRow?.id ? `/propuestas?caseId=${caseRow.id}` : "/propuestas" });
   }
-
-  for (const rawPurchase of purchases || []) {
-    const purchase = rawPurchase as Record<string, unknown>;
-    const caseRow = oneRecord(purchase.cases);
-    results.push({
-      type: "compra",
-      title: String(purchase.supplier_name || "Compra"),
-      subtitle: `${String(caseRow?.case_code || "Sin expediente")} · ${String(purchase.service || purchase.status || "Compra")}`,
-      href: "/compras",
-    });
-  }
-
+  for (const rawPurchase of purchases || []) { const purchase = rawPurchase as Record<string, unknown>; const caseRow = oneRecord(purchase.cases); results.push({ type: "compra", title: String(purchase.supplier_name || "Compra"), subtitle: `${String(caseRow?.case_code || "Sin expediente")} · ${String(purchase.service || purchase.status || "Compra")}`, href: "/compras" }); }
   return { ok: true, mode: "supabase", data: results.slice(0, 30) };
 }

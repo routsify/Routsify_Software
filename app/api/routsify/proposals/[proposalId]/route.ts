@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonAccessDenied, requireInternalAccess } from "@/lib/api-security";
+import { PROPOSAL_WITH_VERSIONS_SELECT } from "@/lib/query-selects";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
-import { resolveOrganizationId } from "@/lib/request-context";
 
 const allowedStatuses = new Set(["draft", "internal_review", "sent", "accepted", "rejected"]);
 const versionStatus: Record<string, string> = {
@@ -17,11 +17,12 @@ const caseStatus: Record<string, { status: string; next_action: string }> = {
   rejected: { status: "call_done", next_action: "Replantear propuesta o cerrar oportunidad" },
 };
 
-async function fullProposal(proposalId: string) {
+async function fullProposal(proposalId: string, organizationId: string) {
   return getSupabaseAdminClient()
     .from("proposals")
-    .select("*, cases(id,case_code,title,destination,trip_start,trip_end,clients(display_name,email)), proposal_versions(*, budget_lines(*))")
+    .select(PROPOSAL_WITH_VERSIONS_SELECT)
     .eq("id", proposalId)
+    .eq("organization_id", organizationId)
     .single();
 }
 
@@ -34,7 +35,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const status = String(body?.status || "");
   if (!allowedStatuses.has(status)) return NextResponse.json({ ok: false, error: "invalid_status" }, { status: 400 });
 
-  const organizationId = await resolveOrganizationId(request, access.organizationId);
+  const organizationId = access.organizationId;
   const supabase = getSupabaseAdminClient();
   const { data: proposal, error: proposalError } = await supabase
     .from("proposals")
@@ -90,7 +91,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       payload: { source: "manual_proposal_acceptance", proposal_id: proposalId, version_id: version.id },
     }, { onConflict: "organization_id,idempotency_key" });
 
-    const { data, error } = await fullProposal(proposalId);
+    const { data, error } = await fullProposal(proposalId, organizationId);
     if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
     return NextResponse.json({ ok: true, mode: "supabase", data });
   }
@@ -118,7 +119,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     if (updateCaseError) return NextResponse.json({ ok: false, error: updateCaseError.message }, { status: 400 });
   }
 
-  const { data, error } = await fullProposal(proposalId);
+  const { data, error } = await fullProposal(proposalId, organizationId);
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
   return NextResponse.json({ ok: true, mode: "supabase", data });
 }
