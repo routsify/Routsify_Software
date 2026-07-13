@@ -4,14 +4,17 @@ import { requireAppSession } from "@/lib/app-auth";
 import { listOrganizationCases, listOrganizationClients } from "@/lib/organization-repositories";
 import { CasesManager } from "./CasesManager";
 
-export default async function CasesPage({ searchParams }: { searchParams: Promise<{ clientId?: string }> }) {
+export default async function CasesPage({ searchParams }: { searchParams: Promise<{ clientId?: string; caseId?: string }> }) {
   const session = await requireAppSession();
-  const [{ clientId }, caseResult, clientResult] = await Promise.all([
+  const [{ clientId, caseId }, caseResult, clientResult] = await Promise.all([
     searchParams,
     listOrganizationCases(session.organizationId),
     listOrganizationClients(session.organizationId),
   ]);
-  const cases = caseResult.ok ? caseResult.data : [];
+  const rawCases = caseResult.ok ? caseResult.data : [];
+  const cases = caseId
+    ? [...rawCases].sort((left, right) => Number(String((right as { id?: unknown }).id || "") === caseId) - Number(String((left as { id?: unknown }).id || "") === caseId))
+    : rawCases;
   const clients = clientResult.ok ? clientResult.data : [];
 
   return (

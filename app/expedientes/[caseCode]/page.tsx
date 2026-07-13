@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { requireAppSession } from "@/lib/app-auth";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { CaseWorkspace } from "./CaseWorkspace";
+import "./contract.css";
 
 export default async function CaseDetailPage({ params }: { params: Promise<{ caseCode: string }> }) {
   const session = await requireAppSession();

@@ -22,6 +22,12 @@ for (const file of [
   "lib/openai-ocr-server.ts",
   "lib/payment-workflow-server.ts",
   "lib/fiscal-workflow-server.ts",
+  "lib/outbox-worker-v11-server.ts",
+  "app/clientes/ClientOperationsOverview.tsx",
+  "app/propuestas/BudgetManager.tsx",
+  "app/compras/PurchasesManagerOperational.tsx",
+  "app/expedientes/[caseCode]/ContractPaymentsTab.tsx",
+  "app/expedientes/[caseCode]/ActivityTab.tsx",
   "app/api/documentos/upload-url/route.ts",
   "app/api/documentos/confirm-upload/route.ts",
   "app/api/payments/manual/route.ts",
@@ -30,6 +36,9 @@ for (const file of [
   "app/api/routsify/jobs/run/route.ts",
   "app/api/routsify/settings/secrets/[secretKey]/route.ts",
   "app/api/routsify/proposals/[proposalId]/payment-link/route.ts",
+  "app/api/routsify/proposals/[proposalId]/lines/bulk/route.ts",
+  "app/api/routsify/cases/[caseId]/contracts/route.ts",
+  "app/api/routsify/tasks/[taskId]/route.ts",
   "app/api/routsify/clients/documents/[documentId]/ocr/route.ts",
   "supabase/migrations/0018_integrations_fiscal_ocr_privacy.sql",
   "supabase/migrations/0005_routsify_settings_and_outbox_worker.sql",
@@ -53,9 +62,9 @@ const security = read("lib/api-security.ts");
 for (const token of ["auth.getUser", "allowedRoles", "timingSafeEqual"]) assert(security.includes(token), `Missing API security token: ${token}`);
 
 const login = read("app/login/LoginForm.tsx");
-for (const token of ["signInWithPassword", "ensure_profile_for_current_user", "resetPasswordForEmail", "¿Has olvidado tu contraseña?", "showPassword", "safeNext"]) assert(login.includes(token), `Missing login token: ${token}`);
+for (const token of ["signInWithPassword", "resetPasswordForEmail", "¿Has olvidado tu contraseña?", "showPassword", "safeNext"]) assert(login.includes(token), `Missing login token: ${token}`);
 assert(!login.includes("disabled={!canUseAuth}"), "Login inputs must remain writable");
-for (const forbidden of ["Supabase Auth", ">RLS<", "middleware de autenticación"]) assert(!login.includes(forbidden), `Public login must not expose implementation detail: ${forbidden}`);
+for (const forbidden of ["Supabase Auth", ">RLS<", "middleware de autenticación", "ensure_profile_for_current_user"]) assert(!login.includes(forbidden), `Public login must not expose implementation detail: ${forbidden}`);
 
 const middleware = read("proxy.ts");
 for (const token of ["/api/routsify", "/api/documentos/confirm-upload", "authentication_required", "isPublicDemoAllowed"]) assert(middleware.includes(token), `Missing proxy token: ${token}`);
@@ -78,7 +87,26 @@ const confirmUpload = read("app/api/documentos/confirm-upload/route.ts");
 for (const token of ["confirmDocumentUploadRepository", "storagePath", "mimeType", "sizeBytes", "retentionDays", "supplier_invoice"]) assert(confirmUpload.includes(token), `Missing confirm-upload token: ${token}`);
 
 const payment = read("app/api/payments/manual/route.ts");
-for (const token of ["paymentPreflight", "proposal_not_accepted", "payment_reference_required", "confirm_external_payment"]) assert(payment.includes(token), `Missing payment token: ${token}`);
+for (const token of ["paymentPreflight", "proposal_not_accepted", "signed_contract_required", "payment_reference_required", "confirm_external_payment"]) assert(payment.includes(token), `Missing payment token: ${token}`);
+
+const contract = read("app/api/routsify/cases/[caseId]/contracts/route.ts");
+for (const token of ["accepted_proposal_required", "contract_signed", "Confirmar pago"]) assert(contract.includes(token), `Missing contract workflow token: ${token}`);
+
+const budget = read("app/propuestas/BudgetManager.tsx");
+for (const token of ["Importar tabla", "service_type_code", "description_public", "margin_applied", "creates_expected_purchase", "Descargar plantilla"]) assert(budget.includes(token), `Missing budget editor token: ${token}`);
+
+const bulkLines = read("app/api/routsify/proposals/[proposalId]/lines/bulk/route.ts");
+for (const token of ["rows_must_be_between_1_and_200", "resolveMarginRule", "proposal_version_locked", "creates_expected_purchase"]) assert(bulkLines.includes(token), `Missing bulk budget token: ${token}`);
+
+const inbound = read("lib/outbox-worker-v11-server.ts");
+for (const token of ["call_booked_form_pending", "fillout_reminder", "Revisar formulario recibido", "no se ha creado expediente"]) assert(inbound.includes(token), `Missing pre-case CRM token: ${token}`);
+assert(!inbound.includes("createCaseRepository"), "Inbound Fillout or Booking must not create cases automatically");
+
+const caseRoute = read("app/api/routsify/cases/[caseId]/route.ts");
+for (const token of ["proposal_must_be_accepted", "signed_contract_required", "confirmed_payment_required", "operational_close_preflight"]) assert(caseRoute.includes(token), `Missing case relationship guard: ${token}`);
+
+const outbox = read("lib/outbox-server.ts");
+for (const token of ["holded_pending_configuration", "getOrganizationSecret", "pending_configuration"]) assert(outbox.includes(token), `Missing optional Holded token: ${token}`);
 
 const acceptance = read("supabase/migrations/0015_accept_proposal_version_rpc.sql");
 for (const token of ["accept_proposal_version", "proposal_versions", "locked", "proposal_accepted"]) assert(acceptance.includes(token), `Missing acceptance token: ${token}`);

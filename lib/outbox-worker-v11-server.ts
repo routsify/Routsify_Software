@@ -19,6 +19,25 @@ function redact(payload: Record<string, unknown>) {
   return safe;
 }
 
+async function organizationSetting(organizationId: string, key: string) {
+  const { data } = await getSupabaseAdminClient().from("routsify_settings").select("value").eq("organization_id", organizationId).eq("key", key).maybeSingle();
+  if (typeof data?.value === "string") return data.value.trim();
+  if (data?.value && typeof data.value === "object" && "value" in data.value) return text((data.value as { value?: unknown }).value);
+  return "";
+}
+
+async function createClientTimelineEvent(input: { organizationId: string; clientId: string | null; eventType: string; title: string; payload?: Record<string, unknown> }) {
+  if (!input.clientId) return;
+  const { error } = await getSupabaseAdminClient().from("timeline_events").insert({
+    organization_id: input.organizationId,
+    client_id: input.clientId,
+    event_type: input.eventType,
+    title: input.title,
+    payload: input.payload || {},
+  });
+  if (error) throw new Error(error.message);
+}
+
 async function findOrCreateClient(organizationId: string, payload: Record<string, unknown>, source: string) {
   const db = getSupabaseAdminClient();
   const email = emailOf(payload);
@@ -72,6 +91,17 @@ async function createFollowUpTask(input: { organizationId: string; clientId: str
   if (error) throw new Error(error.message);
 }
 
+async function completePendingFormTasks(organizationId: string, clientId: string | null, leadId: string) {
+  if (!clientId) return;
+  await getSupabaseAdminClient()
+    .from("tasks")
+    .update({ status: "done", updated_at: new Date().toISOString(), payload: { action_type: "fillout_reminder", completed_by_event: "form_received", lead_id: leadId } })
+    .eq("organization_id", organizationId)
+    .eq("client_id", clientId)
+    .in("status", ["pending", "in_progress"])
+    .contains("payload", { action_type: "fillout_reminder" });
+}
+
 async function form(row: WorkerRow): Promise<WorkerOutcome> {
   const payload = row.payload || {};
   const db = getSupabaseAdminClient();
@@ -99,7 +129,7 @@ async function form(row: WorkerRow): Promise<WorkerOutcome> {
     travel_end: dateOnly(payload.travel_end || payload.end_date || payload.return_date),
     travelers: Math.max(1, Number(payload.travelers || payload.travellers || payload.people || 1)),
     budget_hint: numeric(payload.budget_hint || payload.budget || payload.presupuesto),
-    status: "new",
+    status: "form_received",
     source_submission_id: sourceId,
     payload_hash: createHash("sha256").update(JSON.stringify(safePayload)).digest("hex"),
     payload_redacted: safePayload,
@@ -108,15 +138,23 @@ async function form(row: WorkerRow): Promise<WorkerOutcome> {
   const { data: lead, error } = await db.from("leads").upsert(leadPayload, { onConflict: "organization_id,source,source_submission_id" }).select("id").single();
   if (error) throw new Error(error.message);
 
+  await completePendingFormTasks(row.organization_id, client.clientId, String(lead.id));
   await createFollowUpTask({
     organizationId: row.organization_id,
     clientId: client.clientId,
-    title: `Cualificar nueva solicitud${leadPayload.destination ? ` · ${leadPayload.destination}` : ""}`,
+    title: `Revisar formulario recibido${leadPayload.destination ? ` · ${leadPayload.destination}` : ""}`,
     idempotencyKey: `lead_followup:${lead.id}`,
-    payload: { lead_id: lead.id, source, possible_duplicate_client_id: client.possibleDuplicateClientId },
+    payload: { action_type: "review_fillout", lead_id: lead.id, source, possible_duplicate_client_id: client.possibleDuplicateClientId },
+  });
+  await createClientTimelineEvent({
+    organizationId: row.organization_id,
+    clientId: client.clientId,
+    eventType: "fillout.received",
+    title: "Formulario de viaje recibido",
+    payload: { lead_id: lead.id, source_submission_id: sourceId, destination: leadPayload.destination },
   });
 
-  return { status: "done", message: "Solicitud registrada, deduplicada y enviada a seguimiento comercial.", metadata: { client_id: client.clientId, lead_id: lead.id, possible_duplicate_client_id: client.possibleDuplicateClientId } };
+  return { status: "done", message: "Formulario registrado; el cliente continúa sin expediente hasta la creación manual.", metadata: { client_id: client.clientId, lead_id: lead.id, possible_duplicate_client_id: client.possibleDuplicateClientId } };
 }
 
 async function booking(row: WorkerRow): Promise<WorkerOutcome> {
@@ -151,7 +189,7 @@ async function booking(row: WorkerRow): Promise<WorkerOutcome> {
       phone_normalized: normalizedPhone(phone) || null,
       destination: firstText(payload, ["destination", "destino"]) || null,
       travelers: Math.max(1, Number(payload.travelers || 1)),
-      status: "call_booked",
+      status: "call_booked_form_pending",
       source_submission_id: `booking:${externalId}`,
       payload_hash: createHash("sha256").update(JSON.stringify(safePayload)).digest("hex"),
       payload_redacted: safePayload,
@@ -182,20 +220,53 @@ async function booking(row: WorkerRow): Promise<WorkerOutcome> {
   }, { onConflict: "organization_id,source,external_booking_id,event_type,event_timestamp" }).select("id").single();
   if (error) throw new Error(error.message);
 
-  if (leadId) await db.from("leads").update({ status: status === "cancelled" ? "booking_cancelled" : "call_booked", updated_at: new Date().toISOString() }).eq("id", leadId).eq("organization_id", row.organization_id);
+  if (leadId) await db.from("leads").update({ status: status === "cancelled" ? "booking_cancelled" : "call_booked_form_pending", updated_at: new Date().toISOString() }).eq("id", leadId).eq("organization_id", row.organization_id);
 
-  const taskTitle = status === "cancelled" ? "Contactar tras cancelación de llamada" : "Preparar y realizar llamada comercial";
-  await createFollowUpTask({
-    organizationId: row.organization_id,
-    clientId: client.clientId,
-    title: taskTitle,
-    dueAt: status === "cancelled" ? new Date().toISOString() : startsAt,
-    idempotencyKey: `booking_followup:${externalId}:${eventType}:${timestamp}`,
-    payload: { booking_id: bookingRow.id, lead_id: leadId, event_type: eventType, status },
-    priority: status === "cancelled" ? "high" : "normal",
-  });
+  if (status === "cancelled") {
+    await createFollowUpTask({
+      organizationId: row.organization_id,
+      clientId: client.clientId,
+      title: "Contactar tras cancelación de llamada",
+      dueAt: new Date().toISOString(),
+      idempotencyKey: `booking_followup:${externalId}:${eventType}:${timestamp}`,
+      payload: { action_type: "booking_cancelled_followup", booking_id: bookingRow.id, lead_id: leadId, event_type: eventType, status },
+      priority: "high",
+    });
+  } else {
+    const filloutUrl = await organizationSetting(row.organization_id, "integrations.fillout.public_url");
+    const reminderMessage = filloutUrl
+      ? `Hola, para poder preparar nuestra llamada necesitamos que completes este formulario: ${filloutUrl}`
+      : "Hola, para poder preparar nuestra llamada necesitamos que completes el formulario de viaje. Añade la URL de Fillout en Ajustes antes de enviarlo.";
+    await Promise.all([
+      createFollowUpTask({
+        organizationId: row.organization_id,
+        clientId: client.clientId,
+        title: "Enviar recordatorio para completar el formulario",
+        dueAt: new Date().toISOString(),
+        idempotencyKey: `fillout_reminder:${externalId}`,
+        payload: { action_type: "fillout_reminder", booking_id: bookingRow.id, lead_id: leadId, recipient_email: email || null, recipient_phone: phone || null, fillout_url: filloutUrl || null, suggested_message: reminderMessage },
+        priority: "high",
+      }),
+      createFollowUpTask({
+        organizationId: row.organization_id,
+        clientId: client.clientId,
+        title: "Preparar y realizar llamada comercial",
+        dueAt: startsAt,
+        idempotencyKey: `booking_call:${externalId}`,
+        payload: { action_type: "booking_call", booking_id: bookingRow.id, lead_id: leadId, event_type: eventType, status },
+        priority: "normal",
+      }),
+    ]);
+    await createClientTimelineEvent({
+      organizationId: row.organization_id,
+      clientId: client.clientId,
+      eventType: "booking.form_reminder_pending",
+      title: "Llamada reservada; formulario pendiente",
+      payload: { booking_id: bookingRow.id, lead_id: leadId, starts_at: startsAt, fillout_url_configured: Boolean(filloutUrl) },
+    });
+  }
 
-  return { status: "done", message: "Reserva vinculada al cliente, lead y seguimiento comercial.", metadata: { booking_id: bookingRow.id, client_id: client.clientId, lead_id: leadId, possible_duplicate_client_id: client.possibleDuplicateClientId } };
+  return { status: "done", message: "Reserva vinculada al cliente y lead; no se ha creado expediente.", metadata: { booking_id: bookingRow.id, client_id: client.clientId, lead_id: leadId, possible_duplicate_client_id: client.possibleDuplicateClientId } };
 }
 
 async function dispatch(row: WorkerRow) {

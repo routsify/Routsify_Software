@@ -69,6 +69,27 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const { error: acceptError } = await supabase.rpc("accept_proposal_version", { target_version: version.id });
     if (acceptError) return NextResponse.json({ ok: false, error: acceptError.message }, { status: 400 });
 
+    const { data: existingContract } = await supabase.from("contracts").select("id").eq("organization_id", organizationId).eq("case_id", proposal.case_id).limit(1).maybeSingle();
+    if (!existingContract) {
+      await supabase.from("contracts").insert({
+        organization_id: organizationId,
+        case_id: proposal.case_id,
+        title: "Contrato de viaje",
+        status: "draft",
+        notes: "Creado automáticamente tras registrar la aceptación manual del presupuesto.",
+      });
+    }
+    await supabase.from("tasks").upsert({
+      organization_id: organizationId,
+      case_id: proposal.case_id,
+      title: "Preparar contrato y solicitar documentación",
+      status: "pending",
+      priority: "high",
+      due_at: new Date(Date.now() + 86400000).toISOString(),
+      idempotency_key: `manual_acceptance_followup:${proposalId}:${version.id}`,
+      payload: { source: "manual_proposal_acceptance", proposal_id: proposalId, version_id: version.id },
+    }, { onConflict: "organization_id,idempotency_key" });
+
     const { data, error } = await fullProposal(proposalId);
     if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
     return NextResponse.json({ ok: true, mode: "supabase", data });
