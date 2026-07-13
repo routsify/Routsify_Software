@@ -143,8 +143,22 @@
 .status-success { background: #e7f7e7; color: #267226; }
 .status-warning { background: #fff1d7; color: #9a6200; }
 
+/* Operational control */
+.control-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 18px; }
+.control-alerts { display: grid; gap: 10px; }
+.control-alert { display: flex; justify-content: space-between; gap: 16px; align-items: center; padding: 14px 16px; border: 1px solid var(--line); border-left: 5px solid var(--accent); border-radius: 12px; background: var(--surface, #fff); text-decoration: none; color: inherit; }
+.control-alert:hover { border-color: var(--brand); transform: translateY(-1px); }
+.control-alert p { margin: 4px 0 0; color: var(--muted); }
+.control-alert > span { flex: 0 0 auto; padding: 6px 10px; border-radius: 999px; font-size: 11px; font-weight: 900; text-transform: uppercase; background: var(--soft); }
+.control-alert-critical { border-left-color: #b42318; }
+.control-alert-high { border-left-color: #d97706; }
+.control-alert-medium { border-left-color: #d6a51f; }
+.health-meter { width: 120px; height: 8px; margin-bottom: 6px; overflow: hidden; border-radius: 999px; background: var(--line); }
+.health-meter span { display: block; height: 100%; border-radius: inherit; background: var(--brand); }
+.status-danger { background: #fee4e2; color: #b42318; }
+
 @media (max-width: 1180px) {
-  .settings-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .settings-summary, .control-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .settings-users-layout { grid-template-columns: 1fr; }
   .settings-user-create { position: static; }
 }
@@ -157,8 +171,9 @@
   .client-side-header.compact { grid-template-columns: 1fr; }
   .table-scroll table { min-width: 640px; }
   .shell { grid-template-columns: 1fr; }
-  .settings-fields, .settings-secret-grid, .settings-summary { grid-template-columns: 1fr; }
+  .settings-fields, .settings-secret-grid, .settings-summary, .control-kpis { grid-template-columns: 1fr; }
   .settings-preview { grid-template-columns: 1fr; }
   .settings-preview-sidebar { display: none; }
   .integration-endpoint { grid-template-columns: 1fr; }
+  .control-alert { align-items: flex-start; flex-direction: column; }
 }
