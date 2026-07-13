@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getWebhookIntegrationConfig } from "@/lib/integration-config-server";
 import { enqueueOutboxEvent } from "@/lib/outbox-server";
+import { processOutboxBatch } from "@/lib/outbox-worker-server";
 import { providerIdempotencyKey, verifyWebhookRequest } from "@/lib/webhook-security";
+
+export const maxDuration = 60;
 
 async function resolveWebhookOrganizationId() {
   return process.env.ROUTSIFY_DEFAULT_ORGANIZATION_ID || "";
@@ -45,5 +48,7 @@ export async function POST(request: NextRequest) {
     idempotencyKey: providerIdempotencyKey({ channel: "form", eventType: "lead.created", payload, fallbackRawBody: rawBody, eventId: verification.eventId }),
   });
 
-  return NextResponse.json(result, { status: result.ok ? 200 : 400 });
+  if (!result.ok) return NextResponse.json(result, { status: 400 });
+  const processing = await processOutboxBatch(25);
+  return NextResponse.json({ ...result, processing }, { status: 200 });
 }
