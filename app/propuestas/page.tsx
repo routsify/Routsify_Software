@@ -5,15 +5,17 @@ import { listOrganizationCases, listOrganizationProposals } from "@/lib/organiza
 import Link from "next/link";
 import { BudgetManager } from "./BudgetManager";
 
-export default async function ProposalsPage({ searchParams }: { searchParams: Promise<{ caseId?: string }> }) {
+export default async function ProposalsPage({ searchParams }: { searchParams: Promise<{ caseId?: string; clientId?: string }> }) {
   const session = await requireAppSession();
-  const [{ caseId }, proposalResult, caseResult] = await Promise.all([
+  const [{ caseId, clientId }, proposalResult, caseResult] = await Promise.all([
     searchParams,
     listOrganizationProposals(session.organizationId),
     listOrganizationCases(session.organizationId),
   ]);
   const proposals = proposalResult.ok ? proposalResult.data : [];
   const cases = caseResult.ok ? caseResult.data : [];
+  const caseRows = cases as Array<{ id?: unknown; client_id?: unknown }>;
+  const resolvedCaseId = caseId || (clientId ? String(caseRows.find((item) => String(item.client_id || "") === clientId)?.id || "") : "");
 
   return (
     <AppShell>
@@ -22,8 +24,9 @@ export default async function ProposalsPage({ searchParams }: { searchParams: Pr
         title="Presupuestos"
         description="Crea un presupuesto por expediente, añade servicios y controla su estado."
       />
-      <div className="page-actions"><Link className="btn secondary" href="/propuestas/pagos">Gestionar pagos Teya</Link></div>
-      <BudgetManager initialProposals={proposals} initialCases={cases} initialCaseId={caseId || ""} />
+      <div className="page-actions"><Link className="btn secondary" href="/propuestas/pagos" prefetch={false}>Gestionar pagos Teya</Link></div>
+      {!proposalResult.ok ? <section className="card form-warning"><strong>No se pudieron cargar los presupuestos.</strong><p>{proposalResult.error}</p></section> : null}
+      <BudgetManager initialProposals={proposals} initialCases={cases} initialCaseId={resolvedCaseId} />
     </AppShell>
   );
 }

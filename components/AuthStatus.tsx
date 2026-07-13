@@ -1,58 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { getSupabaseBrowserClient, hasSupabaseBrowserEnv } from "@/lib/supabase-browser";
 
-type ProfileState = {
-  email: string | null;
-  role: string | null;
+type AuthStatusProps = {
+  email?: string | null;
+  role?: string | null;
 };
 
-export function AuthStatus() {
-  const router = useRouter();
-  const [state, setState] = useState<ProfileState>({ email: null, role: null });
-  const [loading, setLoading] = useState(true);
+export function AuthStatus({ email = null, role = null }: AuthStatusProps) {
   const [signingOut, setSigningOut] = useState(false);
-
-  async function loadProfile() {
-    if (!hasSupabaseBrowserEnv()) {
-      setState({ email: null, role: null });
-      setLoading(false);
-      return;
-    }
-
-    const supabase = getSupabaseBrowserClient();
-    const { data: userData } = await supabase.auth.getUser();
-
-    if (!userData.user) {
-      setState({ email: null, role: null });
-      setLoading(false);
-      return;
-    }
-
-    const { data: profile } = await supabase.rpc("ensure_profile_for_current_user");
-    setState({ email: userData.user.email ?? null, role: profile?.role ?? null });
-    setLoading(false);
-  }
-
-  useEffect(() => {
-    if (!hasSupabaseBrowserEnv()) {
-      setState({ email: null, role: null });
-      setLoading(false);
-      return;
-    }
-
-    const supabase = getSupabaseBrowserClient();
-    void loadProfile();
-
-    const { data: listener } = supabase.auth.onAuthStateChange(() => {
-      void loadProfile();
-    });
-
-    return () => listener.subscription.unsubscribe();
-  }, []);
 
   async function signOut() {
     setSigningOut(true);
@@ -61,22 +18,17 @@ export function AuthStatus() {
         const supabase = getSupabaseBrowserClient();
         await supabase.auth.signOut({ scope: "global" });
       }
-      setState({ email: null, role: null });
-      router.replace("/login");
-      router.refresh();
-      window.setTimeout(() => window.location.assign("/login"), 120);
     } finally {
-      setSigningOut(false);
+      window.location.replace("/login");
     }
   }
 
-  if (loading) return <span className="badge">Comprobando sesión</span>;
-  if (!state.email) return <Link className="btn secondary" href="/login">Entrar</Link>;
+  if (!email) return null;
 
   return (
     <div className="auth-status">
-      <span className="badge">{state.email}</span>
-      {state.role ? <span className="badge">{state.role}</span> : null}
+      <span className="badge">{email}</span>
+      {role ? <span className="badge">{role}</span> : null}
       <button className="btn secondary" type="button" onClick={signOut} disabled={signingOut}>{signingOut ? "Saliendo..." : "Salir"}</button>
     </div>
   );
