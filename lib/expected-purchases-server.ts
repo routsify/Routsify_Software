@@ -2,11 +2,12 @@ import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 
 const ACTIVE_STATUSES = new Set(["expected", "requested", "uploaded", "holded_candidate", "matched", "review_needed"]);
 const FINAL_STATUSES = new Set(["approved", "not_required", "cancelled"]);
+const PURCHASE_SELECT = "*, cases(id,case_code,title), budget_lines(id,service_type_code,description_public,description_internal,destination_segment,start_date,end_date,cost_budget,sale_price), supplier_invoices(id,status,invoice_number,invoice_date,total,currency,storage_path,created_at)";
 
 export async function getExpectedPurchase(organizationId: string, purchaseId: string) {
   return getSupabaseAdminClient()
     .from("expected_purchases")
-    .select("*, cases(case_code,title), supplier_invoices(id,status,invoice_number,invoice_date,total,currency,storage_path,created_at)")
+    .select(PURCHASE_SELECT)
     .eq("id", purchaseId)
     .eq("organization_id", organizationId)
     .maybeSingle();
@@ -55,7 +56,7 @@ export async function transitionExpectedPurchase(input: {
     .update(patch)
     .eq("id", input.purchaseId)
     .eq("organization_id", input.organizationId)
-    .select("*, cases(case_code,title), supplier_invoices(id,status,invoice_number,invoice_date,total,currency,storage_path,created_at)")
+    .select(PURCHASE_SELECT)
     .single();
   if (error) return { ok: false as const, error: error.message };
 
