@@ -1,18 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonAccessDenied, requireInternalAccess } from "@/lib/api-security";
-import { createProposalRepository } from "@/lib/server-repositories";
-import { listOrganizationProposals } from "@/lib/organization-repositories";
-import { resolveOrganizationId } from "@/lib/request-context";
+import { PROPOSAL_WITH_VERSIONS_SELECT } from "@/lib/query-selects";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 
-const PROPOSAL_SELECT = "id,organization_id,case_id,status,current_version_id,created_at,updated_at,cases(id,case_code,title,destination,trip_start,trip_end,client_id,clients(display_name,email)),proposal_versions(id,proposal_id,version_number,status,locked,created_at,expires_at,total_sale,total_cost,total_cost_budget,budgeted_profit,budget_lines(id,proposal_version_id,stable_line_id,service_type_code,description_public,description_internal,supplier_id,supplier_name,destination_segment,start_date,end_date,cost_budget,margin_applied,sale_price,creates_expected_purchase,sort_order,created_at))";
+async function findProposal(organizationId: string, caseId: string) {
+  return getSupabaseAdminClient()
+    .from("proposals")
+    .select(PROPOSAL_WITH_VERSIONS_SELECT)
+    .eq("case_id", caseId)
+    .eq("organization_id", organizationId)
+    .limit(1)
+    .maybeSingle();
+}
 
 export async function GET(request: NextRequest) {
   const access = await requireInternalAccess(request);
   if (!access.ok) return jsonAccessDenied(access);
-  const organizationId = await resolveOrganizationId(request, access.organizationId);
-  const result = await listOrganizationProposals(organizationId);
-  return NextResponse.json(result, { status: result.ok ? 200 : 400 });
+  const { data, error } = await getSupabaseAdminClient()
+    .from("proposals")
+    .select(PROPOSAL_WITH_VERSIONS_SELECT)
+    .eq("organization_id", access.organizationId)
+    .order("created_at", { ascending: false })
+    .limit(100);
+  if (error) return NextResponse.json({ ok: false, mode: "supabase", error: error.message }, { status: 400 });
+  return NextResponse.json({ ok: true, mode: "supabase", data: data || [] });
 }
 
 export async function POST(request: NextRequest) {
@@ -24,24 +35,41 @@ export async function POST(request: NextRequest) {
   const caseId = String((body as Record<string, unknown>).case_id || "").trim();
   if (!caseId) return NextResponse.json({ ok: false, error: "missing_case" }, { status: 400 });
 
-  const organizationId = await resolveOrganizationId(request, access.organizationId);
+  const organizationId = access.organizationId;
   const admin = getSupabaseAdminClient();
-  const { data: caseRow } = await admin.from("cases").select("id").eq("id", caseId).eq("organization_id", organizationId).maybeSingle();
+  const { data: caseRow, error: caseError } = await admin.from("cases").select("id").eq("id", caseId).eq("organization_id", organizationId).maybeSingle();
+  if (caseError) return NextResponse.json({ ok: false, error: caseError.message }, { status: 400 });
   if (!caseRow) return NextResponse.json({ ok: false, error: "case_not_found" }, { status: 404 });
 
-  const { data: existing, error: existingError } = await admin
+  const existingResult = await findProposal(organizationId, caseId);
+  if (existingResult.error) return NextResponse.json({ ok: false, error: existingResult.error.message }, { status: 400 });
+  if (existingResult.data) return NextResponse.json({ ok: true, mode: "supabase", data: existingResult.data, existing: true });
+
+  const { data: proposal, error: proposalError } = await admin
     .from("proposals")
-    .select(PROPOSAL_SELECT)
-    .eq("case_id", caseId)
-    .eq("organization_id", organizationId)
-    .limit(1)
-    .maybeSingle();
-  if (existingError) return NextResponse.json({ ok: false, error: existingError.message }, { status: 400 });
-  if (existing) return NextResponse.json({ ok: true, mode: "supabase", data: existing, existing: true });
+    .insert({ organization_id: organizationId, case_id: caseId, status: "draft" })
+    .select("id")
+    .single();
+  if (proposalError) {
+    const raced = await findProposal(organizationId, caseId);
+    if (raced.data) return NextResponse.json({ ok: true, mode: "supabase", data: raced.data, existing: true });
+    return NextResponse.json({ ok: false, error: proposalError.message }, { status: 400 });
+  }
 
-  const result = await createProposalRepository({ organization_id: organizationId, case_id: caseId, status: "draft" });
-  if (!result.ok) return NextResponse.json(result, { status: 400 });
+  const { data: version, error: versionError } = await admin
+    .from("proposal_versions")
+    .insert({ organization_id: organizationId, proposal_id: proposal.id, version_number: 1, status: "draft", total_sale: 0, total_cost: 0, total_cost_budget: 0, budgeted_profit: 0 })
+    .select("id")
+    .single();
+  if (versionError) {
+    await admin.from("proposals").delete().eq("id", proposal.id).eq("organization_id", organizationId);
+    return NextResponse.json({ ok: false, error: versionError.message }, { status: 400 });
+  }
 
+  await admin.from("proposals").update({ current_version_id: version.id, updated_at: new Date().toISOString() }).eq("id", proposal.id).eq("organization_id", organizationId);
   await admin.from("cases").update({ status: "budget_draft", next_action: "Completar presupuesto", updated_at: new Date().toISOString() }).eq("id", caseId).eq("organization_id", organizationId);
-  return NextResponse.json({ ...result, existing: false }, { status: 201 });
+
+  const { data, error } = await admin.from("proposals").select(PROPOSAL_WITH_VERSIONS_SELECT).eq("id", proposal.id).single();
+  if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
+  return NextResponse.json({ ok: true, mode: "supabase", data, existing: false }, { status: 201 });
 }
