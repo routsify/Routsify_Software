@@ -11,7 +11,10 @@ export default async function CasesPage({ searchParams }: { searchParams: Promis
     listOrganizationCases(session.organizationId),
     listOrganizationClients(session.organizationId),
   ]);
-  const cases = caseResult.ok ? caseResult.data : [];
+  const rawCases = caseResult.ok ? caseResult.data : [];
+  const cases = caseId
+    ? [...rawCases].sort((left, right) => Number(String((right as { id?: unknown }).id || "") === caseId) - Number(String((left as { id?: unknown }).id || "") === caseId))
+    : rawCases;
   const clients = clientResult.ok ? clientResult.data : [];
 
   return (
@@ -21,7 +24,7 @@ export default async function CasesPage({ searchParams }: { searchParams: Promis
         title="Centro operativo de expedientes"
         description="Gestiona cliente, destino, fechas, estado y próxima acción de cada viaje."
       />
-      <CasesManager initialCases={cases} initialClients={clients} initialClientId={clientId || ""} initialCaseId={caseId || ""} />
+      <CasesManager initialCases={cases} initialClients={clients} initialClientId={clientId || ""} />
     </AppShell>
   );
 }
