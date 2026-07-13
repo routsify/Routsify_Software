@@ -98,8 +98,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       cost_budget: line.cost_budget,
       cost_real: null,
       margin_applied: line.margin_applied,
+      margin_rule_id: line.margin_rule_id,
+      margin_snapshot: line.margin_snapshot || {},
+      origin_margin: line.origin_margin,
+      formula_version_id: line.formula_version_id,
       sale_price: line.sale_price,
       creates_expected_purchase: line.creates_expected_purchase,
+      included: line.included !== false,
       sort_order: line.sort_order,
     }));
     const { error: cloneError } = await supabase.from("budget_lines").insert(clones);
