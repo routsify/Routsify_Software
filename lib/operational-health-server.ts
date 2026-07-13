@@ -29,7 +29,7 @@ export async function loadOperationalHealth(organizationId: string) {
   const paymentMap = grouped(payments);
   const purchaseMap = grouped(purchases);
   const documentMap = grouped(documents);
-  const active = new Set(["new_lead", "call_booked", "call_done", "budget_draft", "proposal_sent", "proposal_accepted", "contract_sent", "contract_signed", "payment_pending", "confirmed", "traveling", "post_trip"]);
+  const active = new Set(["new_lead", "call_booked", "call_done", "budget_draft", "proposal_sent", "proposal_accepted", "contract_ready", "contract_sent", "contract_signed", "payment_pending", "payment_confirmed", "confirmed", "suppliers_pending", "traveling", "post_trip", "ready_to_close"]);
 
   const caseHealth = (cases || []).filter((row) => active.has(String(row.status))).map((row) => {
     const requiredDocuments = (documentMap.get(row.id) || []).filter((item) => item.required);
@@ -52,8 +52,8 @@ export async function loadOperationalHealth(organizationId: string) {
   const overdueTasks = (tasks || []).filter((task) => task.due_at && new Date(task.due_at).getTime() < Date.now());
   const failedOutbox = (outbox || []).filter((item) => ["failed", "manual_review"].includes(String(item.status)));
   const alerts = [
-    ...caseHealth.filter((item) => item.score < 100).map((item) => ({ id: `case:${item.id}`, severity: item.score < 50 ? "high" : "medium", title: `${item.caseCode} · salud ${item.score}%`, detail: `Falta: ${item.missing.join(", ")}`, href: `/expedientes/${item.id}` })),
-    ...overdueTasks.map((item) => ({ id: `task:${item.id}`, severity: item.priority === "urgent" ? "critical" : "high", title: `Tarea vencida · ${item.title}`, detail: "Requiere revisión inmediata.", href: item.case_id ? `/expedientes/${item.case_id}` : "/hoy" })),
+    ...caseHealth.filter((item) => item.score < 100).map((item) => ({ id: `case:${item.id}`, severity: item.score < 50 ? "high" : "medium", title: `${item.caseCode} · salud ${item.score}%`, detail: `Falta: ${item.missing.join(", ")}`, href: `/expedientes?caseId=${encodeURIComponent(String(item.id))}` })),
+    ...overdueTasks.map((item) => ({ id: `task:${item.id}`, severity: item.priority === "urgent" ? "critical" : "high", title: `Tarea vencida · ${item.title}`, detail: "Requiere revisión inmediata.", href: item.case_id ? `/expedientes?caseId=${encodeURIComponent(String(item.case_id))}` : "/hoy" })),
     ...failedOutbox.map((item) => ({ id: `outbox:${item.id}`, severity: "high", title: `Integración pendiente · ${item.channel || item.event_type}`, detail: item.last_error || "Revisión manual necesaria.", href: "/control" })),
   ];
 
