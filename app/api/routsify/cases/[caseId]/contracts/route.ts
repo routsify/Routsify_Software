@@ -15,8 +15,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const organizationId = await resolveOrganizationId(request, access.organizationId);
   const actorId = await getRequestUserId(request);
   const supabase = getSupabaseAdminClient();
-  const { data: caseRow } = await supabase.from("cases").select("id").eq("id", caseId).eq("organization_id", organizationId).maybeSingle();
+  const { data: caseRow } = await supabase.from("cases").select("id,accepted_value").eq("id", caseId).eq("organization_id", organizationId).maybeSingle();
   if (!caseRow) return NextResponse.json({ ok: false, error: "case_not_found" }, { status: 404 });
+
+  if (["sent", "signed"].includes(status)) {
+    const { data: accepted } = await supabase.from("proposals").select("id,current_version_id").eq("case_id", caseId).eq("organization_id", organizationId).eq("status", "accepted").limit(1).maybeSingle();
+    if (!accepted?.current_version_id || Number(caseRow.accepted_value || 0) <= 0) return NextResponse.json({ ok: false, error: "accepted_proposal_required" }, { status: 409 });
+  }
 
   const contractId = String(body?.id || "").trim();
   const payload = {
@@ -33,6 +38,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const { data, error } = await query.select("*").single();
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
 
+  if (status === "sent") await supabase.from("cases").update({ status: "contract_ready", next_action: "Obtener firma del contrato", updated_at: new Date().toISOString() }).eq("id", caseId).eq("organization_id", organizationId);
   if (status === "signed") await supabase.from("cases").update({ status: "contract_signed", next_action: "Confirmar pago", updated_at: new Date().toISOString() }).eq("id", caseId).eq("organization_id", organizationId);
   await supabase.from("timeline_events").insert({ organization_id: organizationId, case_id: caseId, event_type: `contract.${status}`, title: status === "signed" ? "Contrato firmado" : `Contrato actualizado: ${status}`, payload: { contract_id: data.id }, created_by: actorId });
   return NextResponse.json({ ok: true, data });
