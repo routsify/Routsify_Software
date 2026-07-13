@@ -3,6 +3,7 @@ import { jsonAccessDenied, requireInternalAccess } from "@/lib/api-security";
 import { createProposalToken, hashProposalToken } from "@/lib/proposal-token";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { enqueueOutboxEvent } from "@/lib/outbox-server";
+import { getOrganizationSecret } from "@/lib/organization-secrets-server";
 import { resolveOrganizationId, getRequestUserId } from "@/lib/request-context";
 
 type RelationRow = Record<string, unknown>;
@@ -75,8 +76,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (proposalUpdateError) return NextResponse.json({ ok: false, error: proposalUpdateError.message }, { status: 400 });
 
   await supabase.from("cases").update({ status: "proposal_sent", next_action: "Hacer seguimiento al cliente", updated_at: now }).eq("id", proposal.case_id).eq("organization_id", organizationId);
-  await supabase.from("timeline_events").insert({ organization_id: organizationId, case_id: proposal.case_id, client_id: null, event_type: "proposal.sent", title: `Presupuesto v${version.version_number} preparado para envío`, payload: { proposal_id: proposalId, version_id: version.id, expires_at: expiresAt.toISOString(), recipient_email: clientEmail }, created_by: actorId });
-  await enqueueOutboxEvent({
+  const holdedConfigured = Boolean(await getOrganizationSecret(organizationId, "holded_api_key"));
+  const holdedOutbox = holdedConfigured ? await enqueueOutboxEvent({
     organizationId,
     channel: "holded",
     eventType: "estimate.sync",
@@ -86,6 +87,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     risk: "low",
     businessRule: "Sincronizar en Holded el presupuesto enviado sin bloquear el flujo comercial.",
     nextAction: "Crear o actualizar el presupuesto en Holded.",
+  }) : null;
+  await supabase.from("timeline_events").insert({
+    organization_id: organizationId,
+    case_id: proposal.case_id,
+    client_id: null,
+    event_type: "proposal.sent",
+    title: `Presupuesto v${version.version_number} preparado para envío`,
+    payload: { proposal_id: proposalId, version_id: version.id, expires_at: expiresAt.toISOString(), recipient_email: clientEmail, holded_status: holdedConfigured ? (holdedOutbox?.ok ? "queued" : "queue_error") : "pending_configuration" },
+    created_by: actorId,
   });
 
   const origin = new URL(request.url).origin;
@@ -99,6 +109,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       expires_at: expiresAt.toISOString(),
       email: clientEmail,
       phone: clientPhone,
+      holded_status: holdedConfigured ? (holdedOutbox?.ok ? "queued" : "queue_error") : "pending_configuration",
       mailto_url: clientEmail ? `mailto:${encodeURIComponent(clientEmail)}?subject=${encodeURIComponent("Tu propuesta de viaje Routsify")}&body=${encodeURIComponent(message)}` : null,
       whatsapp_url: whatsappPhone ? `https://wa.me/${whatsappPhone}?text=${encodeURIComponent(message)}` : null,
     },
