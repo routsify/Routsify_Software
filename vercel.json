@@ -4,6 +4,20 @@
   "buildCommand": "npm run build",
   "devCommand": "npm run dev",
   "installCommand": "npm install",
+  "crons": [
+    {
+      "path": "/api/cron/operations",
+      "schedule": "5 * * * *"
+    },
+    {
+      "path": "/api/cron/operations",
+      "schedule": "15 6 * * *"
+    },
+    {
+      "path": "/api/cron/operations",
+      "schedule": "15 6 1 * *"
+    }
+  ],
   "git": {
     "deploymentEnabled": {
       "internal-mvp-v11-validation": false,
