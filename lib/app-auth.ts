@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createServerClient } from "@supabase/ssr";
@@ -9,7 +10,7 @@ function publicSupabaseConfig() {
   return url && key ? { url, key } : null;
 }
 
-export async function requireAppSession() {
+const loadAppSession = cache(async () => {
   const config = publicSupabaseConfig();
   if (!config || !hasSupabaseAdminEnv()) redirect("/login");
 
@@ -40,4 +41,8 @@ export async function requireAppSession() {
     fullName: profile.full_name ?? null,
     organizationId: String(profile.organization_id),
   };
+});
+
+export async function requireAppSession() {
+  return loadAppSession();
 }
