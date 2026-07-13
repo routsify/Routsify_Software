@@ -48,8 +48,10 @@ export async function proxy(request: NextRequest) {
     },
   });
 
-  const { data, error } = await supabase.auth.getUser();
-  if (!error && data.user) return response;
+  // This is only a fast routing hint. Pages and APIs still validate the user
+  // remotely before reading protected data or applying role permissions.
+  const { data } = await supabase.auth.getSession();
+  if (data.session?.user) return response;
   if (isPrivateApi(pathname)) return NextResponse.json({ ok: false, error: "authentication_required" }, { status: 401 });
 
   const login = request.nextUrl.clone();
