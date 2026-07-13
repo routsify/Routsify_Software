@@ -1,4 +1,5 @@
 import { createHash } from "crypto";
+import { getOrganizationSecret } from "@/lib/organization-secrets-server";
 import { getSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase-admin";
 import { canonicalJsonStringify } from "@/lib/webhook-security";
 
@@ -26,6 +27,20 @@ export async function enqueueOutboxEvent(input: OutboxServerInput) {
   const idempotencyKey = buildIdempotencyKey(input);
   if (!hasSupabaseAdminEnv()) return { ok: false, mode: "supabase" as const, error: "supabase_admin_not_configured", idempotencyKey };
 
+  if (input.channel === "holded") {
+    const holdedKey = await getOrganizationSecret(input.organizationId, "holded_api_key");
+    if (!holdedKey) {
+      return {
+        ok: true,
+        mode: "supabase" as const,
+        idempotencyKey,
+        skipped: true,
+        reason: "holded_pending_configuration",
+        data: { id: null, status: "pending_configuration", attempts: 0, risk: input.risk || "low" },
+      };
+    }
+  }
+
   const row = {
     organization_id: input.organizationId,
     provider: input.channel,
@@ -46,7 +61,7 @@ export async function enqueueOutboxEvent(input: OutboxServerInput) {
   const supabase = getSupabaseAdminClient();
   const { data, error } = await supabase.from("integration_outbox").upsert(row, { onConflict: "organization_id,channel,event_type,idempotency_key" }).select("id,status,attempts,risk").single();
   if (error) return { ok: false, mode: "supabase" as const, error: error.message, idempotencyKey };
-  return { ok: true, mode: "supabase" as const, idempotencyKey, data };
+  return { ok: true, mode: "supabase" as const, idempotencyKey, skipped: false, data };
 }
 
 export async function markOutboxProcessed(id: string, status: "processing" | "done" | "failed" | "manual_review", errorMessage?: string) {
