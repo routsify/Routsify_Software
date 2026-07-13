@@ -4,9 +4,9 @@ import { requireAppSession } from "@/lib/app-auth";
 import { listOrganizationCases, listOrganizationClients } from "@/lib/organization-repositories";
 import { CasesManager } from "./CasesManager";
 
-export default async function CasesPage({ searchParams }: { searchParams: Promise<{ clientId?: string }> }) {
+export default async function CasesPage({ searchParams }: { searchParams: Promise<{ clientId?: string; caseId?: string }> }) {
   const session = await requireAppSession();
-  const [{ clientId }, caseResult, clientResult] = await Promise.all([
+  const [{ clientId, caseId }, caseResult, clientResult] = await Promise.all([
     searchParams,
     listOrganizationCases(session.organizationId),
     listOrganizationClients(session.organizationId),
@@ -21,7 +21,7 @@ export default async function CasesPage({ searchParams }: { searchParams: Promis
         title="Centro operativo de expedientes"
         description="Gestiona cliente, destino, fechas, estado y próxima acción de cada viaje."
       />
-      <CasesManager initialCases={cases} initialClients={clients} initialClientId={clientId || ""} />
+      <CasesManager initialCases={cases} initialClients={clients} initialClientId={clientId || ""} initialCaseId={caseId || ""} />
     </AppShell>
   );
 }
