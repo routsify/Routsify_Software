@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { reportSummary } from "@/lib/report-master";
-
 import { jsonAccessDenied, requireInternalAccess } from "@/lib/api-security";
+
 export async function GET(request: NextRequest) {
   const access = await requireInternalAccess(request);
   if (!access.ok) return jsonAccessDenied(access);
-  return NextResponse.json(reportSummary());
+  return NextResponse.json({ ok: false, error: "legacy_demo_report_disabled", message: "Use the real reports workspace while this API is rebuilt on production data." }, { status: 410 });
 }

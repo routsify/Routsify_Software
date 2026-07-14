@@ -19,8 +19,24 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm install --package-lock-only --ignore-scripts
-      - run: npm ci --ignore-scripts
+      - run: npm install --package-lock-only --ignore-scripts --silent
+      - run: npm ci --ignore-scripts --silent
+      - name: Typecheck
+        id: typecheck
+        shell: bash
+        run: |
+          set +e
+          npm run typecheck > typecheck.log 2>&1
+          code=$?
+          cat typecheck.log
+          exit $code
+      - name: Upload typecheck diagnostics
+        if: failure() && steps.typecheck.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: typecheck-diagnostics
+          path: typecheck.log
+          retention-days: 1
       - run: npm run validate:platform
-      - run: npm run typecheck
+      - run: npm run lint
       - run: npm run build

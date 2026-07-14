@@ -59,9 +59,30 @@ export async function enqueueOutboxEvent(input: OutboxServerInput) {
   };
 
   const supabase = getSupabaseAdminClient();
-  const { data, error } = await supabase.from("integration_outbox").upsert(row, { onConflict: "organization_id,channel,event_type,idempotency_key" }).select("id,status,attempts,risk").single();
-  if (error) return { ok: false, mode: "supabase" as const, error: error.message, idempotencyKey };
-  return { ok: true, mode: "supabase" as const, idempotencyKey, skipped: false, data };
+  const { data, error } = await supabase.from("integration_outbox").insert(row).select("id,status,attempts,risk").single();
+  if (!error) return { ok: true, mode: "supabase" as const, idempotencyKey, skipped: false, duplicate: false, data };
+
+  if (error.code !== "23505") return { ok: false, mode: "supabase" as const, error: error.message, idempotencyKey };
+
+  const { data: existing, error: existingError } = await supabase
+    .from("integration_outbox")
+    .select("id,status,attempts,risk")
+    .eq("organization_id", input.organizationId)
+    .eq("channel", input.channel)
+    .eq("event_type", input.eventType)
+    .eq("idempotency_key", idempotencyKey)
+    .maybeSingle();
+  if (existingError || !existing) return { ok: false, mode: "supabase" as const, error: existingError?.message || "duplicate_outbox_event_not_found", idempotencyKey };
+
+  return {
+    ok: true,
+    mode: "supabase" as const,
+    idempotencyKey,
+    skipped: true,
+    duplicate: true,
+    reason: "duplicate_event_preserved",
+    data: existing,
+  };
 }
 
 export async function markOutboxProcessed(id: string, status: "processing" | "done" | "failed" | "manual_review", errorMessage?: string) {
