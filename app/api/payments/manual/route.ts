@@ -37,7 +37,8 @@ export async function POST(request: NextRequest) {
   if (!preflight.ok) return NextResponse.json(preflight, { status: preflight.error === "case_not_found" ? 404 : 409 });
 
   const receivedAt = body?.receivedAt ? new Date(String(body.receivedAt)).toISOString() : new Date().toISOString();
-  const { data, error } = await getSupabaseAdminClient().rpc("confirm_external_payment", {
+  const db = getSupabaseAdminClient();
+  const { data, error } = await db.rpc("confirm_external_payment", {
     target_org: organizationId,
     target_case: caseId,
     transaction_value: reference,
@@ -49,10 +50,31 @@ export async function POST(request: NextRequest) {
     payment_payload: { notes: String(body?.notes || "").trim() || null, actor_id: access.actorId, confirmation_mode: "manual" },
   });
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
+
   try {
     const proforma = await ensureProformaForCase({ organizationId, caseId, actorId: access.actorId, paymentReference: reference });
-    return NextResponse.json({ ok: true, data, proforma }, { status: 201 });
+    return NextResponse.json({ ok: true, data, payment_confirmed: true, fiscal_pending: false, proforma }, { status: 201 });
   } catch (caught) {
-    return NextResponse.json({ ok: false, error: caught instanceof Error ? caught.message : "proforma_queue_failed", payment_confirmed: true, data }, { status: 500 });
+    const warning = caught instanceof Error ? caught.message : "proforma_queue_failed";
+    const taskKey = `payment_fiscal_followup:${caseId}:${reference}`;
+    await db.from("tasks").upsert({
+      organization_id: organizationId,
+      case_id: caseId,
+      title: "Revisar proforma pendiente tras pago confirmado",
+      status: "pending",
+      priority: "high",
+      due_at: new Date().toISOString(),
+      idempotency_key: taskKey,
+      payload: { action_type: "payment_fiscal_followup", payment_reference: reference, error: warning },
+    }, { onConflict: "organization_id,idempotency_key" });
+    await db.from("timeline_events").insert({
+      organization_id: organizationId,
+      case_id: caseId,
+      event_type: "payment.fiscal_followup_required",
+      title: "Pago confirmado; proforma pendiente de revisión",
+      payload: { payment_reference: reference, error: warning },
+      created_by: access.actorId,
+    });
+    return NextResponse.json({ ok: true, data, payment_confirmed: true, fiscal_pending: true, warning }, { status: 202 });
   }
 }
