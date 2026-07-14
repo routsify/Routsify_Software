@@ -19,8 +19,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm install --package-lock-only --ignore-scripts
-      - run: npm ci --ignore-scripts
-      - run: npm run validate:platform
+      - run: npm install --package-lock-only --ignore-scripts --silent
+      - run: npm ci --ignore-scripts --silent
       - run: npm run typecheck
+      - run: npm run validate:platform
+      - run: npm run lint
       - run: npm run build
