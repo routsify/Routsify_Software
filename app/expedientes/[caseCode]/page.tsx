@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
 import { requireAppSession } from "@/lib/app-auth";
+import { CASE_WORKSPACE_PROPOSALS_SELECT } from "@/lib/query-selects";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { CaseWorkspace } from "./CaseWorkspace";
 import "./contract.css";
@@ -25,7 +26,7 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ cas
     supabase.from("payments").select("*").eq("case_id", caseRow.id).eq("organization_id", session.organizationId).order("created_at", { ascending: false }),
     supabase.from("billing_documents").select("*").eq("case_id", caseRow.id).eq("organization_id", session.organizationId).order("created_at", { ascending: false }),
     supabase.from("expected_purchases").select("*").eq("case_id", caseRow.id).eq("organization_id", session.organizationId).order("created_at", { ascending: false }),
-    supabase.from("proposals").select("*,proposal_versions(*,budget_lines(*),payment_links(*))").eq("case_id", caseRow.id).eq("organization_id", session.organizationId).order("created_at", { ascending: false }),
+    supabase.from("proposals").select(CASE_WORKSPACE_PROPOSALS_SELECT).eq("case_id", caseRow.id).eq("organization_id", session.organizationId).order("created_at", { ascending: false }),
   ]);
   const firstError = results.find((result) => result.error)?.error;
   if (firstError) throw new Error(firstError.message);
