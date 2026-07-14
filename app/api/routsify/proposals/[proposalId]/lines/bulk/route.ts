@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonAccessDenied, requireInternalAccess } from "@/lib/api-security";
-import { calculateSalePrice, resolveMarginRule } from "@/lib/economics-server";
+import { calculateSalePrice, loadMarginResolutionContext, resolveMarginRuleFromContext } from "@/lib/economics-server";
 import { resolveOrganizationId } from "@/lib/request-context";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 
@@ -39,7 +39,24 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (versionError || !version) return NextResponse.json({ ok: false, error: versionError?.message || "proposal_version_not_found" }, { status: versionError ? 400 : 404 });
   if (version.locked || version.status === "accepted") return NextResponse.json({ ok: false, error: "proposal_version_locked" }, { status: 409 });
 
-  const { count } = await db.from("budget_lines").select("id", { count: "exact", head: true }).eq("proposal_version_id", versionId);
+  let marginContext;
+  try {
+    marginContext = await loadMarginResolutionContext(organizationId);
+  } catch (error) {
+    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "margin_context_load_failed" }, { status: 400 });
+  }
+
+  const { data: existingLines, error: existingLinesError } = await db
+    .from("budget_lines")
+    .select("cost_budget,sale_price,sort_order")
+    .eq("organization_id", organizationId)
+    .eq("proposal_version_id", versionId);
+  if (existingLinesError) return NextResponse.json({ ok: false, error: existingLinesError.message }, { status: 400 });
+
+  const currentLines = existingLines || [];
+  const nextSortOrder = currentLines.reduce((max, line) => Math.max(max, Number(line.sort_order || 0) + 1), 0);
+  const existingCost = currentLines.reduce((sum, item) => sum + numeric(item.cost_budget), 0);
+  const existingSale = currentLines.reduce((sum, item) => sum + numeric(item.sale_price), 0);
   const inserts: Record<string, unknown>[] = [];
   const validationErrors: Array<{ row: number; error: string }> = [];
 
@@ -65,7 +82,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const supplierId = optionalText(source.supplier_id);
     const supplierName = optionalText(source.supplier_name ?? source.supplier);
     const destination = optionalText(source.destination_segment ?? source.destination);
-    const rule = await resolveMarginRule({ organizationId, explicitMarginPercent: explicitMargin, supplierId, serviceTypeCode, destination });
+    const rule = resolveMarginRuleFromContext(marginContext, { explicitMarginPercent: explicitMargin, supplierId, serviceTypeCode, destination });
     const salePrice = explicitSale ?? calculateSalePrice(cost, rule.percent, rule.formula);
     const purchaseFlag = source.creates_expected_purchase ?? source.purchase;
     const createsExpectedPurchase = purchaseFlag === undefined || purchaseFlag === null || purchaseFlag === ""
@@ -90,20 +107,24 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       margin_snapshot: rule.snapshot,
       sale_price: salePrice,
       creates_expected_purchase: createsExpectedPurchase,
-      sort_order: (count || 0) + index,
+      sort_order: nextSortOrder + index,
     });
   }
 
   if (validationErrors.length) return NextResponse.json({ ok: false, error: "invalid_rows", details: validationErrors }, { status: 400 });
+
   const { data, error } = await db.from("budget_lines").insert(inserts).select("*");
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
 
-  const totalCost = inserts.reduce((sum, item) => sum + numeric(item.cost_budget), 0);
-  const totalSale = inserts.reduce((sum, item) => sum + numeric(item.sale_price), 0);
-  const { data: existingLines } = await db.from("budget_lines").select("cost_budget,sale_price").eq("proposal_version_id", versionId);
-  const recalculatedCost = (existingLines || []).reduce((sum, item) => sum + numeric(item.cost_budget), 0);
-  const recalculatedSale = (existingLines || []).reduce((sum, item) => sum + numeric(item.sale_price), 0);
-  await db.from("proposal_versions").update({ total_cost: recalculatedCost, total_cost_budget: recalculatedCost, total_sale: recalculatedSale, budgeted_profit: recalculatedSale - recalculatedCost, updated_at: new Date().toISOString() }).eq("id", versionId).eq("organization_id", organizationId);
+  const importedCost = inserts.reduce((sum, item) => sum + numeric(item.cost_budget), 0);
+  const importedSale = inserts.reduce((sum, item) => sum + numeric(item.sale_price), 0);
+  const recalculatedCost = existingCost + importedCost;
+  const recalculatedSale = existingSale + importedSale;
+  const { error: totalsError } = await db.from("proposal_versions")
+    .update({ total_cost: recalculatedCost, total_cost_budget: recalculatedCost, total_sale: recalculatedSale, budgeted_profit: recalculatedSale - recalculatedCost, updated_at: new Date().toISOString() })
+    .eq("id", versionId)
+    .eq("organization_id", organizationId);
+  if (totalsError) return NextResponse.json({ ok: false, error: totalsError.message, imported: inserts.length, lines_saved: true }, { status: 500 });
 
-  return NextResponse.json({ ok: true, data: data || [], imported: inserts.length, imported_cost: totalCost, imported_sale: totalSale }, { status: 201 });
+  return NextResponse.json({ ok: true, data: data || [], imported: inserts.length, imported_cost: importedCost, imported_sale: importedSale }, { status: 201 });
 }
