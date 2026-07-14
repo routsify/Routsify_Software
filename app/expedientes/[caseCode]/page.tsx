@@ -17,9 +17,18 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ cas
   const { data: caseRow, error: caseError } = await caseQuery.maybeSingle();
   if (caseError || !caseRow) notFound();
 
+  const role = String(session.role || "viewer");
+  const canViewPayments = ["admin", "direction", "billing"].includes(role);
+  const canViewPurchases = ["admin", "direction", "sales", "operations", "billing"].includes(role);
+  const emptyResult = Promise.resolve({ data: [], error: null });
+
   const [paymentsResult, purchasesResult, proposalsResult] = await Promise.all([
-    supabase.from("payments").select("id,amount,currency,status,confirmed_at").eq("case_id", caseRow.id).eq("organization_id", session.organizationId).order("created_at", { ascending: false }),
-    supabase.from("expected_purchases").select("id,supplier_name,service,expected_amount,amount,status").eq("case_id", caseRow.id).eq("organization_id", session.organizationId).order("created_at", { ascending: false }),
+    canViewPayments
+      ? supabase.from("payments").select("id,amount,currency,status,confirmed_at").eq("case_id", caseRow.id).eq("organization_id", session.organizationId).order("created_at", { ascending: false })
+      : emptyResult,
+    canViewPurchases
+      ? supabase.from("expected_purchases").select("id,supplier_name,service,expected_amount,amount,status").eq("case_id", caseRow.id).eq("organization_id", session.organizationId).order("created_at", { ascending: false })
+      : emptyResult,
     supabase.from("proposals").select(CASE_SUMMARY_PROPOSALS_SELECT).eq("case_id", caseRow.id).eq("organization_id", session.organizationId).order("created_at", { ascending: false }),
   ]);
   const firstError = paymentsResult.error || purchasesResult.error || proposalsResult.error;
