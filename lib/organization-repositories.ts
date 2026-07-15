@@ -10,7 +10,11 @@ function oneRecord(value: unknown): Record<string, unknown> | null {
 
 export async function listOrganizationClients(organizationId: string): Promise<RepositoryResult<unknown[]>> {
   if (!hasSupabaseAdminEnv()) return unavailable();
-  const { data, error } = await getSupabaseAdminClient().from("clients").select("*").eq("organization_id", organizationId).order("created_at", { ascending: false }).limit(200);
+  const { data, error } = await getSupabaseAdminClient().from("clients")
+    .select("id,client_type,display_name,email,email_normalized,phone,phone_normalized,tax_id,billing_address,country,language,source,holded_contact_id,notes,created_at,updated_at")
+    .eq("organization_id", organizationId)
+    .order("created_at", { ascending: false })
+    .limit(200);
   return error ? { ok: false, mode: "supabase", error: error.message } : { ok: true, mode: "supabase", data: data || [] };
 }
 
@@ -62,7 +66,7 @@ export async function searchOrganization(organizationId: string, query: string):
     supabase.from("proposals").select("id,status,cases(id,case_code,title,clients(display_name))").eq("organization_id", organizationId).limit(50),
     supabase.from("expected_purchases").select("id,supplier_name,service,status,cases(case_code)").eq("organization_id", organizationId).or(`supplier_name.ilike.${like},service.ilike.${like}`).limit(8),
   ]);
-  for (const client of clients || []) results.push({ type: "cliente", title: String(client.display_name || "Cliente"), subtitle: String(client.email || client.phone || "Cliente"), href: "/clientes" });
+  for (const client of clients || []) results.push({ type: "cliente", title: String(client.display_name || "Cliente"), subtitle: String(client.email || client.phone || "Cliente"), href: `/clientes/${client.id}` });
   for (const item of cases || []) results.push({ type: "expediente", title: String(item.case_code || "Expediente"), subtitle: String(item.title || item.destination || "Expediente"), href: `/expedientes?caseId=${item.id}` });
   for (const rawProposal of proposals || []) {
     const proposal = rawProposal as Record<string, unknown>; const caseRow = oneRecord(proposal.cases); const clientRow = oneRecord(caseRow?.clients);
