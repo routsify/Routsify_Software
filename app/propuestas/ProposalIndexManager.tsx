@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
+import { usePermission } from "@/components/PermissionProvider";
 
 const statuses = new Map([
   ["draft", "Borrador"],
@@ -70,10 +71,11 @@ function money(value: unknown) {
 }
 
 export function ProposalIndexManager({ initialProposals = [], initialCases = [], initialCaseId = "" }: { initialProposals?: unknown[]; initialCases?: unknown[]; initialCaseId?: string }) {
+  const canManage = usePermission("budgets.manage");
   const proposals = useMemo(() => initialProposals.map(normalizeProposal).filter((item) => item.id), [initialProposals]);
   const cases = useMemo(() => initialCases.map(normalizeCase).filter((item) => item.id), [initialCases]);
   const [query, setQuery] = useState("");
-  const [showCreate, setShowCreate] = useState(Boolean(initialCaseId));
+  const [showCreate, setShowCreate] = useState(Boolean(initialCaseId) && canManage);
   const [caseId, setCaseId] = useState(() => cases.some((item) => item.id === initialCaseId) ? initialCaseId : "");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -90,6 +92,7 @@ export function ProposalIndexManager({ initialProposals = [], initialCases = [],
 
   async function createProposal(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!canManage) return setMessage("Tu rol tiene acceso de consulta a presupuestos.");
     if (!caseId) return setMessage("Selecciona un expediente.");
     setSaving(true);
     setMessage(null);
@@ -115,10 +118,10 @@ export function ProposalIndexManager({ initialProposals = [], initialCases = [],
     <section className="card budget-selector">
       <div className="client-filters client-filters-simple">
         <input className="input" placeholder="Buscar por expediente, cliente o destino..." value={query} onChange={(event) => setQuery(event.target.value)} />
-        <button className={showCreate ? "btn secondary" : "btn"} type="button" onClick={() => setShowCreate((current) => !current)}>{showCreate ? "Cerrar formulario" : "Nuevo presupuesto"}</button>
+        {canManage ? <button className={showCreate ? "btn secondary" : "btn"} type="button" onClick={() => setShowCreate((current) => !current)}>{showCreate ? "Cerrar formulario" : "Nuevo presupuesto"}</button> : null}
       </div>
 
-      {showCreate ? <section className="creation-panel">
+      {showCreate && canManage ? <section className="creation-panel">
         <div className="creation-panel-header"><div><div className="eyebrow">Nuevo presupuesto</div><h2>Vincular a expediente</h2><p>Se creará un único presupuesto principal con versiones sucesivas.</p></div><button className="btn secondary" type="button" onClick={() => setShowCreate(false)}>Cancelar</button></div>
         <form className="form" onSubmit={createProposal}>
           <label>Expediente *<select autoFocus required value={caseId} onChange={(event) => setCaseId(event.target.value)}><option value="">Selecciona expediente</option>{availableCases.map((item) => <option key={item.id} value={item.id}>{item.case_code} · {item.clients?.display_name || item.destination || item.title || "Expediente"}</option>)}</select></label>
@@ -127,8 +130,9 @@ export function ProposalIndexManager({ initialProposals = [], initialCases = [],
         </form>
       </section> : null}
 
+      {!canManage ? <p className="client-message" role="status">Modo consulta: tu rol puede revisar presupuestos, pero no crear ni modificar versiones.</p> : null}
       {message ? <p className="client-message" role="status">{message}</p> : null}
-      {proposals.length === 0 ? <div className="empty-state"><h2>Todavía no hay presupuestos</h2><p>Crea un expediente y después su presupuesto.</p></div> : filtered.length === 0 ? <div className="empty-state"><h2>No hay coincidencias</h2><p>Cambia la búsqueda.</p></div> : <div className="table-scroll"><table><thead><tr><th>Expediente</th><th>Cliente</th><th>Destino</th><th>Estado</th><th>Versión</th><th>Venta</th><th></th></tr></thead><tbody>{filtered.map((proposal) => <tr key={proposal.id}><td><strong>{proposal.cases?.case_code || "Presupuesto"}</strong></td><td>{proposal.cases?.clients?.display_name || "—"}</td><td>{proposal.cases?.destination || "—"}</td><td>{statuses.get(proposal.status) || proposal.status}</td><td>v{numberValue(proposal.current_version?.version_number) || 1}</td><td>{money(proposal.current_version?.total_sale)}</td><td><a className="btn secondary" href={`/propuestas/editar/${encodeURIComponent(proposal.id)}`}>Abrir</a></td></tr>)}</tbody></table></div>}
+      {proposals.length === 0 ? <div className="empty-state"><h2>Todavía no hay presupuestos</h2><p>{canManage ? "Crea un expediente y después su presupuesto." : "No hay presupuestos disponibles para consultar."}</p></div> : filtered.length === 0 ? <div className="empty-state"><h2>No hay coincidencias</h2><p>Cambia la búsqueda.</p></div> : <div className="table-scroll"><table><thead><tr><th>Expediente</th><th>Cliente</th><th>Destino</th><th>Estado</th><th>Versión</th><th>Venta</th><th></th></tr></thead><tbody>{filtered.map((proposal) => <tr key={proposal.id}><td><strong>{proposal.cases?.case_code || "Presupuesto"}</strong></td><td>{proposal.cases?.clients?.display_name || "—"}</td><td>{proposal.cases?.destination || "—"}</td><td>{statuses.get(proposal.status) || proposal.status}</td><td>v{numberValue(proposal.current_version?.version_number) || 1}</td><td>{money(proposal.current_version?.total_sale)}</td><td><a className="btn secondary" href={`/propuestas/editar/${encodeURIComponent(proposal.id)}`}>{canManage ? "Abrir" : "Consultar"}</a></td></tr>)}</tbody></table></div>}
     </section>
   </div>;
 }
