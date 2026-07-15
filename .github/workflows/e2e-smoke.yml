@@ -33,7 +33,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+
+      - name: Generate lockfile for CI
+        run: npm install --package-lock-only --ignore-scripts --silent
 
       - name: Install application dependencies
         run: npm ci --ignore-scripts --silent
