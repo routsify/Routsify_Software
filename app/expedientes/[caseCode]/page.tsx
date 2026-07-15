@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
-import { requireAppSession } from "@/lib/app-auth";
+import { requireAppPermission } from "@/lib/app-auth";
 import { CASE_SUMMARY_PROPOSALS_SELECT } from "@/lib/query-selects";
+import { hasPermission } from "@/lib/rbac";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { CaseWorkspace } from "./CaseWorkspace";
 import "./contract.css";
@@ -10,7 +11,7 @@ import "./contract.css";
 const CASE_DETAIL_SELECT = "id,organization_id,client_id,lead_id,case_code,title,status,destination,trip_start,trip_end,next_action,blocker,accepted_value,currency,created_at,updated_at,clients(id,display_name,email,phone,tax_id,billing_address)" as const;
 
 export default async function CaseDetailPage({ params }: { params: Promise<{ caseCode: string }> }) {
-  const session = await requireAppSession();
+  const session = await requireAppPermission("cases.view");
   const { caseCode } = await params;
   const supabase = getSupabaseAdminClient();
   const decoded = decodeURIComponent(caseCode);
@@ -19,9 +20,8 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ cas
   const { data: caseRow, error: caseError } = await caseQuery.maybeSingle();
   if (caseError || !caseRow) notFound();
 
-  const role = String(session.role || "viewer");
-  const canViewPayments = ["admin", "direction", "billing"].includes(role);
-  const canViewPurchases = ["admin", "direction", "sales", "operations", "billing"].includes(role);
+  const canViewPayments = hasPermission(session.role, "payments.manage");
+  const canViewPurchases = hasPermission(session.role, "purchases.view");
   const emptyResult = Promise.resolve({ data: [], error: null });
 
   const [paymentsResult, purchasesResult, proposalsResult] = await Promise.all([
