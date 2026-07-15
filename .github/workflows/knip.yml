@@ -1,0 +1,49 @@
+name: Knip Dead Code Report
+
+on:
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "41 4 * * 2"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts --silent
+
+      - name: Run Knip in advisory mode
+        shell: bash
+        run: |
+          set +e
+          npx --yes knip@5 --config knip.json > knip-report.txt 2>&1
+          code=$?
+          cat knip-report.txt
+          echo "## Knip dead-code report" >> "$GITHUB_STEP_SUMMARY"
+          echo "Exit code: $code (advisory; this workflow does not block merges yet)." >> "$GITHUB_STEP_SUMMARY"
+          echo '```text' >> "$GITHUB_STEP_SUMMARY"
+          tail -n 200 knip-report.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          exit 0
+
+      - name: Upload report
+        uses: actions/upload-artifact@v4
+        with:
+          name: knip-report-${{ github.run_id }}
+          path: knip-report.txt
+          retention-days: 14
