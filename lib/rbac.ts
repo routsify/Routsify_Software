@@ -153,7 +153,7 @@ export const appNavigation = [
   { href: "/clientes", label: "Clientes", permission: "clients.view" },
   { href: "/expedientes", label: "Expedientes", permission: "cases.view" },
   { href: "/propuestas", label: "Presupuestos", permission: "budgets.view" },
-  { href: "/compras", label: "Compras / Proveedores", permission: "suppliers.view" },
+  { href: "/compras", label: "Compras / Proveedores", permission: "purchases.view" },
   { href: "/informes", label: "Informes", permission: "reports.view" },
   { href: "/ajustes", label: "Ajustes", permission: "settings.view" },
 ] as const satisfies ReadonlyArray<{ href: string; label: string; permission: AppPermission }>;
