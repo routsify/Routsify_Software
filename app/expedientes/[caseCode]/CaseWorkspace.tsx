@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { hasPermission } from "@/lib/rbac";
 import { ActivityTab } from "./ActivityTab";
 import { ContractPaymentsTab } from "./ContractPaymentsTab";
 import { DocumentsTab } from "./DocumentsTab";
@@ -13,11 +14,11 @@ const tabs = [["resumen", "Resumen"], ["viajeros", "Viajeros"], ["documentos", "
 type WorkspaceTab = (typeof tabs)[number][0];
 
 export function CaseWorkspace(props: WorkspaceProps & { role?: string | null }) {
-  const role = String(props.role || "");
-  const canAccessTravelers = ["admin", "direction", "sales", "operations"].includes(role);
-  const canAccessSensitive = ["admin", "sales"].includes(role);
-  const canAccessContract = ["admin", "direction", "sales", "operations", "billing"].includes(role);
-  const canAccessPurchases = ["admin", "direction", "sales", "operations", "billing"].includes(role);
+  const role = String(props.role || "viewer");
+  const canAccessTravelers = hasPermission(role, "operations.sensitive.view");
+  const canAccessSensitive = hasPermission(role, "documents.manage");
+  const canAccessContract = hasPermission(role, "operations.sensitive.view");
+  const canAccessPurchases = hasPermission(role, "purchases.view");
 
   const [tab, setTab] = useState<WorkspaceTab>("resumen");
   const [loadedTabs, setLoadedTabs] = useState<Set<WorkspaceTab>>(() => new Set<WorkspaceTab>(["resumen", ...(canAccessPurchases ? ["compras" as WorkspaceTab] : [])]));
@@ -84,9 +85,9 @@ export function CaseWorkspace(props: WorkspaceProps & { role?: string | null }) 
 
     <div hidden={tab !== "resumen"}><SummaryTab caseRow={props.initialCase} payments={props.initialPayments || []} proposals={props.initialProposals || []} purchases={props.initialPurchases || []} onTab={(value) => setTab(value as WorkspaceTab)} /></div>
 
-    {canAccessTravelers ? loadedTabs.has("viajeros") ? <div hidden={tab !== "viajeros"}><TravelersTab caseId={props.initialCase.id} initialTravelers={travelers} /></div> : null : tab === "viajeros" ? restricted("Los datos de viajeros solo están disponibles para administración, dirección, ventas y operaciones.") : null}
+    {canAccessTravelers ? loadedTabs.has("viajeros") ? <div hidden={tab !== "viajeros"}><TravelersTab caseId={props.initialCase.id} initialTravelers={travelers} /></div> : null : tab === "viajeros" ? restricted("Los datos de viajeros no están disponibles para tu rol.") : null}
 
-    {canAccessSensitive ? loadedTabs.has("documentos") ? <div hidden={tab !== "documentos"}><DocumentsTab caseId={props.initialCase.id} caseCode={props.initialCase.case_code} initialDocuments={documents} travelers={travelers} /></div> : null : tab === "documentos" ? restricted("La documentación sensible solo está disponible para administración y agentes de ventas.") : null}
+    {canAccessSensitive ? loadedTabs.has("documentos") ? <div hidden={tab !== "documentos"}><DocumentsTab caseId={props.initialCase.id} caseCode={props.initialCase.case_code} initialDocuments={documents} travelers={travelers} /></div> : null : tab === "documentos" ? restricted("La documentación sensible no está disponible para tu rol.") : null}
 
     {canAccessContract ? loadedTabs.has("contrato") ? <div hidden={tab !== "contrato"}><ContractPaymentsTab caseRow={props.initialCase} initialContracts={contracts} initialPayments={payments} initialFiscal={fiscal} /></div> : null : tab === "contrato" ? restricted("Esta sección no está disponible para tu rol.") : null}
 

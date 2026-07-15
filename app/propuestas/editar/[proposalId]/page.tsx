@@ -5,12 +5,15 @@ import { PageHeader } from "@/components/PageHeader";
 import { requireAppPermission } from "@/lib/app-auth";
 import { listOrganizationCases, listOrganizationSuppliers } from "@/lib/organization-repositories";
 import { PROPOSAL_WITH_VERSIONS_SELECT } from "@/lib/query-selects";
+import { hasPermission } from "@/lib/rbac";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { BudgetManager } from "../../BudgetManager";
+import { BudgetReadOnlyWorkspace } from "../../BudgetReadOnlyWorkspace";
 
 export default async function ProposalWorkspacePage({ params }: { params: Promise<{ proposalId: string }> }) {
   const session = await requireAppPermission("budgets.view");
   const { proposalId } = await params;
+  const canManage = hasPermission(session.role, "budgets.manage");
   const [proposalResult, caseResult, supplierResult] = await Promise.all([
     getSupabaseAdminClient()
       .from("proposals")
@@ -18,8 +21,8 @@ export default async function ProposalWorkspacePage({ params }: { params: Promis
       .eq("id", proposalId)
       .eq("organization_id", session.organizationId)
       .maybeSingle(),
-    listOrganizationCases(session.organizationId),
-    listOrganizationSuppliers(session.organizationId),
+    canManage ? listOrganizationCases(session.organizationId) : Promise.resolve({ ok: true as const, mode: "supabase" as const, data: [] }),
+    canManage ? listOrganizationSuppliers(session.organizationId) : Promise.resolve({ ok: true as const, mode: "supabase" as const, data: [] }),
   ]);
   if (proposalResult.error || !proposalResult.data) notFound();
   const cases = caseResult.ok ? caseResult.data : [];
@@ -36,6 +39,8 @@ export default async function ProposalWorkspacePage({ params }: { params: Promis
       description={`${String(client?.display_name || "Cliente")} · ${String(rawCase?.destination || "Destino pendiente")}`}
       action={<Link className="btn secondary" href="/propuestas" prefetch={false}>Volver a presupuestos</Link>}
     />
-    <BudgetManager initialProposals={[proposalResult.data]} initialCases={cases} initialSuppliers={suppliers} initialCaseId={caseId} />
+    {canManage
+      ? <BudgetManager initialProposals={[proposalResult.data]} initialCases={cases} initialSuppliers={suppliers} initialCaseId={caseId} />
+      : <BudgetReadOnlyWorkspace proposalInput={proposalResult.data} />}
   </AppShell>;
 }
