@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
+import { usePermission } from "@/components/PermissionProvider";
 import type { Client } from "@/lib/types";
 
 type ClientRow = Client & { created_at?: string | null; updated_at?: string | null };
@@ -74,6 +75,8 @@ function apiErrorMessage(result: unknown, action: "create" | "update") {
 }
 
 export function ClientsManager({ initialClients = [] }: { initialClients?: unknown[] }) {
+  const canManage = usePermission("clients.manage");
+  const canManageCases = usePermission("cases.manage");
   const [clients, setClients] = useState<ClientRow[]>(() => initialClients.map(normalizeClient));
   const [selectedId, setSelectedId] = useState<string | null>(() => clients[0]?.id || null);
   const [query, setQuery] = useState("");
@@ -98,10 +101,11 @@ export function ClientsManager({ initialClients = [] }: { initialClients?: unkno
   function updateDraft<K extends keyof Draft>(key: K, value: Draft[K]) { setDraft((current) => ({ ...current, [key]: value })); }
   function updateEditDraft<K extends keyof Draft>(key: K, value: Draft[K]) { setEditDraft((current) => ({ ...current, [key]: value })); }
   function closeCreate() { if (!saving) { setShowCreate(false); setDraft(emptyDraft); } }
-  function startEdit() { if (selected) { setEditDraft(draftFromClient(selected)); setShowEdit(true); setMessage(null); } }
+  function startEdit() { if (canManage && selected) { setEditDraft(draftFromClient(selected)); setShowEdit(true); setMessage(null); } }
 
   async function createClient(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!canManage) return setMessage("Tu rol tiene acceso de consulta a clientes.");
     const displayName = draft.display_name.trim();
     if (!displayName) return setMessage("Introduce el nombre del cliente.");
     setSaving(true); setMessage(null);
@@ -130,6 +134,7 @@ export function ClientsManager({ initialClients = [] }: { initialClients?: unkno
 
   async function saveClient(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!canManage) return setMessage("Tu rol tiene acceso de consulta a clientes.");
     if (!selected) return;
     if (!editDraft.display_name.trim()) return setMessage("Introduce el nombre del cliente.");
     setSaving(true); setMessage(null);
@@ -175,15 +180,16 @@ export function ClientsManager({ initialClients = [] }: { initialClients?: unkno
       <div className="card clients-main" id="clientes-listado">
         <div className="client-filters client-filters-simple">
           <input className="input" placeholder="Buscar por nombre, email, teléfono o NIF..." value={query} onChange={(event) => setQuery(event.target.value)} />
-          <button className={showCreate ? "btn secondary" : "btn"} type="button" onClick={() => setShowCreate((current) => !current)} aria-expanded={showCreate}>{showCreate ? "Cerrar formulario" : "Nuevo cliente"}</button>
+          {canManage ? <button className={showCreate ? "btn secondary" : "btn"} type="button" onClick={() => setShowCreate((current) => !current)} aria-expanded={showCreate}>{showCreate ? "Cerrar formulario" : "Nuevo cliente"}</button> : null}
         </div>
-        {showCreate ? <section className="creation-panel"><div className="creation-panel-header"><div><div className="eyebrow">Nuevo cliente</div><h2>Datos básicos y fiscales</h2><p>Guarda los datos disponibles; podrás completarlos después.</p></div><button className="btn secondary" type="button" onClick={closeCreate} disabled={saving}>Cancelar</button></div><form className="form" onSubmit={createClient}>{clientForm(draft, updateDraft)}<div className="form-actions"><button className="btn secondary" type="button" onClick={closeCreate} disabled={saving}>Cancelar</button><button className="btn" type="submit" disabled={saving}>{saving ? "Guardando..." : "Guardar cliente"}</button></div></form></section> : null}
+        {showCreate && canManage ? <section className="creation-panel"><div className="creation-panel-header"><div><div className="eyebrow">Nuevo cliente</div><h2>Datos básicos y fiscales</h2><p>Guarda los datos disponibles; podrás completarlos después.</p></div><button className="btn secondary" type="button" onClick={closeCreate} disabled={saving}>Cancelar</button></div><form className="form" onSubmit={createClient}>{clientForm(draft, updateDraft)}<div className="form-actions"><button className="btn secondary" type="button" onClick={closeCreate} disabled={saving}>Cancelar</button><button className="btn" type="submit" disabled={saving}>{saving ? "Guardando..." : "Guardar cliente"}</button></div></form></section> : null}
+        {!canManage ? <p className="client-message" role="status">Modo consulta: tu rol puede revisar clientes, pero no crear ni modificar sus datos.</p> : null}
         {message ? <p className="client-message" role="status">{message}</p> : null}
-        {clients.length === 0 ? <div className="empty-state"><h2>Todavía no hay clientes</h2><p>Crea tu primer cliente para empezar.</p></div> : filtered.length === 0 ? <div className="empty-state"><h2>No hay coincidencias</h2><p>Cambia la búsqueda.</p></div> : <div className="table-scroll"><table><thead><tr><th>Cliente</th><th>Email</th><th>Teléfono</th><th>País</th><th>Fiscal</th><th></th></tr></thead><tbody>{filtered.map((client) => <tr key={client.id} className={client.id === selected?.id ? "selected-row" : ""}><td><button className="table-link" type="button" onClick={() => { setSelectedId(client.id); setShowEdit(false); }}><strong>{client.display_name}</strong></button></td><td>{client.email || "—"}</td><td>{client.phone || "—"}</td><td>{client.country || "—"}</td><td>{client.tax_id && billingAddressText(client.billing_address) !== "—" ? "Completo" : "Pendiente"}</td><td><a className="btn secondary" href={`/clientes/${encodeURIComponent(client.id)}`}>Ficha 360</a></td></tr>)}</tbody></table></div>}
+        {clients.length === 0 ? <div className="empty-state"><h2>Todavía no hay clientes</h2><p>{canManage ? "Crea tu primer cliente para empezar." : "No hay clientes disponibles para consultar."}</p></div> : filtered.length === 0 ? <div className="empty-state"><h2>No hay coincidencias</h2><p>Cambia la búsqueda.</p></div> : <div className="table-scroll"><table><thead><tr><th>Cliente</th><th>Email</th><th>Teléfono</th><th>País</th><th>Fiscal</th><th></th></tr></thead><tbody>{filtered.map((client) => <tr key={client.id} className={client.id === selected?.id ? "selected-row" : ""}><td><button className="table-link" type="button" onClick={() => { setSelectedId(client.id); setShowEdit(false); }}><strong>{client.display_name}</strong></button></td><td>{client.email || "—"}</td><td>{client.phone || "—"}</td><td>{client.country || "—"}</td><td>{client.tax_id && billingAddressText(client.billing_address) !== "—" ? "Completo" : "Pendiente"}</td><td><a className="btn secondary" href={`/clientes/${encodeURIComponent(client.id)}`}>Ficha 360</a></td></tr>)}</tbody></table></div>}
       </div>
 
       <aside className="client-side card" id="cliente-panel">
-        {selected ? <>{showEdit ? <section className="side-section"><div className="section-heading"><h3>Editar cliente</h3><button className="link-button" type="button" onClick={() => setShowEdit(false)}>Cerrar</button></div><form className="form" onSubmit={saveClient}>{clientForm(editDraft, updateEditDraft)}<div className="form-actions"><button className="btn secondary" type="button" onClick={() => setShowEdit(false)} disabled={saving}>Cancelar</button><button className="btn" type="submit" disabled={saving}>{saving ? "Guardando..." : "Guardar cambios"}</button></div></form></section> : <><div className="client-side-header"><span className="client-avatar">{clientInitials(selected)}</span><div><h2>{selected.display_name}</h2><p>{selected.email || "Sin email"}<br />{selected.phone || "Sin teléfono"}</p></div></div><div className="client-badges"><span className="badge">Cliente</span><span className="badge">{selected.client_type === "company" ? "Empresa" : "Persona"}</span></div><section className="side-section"><div className="section-heading"><h3>Datos fiscales</h3><button className="link-button" type="button" onClick={startEdit}>Editar</button></div><table><tbody><tr><th>NIF/DNI/CIF</th><td>{selected.tax_id || "Pendiente"}</td></tr><tr><th>Dirección fiscal</th><td>{billingAddressText(selected.billing_address)}</td></tr><tr><th>País</th><td>{selected.country || "—"}</td></tr></tbody></table></section><section className="side-section"><h3>Notas</h3><p>{selected.notes || "Sin notas internas."}</p></section><section className="side-actions"><h3>Acciones</h3><a className="quick-action primary" href={`/clientes/${encodeURIComponent(selected.id)}`}>Abrir ficha 360 <span>→</span></a><button className="quick-action" type="button" onClick={startEdit}>Editar cliente <span>→</span></button><a className="quick-action" href={`/expedientes?clientId=${encodeURIComponent(selected.id)}`}>Crear expediente <span>→</span></a><a className="quick-action" href={`/propuestas?clientId=${encodeURIComponent(selected.id)}`}>Ver presupuestos <span>→</span></a></section></>}</> : <div className="empty-state"><h2>Sin cliente seleccionado</h2><p>Selecciona o crea un cliente.</p></div>}
+        {selected ? <>{showEdit && canManage ? <section className="side-section"><div className="section-heading"><h3>Editar cliente</h3><button className="link-button" type="button" onClick={() => setShowEdit(false)}>Cerrar</button></div><form className="form" onSubmit={saveClient}>{clientForm(editDraft, updateEditDraft)}<div className="form-actions"><button className="btn secondary" type="button" onClick={() => setShowEdit(false)} disabled={saving}>Cancelar</button><button className="btn" type="submit" disabled={saving}>{saving ? "Guardando..." : "Guardar cambios"}</button></div></form></section> : <><div className="client-side-header"><span className="client-avatar">{clientInitials(selected)}</span><div><h2>{selected.display_name}</h2><p>{selected.email || "Sin email"}<br />{selected.phone || "Sin teléfono"}</p></div></div><div className="client-badges"><span className="badge">Cliente</span><span className="badge">{selected.client_type === "company" ? "Empresa" : "Persona"}</span></div><section className="side-section"><div className="section-heading"><h3>Datos fiscales</h3>{canManage ? <button className="link-button" type="button" onClick={startEdit}>Editar</button> : null}</div><table><tbody><tr><th>NIF/DNI/CIF</th><td>{selected.tax_id || "Pendiente"}</td></tr><tr><th>Dirección fiscal</th><td>{billingAddressText(selected.billing_address)}</td></tr><tr><th>País</th><td>{selected.country || "—"}</td></tr></tbody></table></section><section className="side-section"><h3>Notas</h3><p>{selected.notes || "Sin notas internas."}</p></section><section className="side-actions"><h3>Acciones</h3><a className="quick-action primary" href={`/clientes/${encodeURIComponent(selected.id)}`}>Abrir ficha 360 <span>→</span></a>{canManage ? <button className="quick-action" type="button" onClick={startEdit}>Editar cliente <span>→</span></button> : null}{canManageCases ? <a className="quick-action" href={`/expedientes?clientId=${encodeURIComponent(selected.id)}`}>Crear expediente <span>→</span></a> : null}<a className="quick-action" href={`/propuestas?clientId=${encodeURIComponent(selected.id)}`}>Ver presupuestos <span>→</span></a></section></>}</> : <div className="empty-state"><h2>Sin cliente seleccionado</h2><p>Selecciona un cliente.</p></div>}
       </aside>
     </section>
   </div>;
