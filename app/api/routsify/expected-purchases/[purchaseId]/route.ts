@@ -23,6 +23,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const { purchaseId } = await params;
   const body = await request.json().catch(() => null);
   const status = String(body?.status || "");
+  const rawApprovedCost = body?.approved_cost;
+  const approvedCost = rawApprovedCost === undefined || rawApprovedCost === null || rawApprovedCost === "" ? null : Number(rawApprovedCost);
+  if (approvedCost !== null && (!Number.isFinite(approvedCost) || approvedCost < 0)) return NextResponse.json({ ok: false, error: "invalid_approved_cost" }, { status: 400 });
   const organizationId = await resolveOrganizationId(request, access.organizationId);
   const result = await transitionExpectedPurchase({
     organizationId,
@@ -32,6 +35,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     reason: typeof body?.reason === "string" ? body.reason : null,
     reviewNotes: typeof body?.review_notes === "string" ? body.review_notes : undefined,
     holdedPurchaseId: typeof body?.holded_purchase_id === "string" ? body.holded_purchase_id : null,
+    approvedCost,
   });
   return NextResponse.json(result, { status: result.ok ? 200 : result.error === "purchase_not_found" ? 404 : 400 });
 }

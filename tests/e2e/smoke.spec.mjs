@@ -33,7 +33,7 @@ test.describe("authenticated critical-path smoke", () => {
     await page.getByRole("button", { name: "Entrar" }).click();
     await expect(page).toHaveURL(/\/(hoy|clientes|expedientes|propuestas)/, { timeout: 20_000 });
 
-    for (const path of ["/clientes", "/expedientes", "/propuestas", "/compras"]) {
+    for (const path of ["/clientes", "/expedientes", "/propuestas", "/compras", "/proveedores"]) {
       await page.goto(path);
       await expect(page).not.toHaveURL(/\/login(?:\?|$)/);
       await expect(page.locator("body")).not.toContainText("Application error");

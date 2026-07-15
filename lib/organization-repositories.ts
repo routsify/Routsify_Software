@@ -53,6 +53,17 @@ export async function listOrganizationPurchases(organizationId: string): Promise
   return error ? { ok: false, mode: "supabase", error: error.message } : { ok: true, mode: "supabase", data: data || [] };
 }
 
+export async function listOrganizationSuppliers(organizationId: string): Promise<RepositoryResult<unknown[]>> {
+  if (!hasSupabaseAdminEnv()) return unavailable();
+  const { data, error } = await getSupabaseAdminClient().from("suppliers")
+    .select("id,name,category,email,phone,tax_id,country,billing_address,notes,active,holded_contact_id,created_at,updated_at")
+    .eq("organization_id", organizationId)
+    .order("active", { ascending: false })
+    .order("name", { ascending: true })
+    .limit(500);
+  return error ? { ok: false, mode: "supabase", error: error.message } : { ok: true, mode: "supabase", data: data || [] };
+}
+
 export async function searchOrganization(organizationId: string, query: string): Promise<RepositoryResult<GlobalSearchResult[]>> {
   const cleaned = query.trim().slice(0, 80).replaceAll("%", "").replaceAll(",", " ");
   if (!cleaned) return { ok: true, mode: "supabase", data: [] };
