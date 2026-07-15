@@ -1,3 +1,4 @@
+import { loadEffectiveSettings } from "@/lib/effective-settings-server";
 import { PROPOSAL_WITH_VERSIONS_SELECT, PURCHASE_WITH_RELATIONS_SELECT } from "@/lib/query-selects";
 import { getSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase-admin";
 import type { GlobalSearchResult, RepositoryResult } from "@/lib/server-repositories";
@@ -21,17 +22,16 @@ export async function listOrganizationClients(organizationId: string): Promise<R
 export async function listOrganizationClientActivity(organizationId: string): Promise<RepositoryResult<{ leads: unknown[]; bookings: unknown[]; tasks: unknown[]; cases: unknown[]; filloutUrl: string }>> {
   if (!hasSupabaseAdminEnv()) return unavailable();
   const db = getSupabaseAdminClient();
-  const [leadsResult, bookingsResult, tasksResult, casesResult, settingResult] = await Promise.all([
+  const [leadsResult, bookingsResult, tasksResult, casesResult, settings] = await Promise.all([
     db.from("leads").select("id,client_id,source,status,destination,travel_start,travel_end,travelers,budget_hint,created_at,updated_at").eq("organization_id", organizationId).order("created_at", { ascending: false }).limit(200),
     db.from("bookings").select("id,client_id,lead_id,external_booking_id,event_type,starts_at,ends_at,status,source,created_at,updated_at").eq("organization_id", organizationId).order("event_timestamp", { ascending: false }).limit(200),
     db.from("tasks").select("id,client_id,case_id,title,status,priority,due_at,payload,created_at,updated_at").eq("organization_id", organizationId).in("status", ["pending", "in_progress"]).order("created_at", { ascending: false }).limit(200),
     db.from("cases").select("id,client_id,case_code,title,status,destination,trip_start,trip_end,created_at").eq("organization_id", organizationId).order("created_at", { ascending: false }).limit(200),
-    db.from("routsify_settings").select("value").eq("organization_id", organizationId).eq("key", "integrations.fillout.public_url").maybeSingle(),
+    loadEffectiveSettings(organizationId),
   ]);
   const firstError = [leadsResult.error, bookingsResult.error, tasksResult.error, casesResult.error].find(Boolean);
   if (firstError) return { ok: false, mode: "supabase", error: firstError.message };
-  const rawSetting = settingResult.data?.value;
-  const filloutUrl = typeof rawSetting === "string" ? rawSetting : rawSetting && typeof rawSetting === "object" && "value" in rawSetting ? String((rawSetting as { value?: unknown }).value || "") : "";
+  const filloutUrl = settings.string("integrations.fillout.public_url", "");
   return { ok: true, mode: "supabase", data: { leads: leadsResult.data || [], bookings: bookingsResult.data || [], tasks: tasksResult.data || [], cases: casesResult.data || [], filloutUrl } };
 }
 
