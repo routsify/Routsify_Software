@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonAccessDenied, requireInternalAccess } from "@/lib/api-security";
+import { loadEffectiveSettings } from "@/lib/effective-settings-server";
 import { createProposalToken, hashProposalToken } from "@/lib/proposal-token";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { enqueueOutboxEvent } from "@/lib/outbox-server";
@@ -18,10 +19,17 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (!access.ok) return jsonAccessDenied(access);
   const { proposalId } = await params;
   const body = await request.json().catch(() => ({}));
-  const requestedDays = Number((body as { validity_days?: unknown }).validity_days || 15);
-  const validityDays = Math.min(Math.max(Number.isFinite(requestedDays) ? requestedDays : 15, 1), 90);
   const organizationId = await resolveOrganizationId(request, access.organizationId);
-  const actorId = await getRequestUserId(request);
+  const [actorId, settings] = await Promise.all([
+    getRequestUserId(request),
+    loadEffectiveSettings(organizationId),
+  ]);
+  const configuredValidityDays = settings.number("budgets.validity_days", 15);
+  const rawValidityDays = (body as { validity_days?: unknown }).validity_days;
+  const requestedDays = rawValidityDays === undefined || rawValidityDays === null || rawValidityDays === ""
+    ? configuredValidityDays
+    : Number(rawValidityDays);
+  const validityDays = Math.min(Math.max(Number.isFinite(requestedDays) ? requestedDays : configuredValidityDays, 1), 90);
   const supabase = getSupabaseAdminClient();
 
   const { data: proposal, error: proposalError } = await supabase
@@ -68,6 +76,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     travelers: travelersCount ? `${travelersCount} viajero${travelersCount === 1 ? "" : "s"}` : "Viajeros por confirmar",
     sent_at: now,
     valid_until: expiresAt.toISOString(),
+    validity_days: validityDays,
   };
 
   const { error: versionUpdateError } = await supabase.from("proposal_versions").update({ status: "sent", snapshot, expires_at: expiresAt.toISOString() }).eq("id", version.id).eq("organization_id", organizationId);
@@ -94,7 +103,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     client_id: null,
     event_type: "proposal.sent",
     title: `Presupuesto v${version.version_number} preparado para envío`,
-    payload: { proposal_id: proposalId, version_id: version.id, expires_at: expiresAt.toISOString(), recipient_email: clientEmail, holded_status: holdedConfigured ? (holdedOutbox?.ok ? "queued" : "queue_error") : "pending_configuration" },
+    payload: { proposal_id: proposalId, version_id: version.id, expires_at: expiresAt.toISOString(), validity_days: validityDays, recipient_email: clientEmail, holded_status: holdedConfigured ? (holdedOutbox?.ok ? "queued" : "queue_error") : "pending_configuration" },
     created_by: actorId,
   });
 
@@ -107,6 +116,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     data: {
       url: publicUrl,
       expires_at: expiresAt.toISOString(),
+      validity_days: validityDays,
       email: clientEmail,
       phone: clientPhone,
       holded_status: holdedConfigured ? (holdedOutbox?.ok ? "queued" : "queue_error") : "pending_configuration",
