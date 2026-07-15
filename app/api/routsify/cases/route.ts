@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonAccessDenied, requireInternalAccess } from "@/lib/api-security";
-import { createCaseRepository } from "@/lib/server-repositories";
+import { createConfiguredCase } from "@/lib/case-creation-server";
 import { listOrganizationCases } from "@/lib/organization-repositories";
 import { resolveOrganizationId } from "@/lib/request-context";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
@@ -32,16 +32,15 @@ export async function POST(request: NextRequest) {
   const { data: client } = await getSupabaseAdminClient().from("clients").select("id").eq("id", clientId).eq("organization_id", organizationId).maybeSingle();
   if (!client) return NextResponse.json({ ok: false, error: "client_not_found" }, { status: 404 });
 
-  const result = await createCaseRepository({
-    organization_id: organizationId,
-    client_id: clientId,
+  const result = await createConfiguredCase({
+    organizationId,
+    clientId,
     destination,
     title: String(source.title || destination).trim(),
-    trip_start: tripStart,
-    trip_end: tripEnd,
-    final_notes: source.final_notes ? String(source.final_notes) : null,
-    status: "new_lead",
-    next_action: "Cualificar solicitud",
+    tripStart,
+    tripEnd,
+    finalNotes: source.final_notes ? String(source.final_notes) : null,
+    requestedCurrency: source.currency,
   });
   return NextResponse.json(result, { status: result.ok ? 201 : 400 });
 }
