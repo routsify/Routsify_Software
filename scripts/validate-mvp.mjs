@@ -11,6 +11,7 @@ for (const file of [
   "app/login/page.tsx",
   "app/login/LoginForm.tsx",
   "lib/api-security.ts",
+  "lib/rbac.ts",
   "lib/runtime-mode.ts",
   "lib/supabase-browser.ts",
   "lib/webhook-security.ts",
@@ -59,7 +60,10 @@ assert(runtime.includes('ROUTSIFY_ALLOW_PUBLIC_DEMO === "true"'), "Public demo m
 assert(!runtime.includes('ROUTSIFY_ALLOW_PUBLIC_DEMO !== "false"'), "Public demo must not be default");
 
 const security = read("lib/api-security.ts");
-for (const token of ["auth.getUser", "allowedRoles", "timingSafeEqual"]) assert(security.includes(token), `Missing API security token: ${token}`);
+for (const token of ["auth.getUser", "requiredPermission", "hasPermission", "timingSafeEqual"]) assert(security.includes(token), `Missing API security token: ${token}`);
+
+const rbac = read("lib/rbac.ts");
+for (const token of ["rolePermissions", "hasPermission", "settings.secrets.manage", "reports.view", "appNavigation"]) assert(rbac.includes(token), `Missing RBAC token: ${token}`);
 
 const login = read("app/login/LoginForm.tsx");
 for (const token of ["signInWithPassword", "resetPasswordForEmail", "¿Has olvidado tu contraseña?", "showPassword", "safeNext"]) assert(login.includes(token), `Missing login token: ${token}`);
