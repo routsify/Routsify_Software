@@ -1,3 +1,4 @@
+import { loadEffectiveSettings } from "@/lib/effective-settings-server";
 import { queueEligibleFinalInvoices } from "@/lib/fiscal-workflow-server";
 import { processOutboxBatch, syncHoldedPurchaseCandidates } from "@/lib/outbox-worker-server";
 import { getSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase-admin";
@@ -127,6 +128,40 @@ async function syncPurchaseCandidatesForAllOrganizations() {
   return results;
 }
 
+async function purgeTechnicalLogs() {
+  const supabase = getSupabaseAdminClient();
+  const { data: organizations, error } = await supabase.from("organizations").select("id");
+  if (error) throw new Error(error.message);
+
+  const results: Array<{ organizationId: string; retentionDays: number; deletedOutboxRows: number; error?: string }> = [];
+  for (const organization of organizations || []) {
+    const organizationId = String(organization.id);
+    try {
+      const settings = await loadEffectiveSettings(organizationId);
+      const retentionDays = Math.min(730, Math.max(30, settings.number("logs.retention_days", 180)));
+      const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
+      const { data: deleted, error: deleteError } = await supabase
+        .from("integration_outbox")
+        .delete()
+        .eq("organization_id", organizationId)
+        .eq("status", "done")
+        .lt("processed_at", cutoff)
+        .select("id");
+      if (deleteError) throw new Error(deleteError.message);
+      results.push({ organizationId, retentionDays, deletedOutboxRows: deleted?.length || 0 });
+    } catch (caught) {
+      results.push({ organizationId, retentionDays: 180, deletedOutboxRows: 0, error: caught instanceof Error ? caught.message : "technical_log_retention_failed" });
+    }
+  }
+
+  return {
+    organizations: results.length,
+    deletedOutboxRows: results.reduce((sum, item) => sum + item.deletedOutboxRows, 0),
+    failedOrganizations: results.filter((item) => item.error).length,
+    results,
+  };
+}
+
 async function retentionReview() {
   const supabase = getSupabaseAdminClient();
   const now = new Date().toISOString();
@@ -155,7 +190,8 @@ async function retentionReview() {
     await supabase.from("audit_log").insert({ organization_id: document.organization_id, actor_id: null, entity_type: "document", entity_id: document.id, action: "privacy_retention_purged", before_data: { storage_bucket: bucket, storage_path: document.storage_path, retention_until: document.retention_until }, after_data: { purged_at: purgedAt } });
     results.push({ documentId: document.id, ok: true, purgedAt });
   }
-  return { documents_checked: documents?.length || 0, purged: results.filter((item) => item.ok).length, failed: results.filter((item) => !item.ok).length, results };
+  const technicalLogs = await purgeTechnicalLogs();
+  return { documents_checked: documents?.length || 0, purged: results.filter((item) => item.ok).length, failed: results.filter((item) => !item.ok).length, results, technical_logs: technicalLogs };
 }
 
 export async function runRoutsifyJob(job: RoutsifyJob) {
