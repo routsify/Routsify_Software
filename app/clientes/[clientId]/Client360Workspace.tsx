@@ -2,8 +2,8 @@
 
 import { useMemo, useState } from "react";
 
- type Row = Record<string, unknown>;
- type Client360Input = {
+type Row = Record<string, unknown>;
+type Client360Input = {
   client: Row;
   leads: Row[];
   bookings: Row[];
@@ -13,6 +13,7 @@ import { useMemo, useState } from "react";
   payments: Row[];
   timeline: Row[];
   filloutUrl: string;
+  asOf: string;
 };
 
 type Tab = "resumen" | "comercial" | "viajes" | "economia" | "actividad";
@@ -87,9 +88,9 @@ function isOpenTask(task: Row) {
   return !["done", "cancelled"].includes(text(task.status));
 }
 
-function isOverdue(task: Row) {
+function isOverdue(task: Row, referenceTime: number) {
   if (!isOpenTask(task) || !task.due_at) return false;
-  return new Date(String(task.due_at)).getTime() < Date.now();
+  return new Date(String(task.due_at)).getTime() < referenceTime;
 }
 
 export function Client360Workspace({ data }: { data: Client360Input }) {
@@ -100,8 +101,9 @@ export function Client360Workspace({ data }: { data: Client360Input }) {
 
   const client = data.client;
   const clientId = text(client.id);
+  const referenceTime = new Date(data.asOf).getTime();
   const openTasks = useMemo(() => tasks.filter(isOpenTask), [tasks]);
-  const overdueTasks = useMemo(() => openTasks.filter(isOverdue), [openTasks]);
+  const overdueTasks = useMemo(() => openTasks.filter((task) => isOverdue(task, referenceTime)), [openTasks, referenceTime]);
   const activeCases = data.cases.filter((item) => text(item.status) !== "closed");
   const confirmedPayments = data.payments.filter((item) => ["confirmed", "paid", "received"].includes(text(item.status)));
   const proposalByCase = useMemo(() => new Map(data.proposals.map((item) => [text(item.case_id), item])), [data.proposals]);
@@ -123,13 +125,13 @@ export function Client360Workspace({ data }: { data: Client360Input }) {
 
   const nextAction = useMemo(() => {
     const task = overdueTasks[0] || openTasks[0];
-    if (task) return { title: text(task.title) || "Tarea pendiente", detail: task.due_at ? `${isOverdue(task) ? "Vencida" : "Vence"}: ${dateTime(task.due_at)}` : "Sin fecha límite", kind: isOverdue(task) ? "critical" : "warning" };
-    const booking = data.bookings.find((item) => ["booked", "confirmed", "scheduled", "requested"].includes(text(item.status)) && item.starts_at && new Date(String(item.starts_at)).getTime() >= Date.now());
+    if (task) return { title: text(task.title) || "Tarea pendiente", detail: task.due_at ? `${isOverdue(task, referenceTime) ? "Vencida" : "Vence"}: ${dateTime(task.due_at)}` : "Sin fecha límite", kind: isOverdue(task, referenceTime) ? "critical" : "warning" };
+    const booking = data.bookings.find((item) => ["booked", "confirmed", "scheduled", "requested"].includes(text(item.status)) && item.starts_at && new Date(String(item.starts_at)).getTime() >= referenceTime);
     if (booking) return { title: "Preparar próxima llamada", detail: dateTime(booking.starts_at), kind: "warning" };
     const caseRow = activeCases.find((item) => text(item.next_action));
     if (caseRow) return { title: text(caseRow.next_action), detail: `${text(caseRow.case_code)} · ${text(caseRow.destination) || "Destino pendiente"}`, kind: "normal" };
     return { title: "Sin acciones pendientes", detail: "El cliente no tiene tareas ni expedientes con próxima acción.", kind: "success" };
-  }, [activeCases, data.bookings, openTasks, overdueTasks]);
+  }, [activeCases, data.bookings, openTasks, overdueTasks, referenceTime]);
 
   async function completeTask(taskId: string) {
     setBusyTaskId(taskId);
@@ -222,7 +224,7 @@ export function Client360Workspace({ data }: { data: Client360Input }) {
           const taskId = text(task.id);
           const payload = one(task.payload) || {};
           const isReminder = text(payload.action_type) === "fillout_reminder";
-          return <article className={`client360-list-item ${isOverdue(task) ? "is-overdue" : ""}`} key={taskId}>
+          return <article className={`client360-list-item ${isOverdue(task, referenceTime) ? "is-overdue" : ""}`} key={taskId}>
             <div><strong>{text(task.title) || "Tarea"}</strong><small>{task.due_at ? dateTime(task.due_at) : "Sin fecha"} · {text(task.priority) || "normal"}</small></div>
             <div className="client360-row-actions">
               {isReminder && email ? <a className="btn secondary" href={`mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent("Formulario previo a tu llamada con Routsify")}&body=${encodeURIComponent(text(payload.suggested_message) || reminderText)}`}>Email</a> : null}
