@@ -12,6 +12,7 @@ for (const file of [
   "app/login/LoginForm.tsx",
   "lib/api-security.ts",
   "lib/rbac.ts",
+  "lib/effective-settings-server.ts",
   "lib/runtime-mode.ts",
   "lib/supabase-browser.ts",
   "lib/webhook-security.ts",
@@ -38,6 +39,7 @@ for (const file of [
   "app/api/routsify/settings/secrets/[secretKey]/route.ts",
   "app/api/routsify/proposals/[proposalId]/payment-link/route.ts",
   "app/api/routsify/proposals/[proposalId]/lines/bulk/route.ts",
+  "app/api/routsify/proposals/[proposalId]/send/route.ts",
   "app/api/routsify/cases/[caseId]/contracts/route.ts",
   "app/api/routsify/tasks/[taskId]/route.ts",
   "app/api/routsify/clients/documents/[documentId]/ocr/route.ts",
@@ -65,6 +67,9 @@ for (const token of ["auth.getUser", "requiredPermission", "hasPermission", "tim
 const rbac = read("lib/rbac.ts");
 for (const token of ["rolePermissions", "hasPermission", "settings.secrets.manage", "reports.view", "appNavigation"]) assert(rbac.includes(token), `Missing RBAC token: ${token}`);
 
+const effectiveSettings = read("lib/effective-settings-server.ts");
+for (const token of ["defaultSettings", "loadEffectiveSettings", "routsify_settings", "stringArray"]) assert(effectiveSettings.includes(token), `Missing effective settings token: ${token}`);
+
 const login = read("app/login/LoginForm.tsx");
 for (const token of ["signInWithPassword", "resetPasswordForEmail", "¿Has olvidado tu contraseña?", "showPassword", "safeNext"]) assert(login.includes(token), `Missing login token: ${token}`);
 assert(!login.includes("disabled={!canUseAuth}"), "Login inputs must remain writable");
@@ -80,6 +85,9 @@ assert(!nav.includes("/contratos"), "Contracts must not be a main module");
 
 const publicProposal = read("lib/proposal-public-server.ts");
 for (const token of ["public_token_hash", "public_token_expires_at", "proposal_versions", "budget_lines"]) assert(publicProposal.includes(token), `Missing proposal token: ${token}`);
+
+const proposalSend = read("app/api/routsify/proposals/[proposalId]/send/route.ts");
+for (const token of ["loadEffectiveSettings", "budgets.validity_days", "validity_days", "configuredValidityDays"]) assert(proposalSend.includes(token), `Missing proposal validity setting token: ${token}`);
 
 const webhook = read("lib/webhook-security.ts");
 for (const token of ["verifyWebhookRequest", "timingSafeEqual", "timestamp_out_of_tolerance", "providerIdempotencyKey"]) assert(webhook.includes(token), `Missing webhook token: ${token}`);
