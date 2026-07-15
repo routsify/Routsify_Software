@@ -3,15 +3,17 @@ import { jsonAccessDenied, requireInternalAccess } from "@/lib/api-security";
 import { resolveOrganizationId } from "@/lib/request-context";
 import { getSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase-admin";
 import { defaultSettings, settingsSummary, validateSetting, type AppSetting } from "@/lib/settings-master";
+import { enforceProtectedSettingValue, isProtectedSetting } from "@/lib/settings-invariants";
 
 function mergeSettings(rows: Record<string, unknown>[]) {
   return defaultSettings.map((setting) => {
     const stored = rows.find((row) => row.key === setting.key);
-    if (!stored) return setting;
+    const storedValue = stored?.value === null || stored?.value === undefined ? setting.value : stored.value as AppSetting["value"];
     return {
       ...setting,
-      value: stored.value === null || stored.value === undefined ? setting.value : stored.value as AppSetting["value"],
-      updatedAt: stored.updated_at ? String(stored.updated_at) : setting.updatedAt,
+      value: enforceProtectedSettingValue(setting.key, storedValue) as AppSetting["value"],
+      editable: setting.editable && !isProtectedSetting(setting.key),
+      updatedAt: stored?.updated_at ? String(stored.updated_at) : setting.updatedAt,
     };
   });
 }
@@ -48,7 +50,7 @@ export async function PATCH(request: NextRequest) {
   const updates = Array.isArray(body.settings) ? body.settings as Array<{ key?: string; value?: unknown }> : [];
   if (!updates.length) return NextResponse.json({ ok: true, data: [] });
 
-  const allowed = new Map(defaultSettings.filter((setting) => setting.editable && !setting.isSensitive).map((setting) => [setting.key, setting]));
+  const allowed = new Map(defaultSettings.filter((setting) => setting.editable && !setting.isSensitive && !isProtectedSetting(setting.key)).map((setting) => [setting.key, setting]));
   const organizationId = await resolveOrganizationId(request, access.organizationId);
   const supabase = getSupabaseAdminClient();
   const saved: AppSetting[] = [];

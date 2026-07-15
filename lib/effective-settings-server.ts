@@ -1,5 +1,6 @@
 import { cache } from "react";
 import { defaultSettings, type AppSetting } from "@/lib/settings-master";
+import { enforceProtectedSettingValue } from "@/lib/settings-invariants";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 
 type SettingValue = AppSetting["value"];
@@ -17,7 +18,8 @@ function effectiveValue(key: string, stored: unknown): SettingValue | undefined 
   const definition = definitions.get(key);
   if (!definition) return undefined;
   const value = unwrapStoredValue(stored);
-  return (value === null || value === undefined ? definition.defaultValue : value) as SettingValue;
+  const resolved = value === null || value === undefined ? definition.defaultValue : value;
+  return enforceProtectedSettingValue(key, resolved) as SettingValue;
 }
 
 const loadRows = cache(async (organizationId: string) => {

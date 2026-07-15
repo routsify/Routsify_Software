@@ -3,6 +3,7 @@
 import { useMemo, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import { defaultSettings, moduleFor, type AppSetting } from "@/lib/settings-master";
+import { enforceProtectedSettingValue, isProtectedSetting, protectedSettingDescription } from "@/lib/settings-invariants";
 import { IntegrationSecretsPanel } from "./IntegrationSecretsPanel";
 import { UserManagementPanel } from "./UserManagementPanel";
 
@@ -26,7 +27,14 @@ export function ProductionSettings({ storedRows = [], secretStatuses = [], canMa
   const router = useRouter();
   const initialSettings = useMemo(() => defaultSettings.map((setting) => {
     const stored = storedRows.find((row) => String(row.key || "") === setting.key);
-    return stored && stored.value !== undefined && stored.value !== null ? { ...setting, value: stored.value as AppSetting["value"] } : setting;
+    const storedValue = stored && stored.value !== undefined && stored.value !== null ? stored.value as AppSetting["value"] : setting.value;
+    const protectedDescription = protectedSettingDescription(setting.key);
+    return {
+      ...setting,
+      value: enforceProtectedSettingValue(setting.key, storedValue) as AppSetting["value"],
+      editable: setting.editable && !isProtectedSetting(setting.key),
+      description: protectedDescription || setting.description,
+    };
   }), [storedRows]);
   const initialValues = useMemo(() => Object.fromEntries(initialSettings.map((setting) => [setting.key, setting.value])) as Record<string, AppSetting["value"]>, [initialSettings]);
   const [savedValues, setSavedValues] = useState(initialValues);
@@ -119,7 +127,7 @@ export function ProductionSettings({ storedRows = [], secretStatuses = [], canMa
       <div className="setting-field-head"><div><strong>{setting.label}</strong><p>{setting.description || moduleFor(setting.module).description}</p></div>{changed ? <span className="badge">Modificado</span> : null}</div>
       {control}
       <code>{setting.key}</code>
-      {!setting.editable ? <small>Valor protegido por la política operativa o fiscal vigente.</small> : null}
+      {!setting.editable ? <small>Valor protegido por una garantía de integridad, seguridad o política operativa.</small> : null}
     </article>;
   }
 
