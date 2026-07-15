@@ -11,20 +11,10 @@ function numeric(value: unknown) {
 
 async function recalculateVersion(organizationId: string, versionId: string) {
   const db = getSupabaseAdminClient();
-  const { data: lines, error } = await db
-    .from("budget_lines")
-    .select("cost_budget,sale_price")
-    .eq("organization_id", organizationId)
-    .eq("proposal_version_id", versionId);
+  const { error } = await db.rpc("recalculate_proposal_version_economics", { target_version: versionId });
   if (error) throw new Error(error.message);
-  const totalCost = (lines || []).reduce((sum, item) => sum + Number(item.cost_budget || 0), 0);
-  const totalSale = (lines || []).reduce((sum, item) => sum + Number(item.sale_price || 0), 0);
-  const { error: updateError } = await db
-    .from("proposal_versions")
-    .update({ total_cost: totalCost, total_cost_budget: totalCost, total_sale: totalSale, budgeted_profit: totalSale - totalCost, updated_at: new Date().toISOString() })
-    .eq("id", versionId)
-    .eq("organization_id", organizationId);
-  if (updateError) throw new Error(updateError.message);
+  const { data: version, error: versionError } = await db.from("proposal_versions").select("id").eq("id", versionId).eq("organization_id", organizationId).maybeSingle();
+  if (versionError || !version) throw new Error(versionError?.message || "proposal_version_not_found");
 }
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ proposalId: string }> }) {
@@ -64,7 +54,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   try {
     const serviceTypeCode = source.service_type_code ? String(source.service_type_code) : "custom";
     const supplierId = source.supplier_id ? String(source.supplier_id) : null;
-    const supplierName = source.supplier_name ? String(source.supplier_name).trim() || null : null;
+    let supplierName: string | null = null;
+    if (supplierId) {
+      const { data: supplier, error: supplierError } = await db.from("suppliers").select("id,name,active").eq("id", supplierId).eq("organization_id", organizationId).maybeSingle();
+      if (supplierError) throw new Error(supplierError.message);
+      if (!supplier) return NextResponse.json({ ok: false, error: "supplier_not_found" }, { status: 404 });
+      if (supplier.active === false) return NextResponse.json({ ok: false, error: "supplier_inactive" }, { status: 409 });
+      supplierName = supplier.name;
+    }
     const destination = source.destination_segment ? String(source.destination_segment).trim() || null : null;
     const rule = await resolveMarginRule({ organizationId, explicitMarginPercent: explicitMargin, supplierId, serviceTypeCode, destination });
     const salePrice = source.sale_price === undefined || source.sale_price === null || source.sale_price === "" ? calculateSalePrice(cost, rule.percent, rule.formula) : numeric(source.sale_price);
@@ -94,7 +91,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       margin_rule_id: rule.ruleId,
       margin_snapshot: rule.snapshot,
       sale_price: salePrice,
-      creates_expected_purchase: source.creates_expected_purchase === undefined ? Boolean(supplierId || supplierName) : Boolean(source.creates_expected_purchase),
+      creates_expected_purchase: source.creates_expected_purchase === undefined ? Boolean(supplierId) : Boolean(source.creates_expected_purchase),
       sort_order: count || 0,
     }).select("*").single();
     if (error) throw new Error(error.message);
