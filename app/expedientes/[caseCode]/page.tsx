@@ -7,12 +7,14 @@ import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { CaseWorkspace } from "./CaseWorkspace";
 import "./contract.css";
 
+const CASE_DETAIL_SELECT = "id,organization_id,client_id,lead_id,case_code,title,status,destination,trip_start,trip_end,next_action,blocker,accepted_value,currency,created_at,updated_at,clients(id,display_name,email,phone,tax_id,billing_address)" as const;
+
 export default async function CaseDetailPage({ params }: { params: Promise<{ caseCode: string }> }) {
   const session = await requireAppSession();
   const { caseCode } = await params;
   const supabase = getSupabaseAdminClient();
   const decoded = decodeURIComponent(caseCode);
-  let caseQuery = supabase.from("cases").select("*,clients(id,display_name,email,phone,tax_id,billing_address)").eq("organization_id", session.organizationId);
+  let caseQuery = supabase.from("cases").select(CASE_DETAIL_SELECT).eq("organization_id", session.organizationId);
   caseQuery = /^[0-9a-f-]{36}$/i.test(decoded) ? caseQuery.eq("id", decoded) : caseQuery.eq("case_code", decoded);
   const { data: caseRow, error: caseError } = await caseQuery.maybeSingle();
   if (caseError || !caseRow) notFound();
@@ -34,11 +36,13 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ cas
   const firstError = paymentsResult.error || purchasesResult.error || proposalsResult.error;
   if (firstError) throw new Error(firstError.message);
 
+  const client = Array.isArray(caseRow.clients) ? caseRow.clients[0] : caseRow.clients;
+
   return <AppShell>
-    <PageHeader eyebrow="Expediente" title={String(caseRow.case_code)} description={`${String(caseRow.clients?.display_name || "Cliente")} · ${String(caseRow.destination || "Destino pendiente")}`} action={<a className="btn secondary" href="/expedientes">Volver</a>} />
+    <PageHeader eyebrow="Expediente" title={String(caseRow.case_code)} description={`${String(client?.display_name || "Cliente")} · ${String(caseRow.destination || "Destino pendiente")}`} action={<a className="btn secondary" href="/expedientes">Volver</a>} />
     <CaseWorkspace
       role={session.role}
-      initialCase={caseRow}
+      initialCase={{ ...caseRow, clients: client || null }}
       initialPayments={paymentsResult.data || []}
       initialPurchases={purchasesResult.data || []}
       initialProposals={proposalsResult.data || []}
