@@ -1,3 +1,4 @@
+import { loadEffectiveSettings } from "@/lib/effective-settings-server";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 
 export type MarginRuleRow = {
@@ -29,33 +30,22 @@ function finite(value: unknown, fallback = 0) {
   return Number.isFinite(number) ? number : fallback;
 }
 
-function unwrapSetting(value: unknown) {
-  if (value && typeof value === "object" && "value" in value) return (value as { value?: unknown }).value;
-  return value;
-}
-
 export async function loadMarginResolutionContext(organizationId: string): Promise<MarginResolutionContext> {
   const supabase = getSupabaseAdminClient();
-  const [rulesResult, settingsResult] = await Promise.all([
+  const [rulesResult, settings] = await Promise.all([
     supabase
       .from("margin_rules")
       .select("id,supplier_id,service_type_code,destination,formula,minimum_margin,priority")
       .eq("organization_id", organizationId)
       .eq("active", true)
       .order("priority", { ascending: true }),
-    supabase
-      .from("routsify_settings")
-      .select("key,value")
-      .eq("organization_id", organizationId)
-      .in("key", ["margins.minimum", "margins.formula"]),
+    loadEffectiveSettings(organizationId),
   ]);
 
   if (rulesResult.error) throw new Error(rulesResult.error.message);
-  if (settingsResult.error) throw new Error(settingsResult.error.message);
 
-  const settings = new Map((settingsResult.data || []).map((row) => [String(row.key), unwrapSetting(row.value)]));
-  const defaultPercent = finite(settings.get("margins.minimum"), 12);
-  const defaultFormula = String(settings.get("margins.formula") || "margin_on_sale");
+  const defaultPercent = settings.number("margins.minimum", 12);
+  const defaultFormula = settings.string("margins.formula", "margin_on_sale");
   if (defaultPercent < 0 || defaultPercent >= 100) throw new Error("invalid_resolved_margin");
 
   return {
