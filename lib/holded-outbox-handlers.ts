@@ -1,3 +1,4 @@
+import { loadEffectiveSettings } from "@/lib/effective-settings-server";
 import { buildHoldedContactPayload, buildHoldedDocumentPayload, holdedConfiguration, holdedRequest } from "@/lib/holded-server";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 
@@ -68,11 +69,94 @@ export async function handleHoldedOutbox(row: WorkerRow): Promise<WorkerOutcome>
 }
 
 export async function syncHoldedPurchaseCandidates(organizationId: string) {
-  const { endpoints } = await holdedConfiguration(organizationId); const result = await holdedRequest({ organizationId, path: endpoints.purchases, retries: 1 }); if (!result.ok) throw new Error(result.error); const remote = rowsOf(result.payload).slice(0, 500); const db = getSupabaseAdminClient();
-  const { data: expected, error } = await db.from("expected_purchases").select("id,supplier_name,expected_amount,amount,cases(case_code)").eq("organization_id", organizationId).not("status", "in", "(approved,not_required,cancelled)"); if (error) throw new Error(error.message); let candidates = 0;
-  for (const p of expected || []) { const c = one(p.cases); const expectedAmount = num(p.expected_amount || p.amount); const supplier = text(p.supplier_name).toLowerCase(); const caseCode = text(c?.case_code).toLowerCase(); const matches = remote.map((item) => { const id = idOf(item); const haystack = [item.contactName, item.supplier, item.desc, item.description, item.notes, item.docNumber].map(text).join(" ").toLowerCase(); let score = 0; const checks: string[] = []; if (caseCode && haystack.includes(caseCode)) { score += 45; checks.push("case_code"); } if (supplier && haystack.includes(supplier)) { score += 25; checks.push("supplier"); } if (Math.abs(num(item.total || item.amount || item.subtotal) - expectedAmount) <= Math.max(2, expectedAmount * .02)) { score += 25; checks.push("amount"); } return { id, item, score, checks }; }).filter((x) => x.id && x.score >= 50).sort((a, b) => b.score - a.score).slice(0, 3);
-    for (const m of matches) { const { error: upsertError } = await db.from("purchase_match_candidates").upsert({ organization_id: organizationId, expected_purchase_id: p.id, holded_purchase_id: m.id, score: m.score, checks: m.checks, payload: m.item, status: "candidate", updated_at: new Date().toISOString() }, { onConflict: "organization_id,expected_purchase_id,holded_purchase_id" }); if (!upsertError) candidates += 1; }
-    if (matches[0]) await db.from("expected_purchases").update({ status: "holded_candidate", match_score: matches[0].score, match_checks: matches[0].checks, updated_at: new Date().toISOString() }).eq("id", p.id);
+  const [configuration, settings] = await Promise.all([
+    holdedConfiguration(organizationId),
+    loadEffectiveSettings(organizationId),
+  ]);
+  const minimumConfidence = Math.min(100, Math.max(0, settings.number("purchases.match.min_confidence", 70)));
+  const result = await holdedRequest({ organizationId, path: configuration.endpoints.purchases, retries: 1 });
+  if (!result.ok) throw new Error(result.error);
+
+  const remote = rowsOf(result.payload).slice(0, 500);
+  const db = getSupabaseAdminClient();
+  const { data: expected, error } = await db
+    .from("expected_purchases")
+    .select("id,supplier_name,expected_amount,amount,status,cases(case_code)")
+    .eq("organization_id", organizationId)
+    .in("status", ["expected", "requested", "uploaded", "holded_candidate", "review_needed"]);
+  if (error) throw new Error(error.message);
+
+  let candidates = 0;
+  let matchedPurchases = 0;
+  let reviewNeeded = 0;
+
+  for (const p of expected || []) {
+    const c = one(p.cases);
+    const expectedAmount = num(p.expected_amount || p.amount);
+    const supplier = text(p.supplier_name).toLowerCase();
+    const caseCode = text(c?.case_code).toLowerCase();
+    const matches = remote
+      .map((item) => {
+        const id = idOf(item);
+        const haystack = [item.contactName, item.supplier, item.desc, item.description, item.notes, item.docNumber].map(text).join(" ").toLowerCase();
+        let score = 0;
+        const checks: string[] = [];
+        if (caseCode && haystack.includes(caseCode)) { score += 45; checks.push("case_code"); }
+        if (supplier && haystack.includes(supplier)) { score += 25; checks.push("supplier"); }
+        if (Math.abs(num(item.total || item.amount || item.subtotal) - expectedAmount) <= Math.max(2, expectedAmount * 0.02)) { score += 25; checks.push("amount"); }
+        return { id, item, score, checks };
+      })
+      .filter((candidate) => candidate.id && candidate.score >= minimumConfidence)
+      .sort((left, right) => right.score - left.score)
+      .slice(0, 3);
+
+    await db
+      .from("purchase_match_candidates")
+      .delete()
+      .eq("organization_id", organizationId)
+      .eq("expected_purchase_id", p.id)
+      .eq("status", "candidate");
+
+    for (const match of matches) {
+      const { error: upsertError } = await db.from("purchase_match_candidates").upsert({
+        organization_id: organizationId,
+        expected_purchase_id: p.id,
+        holded_purchase_id: match.id,
+        score: match.score,
+        checks: match.checks,
+        payload: match.item,
+        status: "candidate",
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "organization_id,expected_purchase_id,holded_purchase_id" });
+      if (!upsertError) candidates += 1;
+    }
+
+    if (matches[0]) {
+      matchedPurchases += 1;
+      await db.from("expected_purchases").update({
+        status: "holded_candidate",
+        match_score: matches[0].score,
+        match_checks: matches[0].checks,
+        updated_at: new Date().toISOString(),
+      }).eq("id", p.id).eq("organization_id", organizationId);
+    } else if (p.status === "holded_candidate") {
+      reviewNeeded += 1;
+      await db.from("expected_purchases").update({
+        status: "review_needed",
+        match_score: null,
+        match_checks: [],
+        review_notes: `No hay candidatos de Holded que alcancen el umbral configurado del ${minimumConfidence}%.`,
+        updated_at: new Date().toISOString(),
+      }).eq("id", p.id).eq("organization_id", organizationId);
+    }
   }
-  return { remotePurchases: remote.length, expectedPurchases: expected?.length || 0, candidates };
+
+  return {
+    remotePurchases: remote.length,
+    expectedPurchases: expected?.length || 0,
+    candidates,
+    matchedPurchases,
+    reviewNeeded,
+    minimumConfidence,
+  };
 }
