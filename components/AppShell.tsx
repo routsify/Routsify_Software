@@ -5,24 +5,17 @@ import { Logo } from "@/components/Logo";
 import { ThemeShell } from "@/components/ThemeShell";
 import { requireAppSession } from "@/lib/app-auth";
 import { loadAppTheme } from "@/lib/app-theme-server";
-
-const nav = [
-  ["/hoy", "Inicio"],
-  ["/control", "Control operativo"],
-  ["/clientes", "Clientes"],
-  ["/expedientes", "Expedientes"],
-  ["/propuestas", "Presupuestos"],
-  ["/compras", "Compras / Proveedores"],
-  ["/informes", "Informes"],
-  ["/ajustes", "Ajustes"],
-] as const;
+import { appNavigation, hasPermission } from "@/lib/rbac";
 
 export async function AppShell({ children }: { children: React.ReactNode }) {
   const session = await requireAppSession();
   const theme = await loadAppTheme(session.organizationId);
-  const visibleLabels = new Set(theme.navigation || nav.map((item) => item[1]));
+  const visibleLabels = new Set(theme.navigation || appNavigation.map((item) => item.label));
   visibleLabels.add("Control operativo");
-  visibleLabels.add("Ajustes");
+
+  const visibleNavigation = appNavigation.filter((item) =>
+    hasPermission(session.role, item.permission) && visibleLabels.has(item.label),
+  );
 
   return (
     <ThemeShell theme={theme}>
@@ -32,10 +25,10 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
           <span>{theme.companyName}</span>
         </Link>
         <nav className="nav">
-          {nav.filter(([, label]) => visibleLabels.has(label)).map(([href, label], index) => (
-            <Link key={href} href={href} prefetch={false}>
+          {visibleNavigation.map((item, index) => (
+            <Link key={item.href} href={item.href} prefetch={false}>
               <span className="nav-index">{index + 1}</span>
-              <span>{label}</span>
+              <span>{item.label}</span>
             </Link>
           ))}
         </nav>
