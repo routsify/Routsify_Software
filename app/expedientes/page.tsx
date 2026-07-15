@@ -1,11 +1,11 @@
 import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
-import { requireAppSession } from "@/lib/app-auth";
+import { requireAppPermission } from "@/lib/app-auth";
 import { listOrganizationCases, listOrganizationClients } from "@/lib/organization-repositories";
 import { CasesManager } from "./CasesManager";
 
 export default async function CasesPage({ searchParams }: { searchParams: Promise<{ clientId?: string; caseId?: string }> }) {
-  const session = await requireAppSession();
+  const session = await requireAppPermission("cases.view");
   const [{ clientId, caseId }, caseResult, clientResult] = await Promise.all([
     searchParams,
     listOrganizationCases(session.organizationId),

@@ -1,13 +1,13 @@
 import { notFound } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
-import { requireAppSession } from "@/lib/app-auth";
+import { requireAppPermission } from "@/lib/app-auth";
 import { getOrganizationClient360 } from "@/lib/client-360-server";
 import { Client360Workspace } from "./Client360Workspace";
 import "./client-360.css";
 
 export default async function Client360Page({ params }: { params: Promise<{ clientId: string }> }) {
-  const session = await requireAppSession();
+  const session = await requireAppPermission("clients.view");
   const { clientId } = await params;
   const result = await getOrganizationClient360(session.organizationId, clientId);
   if (!result.ok) {

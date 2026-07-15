@@ -2,14 +2,14 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
-import { requireAppSession } from "@/lib/app-auth";
+import { requireAppPermission } from "@/lib/app-auth";
 import { listOrganizationCases, listOrganizationSuppliers } from "@/lib/organization-repositories";
 import { PROPOSAL_WITH_VERSIONS_SELECT } from "@/lib/query-selects";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { BudgetManager } from "../../BudgetManager";
 
 export default async function ProposalWorkspacePage({ params }: { params: Promise<{ proposalId: string }> }) {
-  const session = await requireAppSession();
+  const session = await requireAppPermission("budgets.view");
   const { proposalId } = await params;
   const [proposalResult, caseResult, supplierResult] = await Promise.all([
     getSupabaseAdminClient()

@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
-import { requireAppSession } from "@/lib/app-auth";
+import { requireAppPermission } from "@/lib/app-auth";
 import { listOrganizationCases, listOrganizationPurchases, listOrganizationSuppliers } from "@/lib/organization-repositories";
 import { PurchasesManagerOperational } from "./PurchasesManagerOperational";
 
 export default async function PurchasesPage({ searchParams }: { searchParams: Promise<{ caseId?: string; supplierId?: string }> }) {
-  const session = await requireAppSession();
+  const session = await requireAppPermission("purchases.view");
   const [{ caseId, supplierId }, purchaseResult, caseResult, supplierResult] = await Promise.all([
     searchParams,
     listOrganizationPurchases(session.organizationId),

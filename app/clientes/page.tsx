@@ -1,11 +1,11 @@
 import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
-import { requireAppSession } from "@/lib/app-auth";
+import { requireAppPermission } from "@/lib/app-auth";
 import { listOrganizationClients } from "@/lib/organization-repositories";
 import { ClientsManager } from "./ClientsManager";
 
 export default async function ClientsPage() {
-  const session = await requireAppSession();
+  const session = await requireAppPermission("clients.view");
   const clientResult = await listOrganizationClients(session.organizationId);
   const clients = clientResult.ok ? clientResult.data : [];
 
