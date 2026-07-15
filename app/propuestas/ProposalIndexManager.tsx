@@ -16,6 +16,7 @@ type CaseOption = {
   case_code: string;
   title?: string | null;
   destination?: string | null;
+  currency?: string | null;
   clients?: { display_name?: string | null } | null;
 };
 
@@ -47,6 +48,7 @@ function normalizeCase(input: unknown): CaseOption {
     case_code: String(row.case_code || "Expediente"),
     title: row.title ? String(row.title) : null,
     destination: row.destination ? String(row.destination) : null,
+    currency: row.currency ? String(row.currency) : "EUR",
     clients: oneRecord<CaseOption["clients"]>(row.clients),
   };
 }
@@ -66,8 +68,17 @@ function numberValue(value: unknown) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function money(value: unknown) {
-  return new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(numberValue(value));
+function money(value: unknown, currency = "EUR") {
+  return new Intl.NumberFormat("es-ES", { style: "currency", currency }).format(numberValue(value));
+}
+
+function groupedMoney(items: ProposalSummary[]) {
+  const totals = new Map<string, number>();
+  for (const proposal of items) {
+    const currency = String(proposal.cases?.currency || "EUR");
+    totals.set(currency, (totals.get(currency) || 0) + numberValue(proposal.current_version?.total_sale));
+  }
+  return [...totals.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([currency, total]) => money(total, currency)).join(" · ") || money(0, "EUR");
 }
 
 export function ProposalIndexManager({ initialProposals = [], initialCases = [], initialCaseId = "" }: { initialProposals?: unknown[]; initialCases?: unknown[]; initialCaseId?: string }) {
@@ -83,12 +94,13 @@ export function ProposalIndexManager({ initialProposals = [], initialCases = [],
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return proposals;
-    return proposals.filter((proposal) => [proposal.cases?.case_code, proposal.cases?.title, proposal.cases?.destination, proposal.cases?.clients?.display_name, proposal.status].filter(Boolean).join(" ").toLowerCase().includes(needle));
+    return proposals.filter((proposal) => [proposal.cases?.case_code, proposal.cases?.title, proposal.cases?.destination, proposal.cases?.clients?.display_name, proposal.cases?.currency, proposal.status].filter(Boolean).join(" ").toLowerCase().includes(needle));
   }, [proposals, query]);
 
   const caseIdsWithProposal = useMemo(() => new Set(proposals.map((proposal) => proposal.cases?.id).filter(Boolean)), [proposals]);
   const availableCases = useMemo(() => cases.filter((item) => !caseIdsWithProposal.has(item.id)), [cases, caseIdsWithProposal]);
-  const pipeline = proposals.filter((proposal) => !["accepted", "rejected"].includes(proposal.status)).reduce((sum, proposal) => sum + numberValue(proposal.current_version?.total_sale), 0);
+  const openProposals = proposals.filter((proposal) => !["accepted", "rejected"].includes(proposal.status));
+  const pipeline = groupedMoney(openProposals);
 
   async function createProposal(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -112,19 +124,19 @@ export function ProposalIndexManager({ initialProposals = [], initialCases = [],
       <div className="kpi-card"><span className="kpi-icon">P</span><span className="kpi-copy"><strong>Presupuestos</strong><b>{proposals.length}</b><small>Total creados</small></span></div>
       <div className="kpi-card"><span className="kpi-icon">B</span><span className="kpi-copy"><strong>Borradores</strong><b>{proposals.filter((item) => item.status === "draft").length}</b><small>En preparación</small></span></div>
       <div className="kpi-card"><span className="kpi-icon">A</span><span className="kpi-copy"><strong>Aceptados</strong><b>{proposals.filter((item) => item.status === "accepted").length}</b><small>Cerrados con cliente</small></span></div>
-      <div className="kpi-card"><span className="kpi-icon">€</span><span className="kpi-copy"><strong>Pipeline</strong><b>{money(pipeline)}</b><small>Venta abierta</small></span></div>
+      <div className="kpi-card"><span className="kpi-icon">$</span><span className="kpi-copy"><strong>Pipeline</strong><b>{pipeline}</b><small>Separado por moneda</small></span></div>
     </section>
 
     <section className="card budget-selector">
       <div className="client-filters client-filters-simple">
-        <input className="input" placeholder="Buscar por expediente, cliente o destino..." value={query} onChange={(event) => setQuery(event.target.value)} />
+        <input className="input" placeholder="Buscar por expediente, cliente, destino o moneda..." value={query} onChange={(event) => setQuery(event.target.value)} />
         {canManage ? <button className={showCreate ? "btn secondary" : "btn"} type="button" onClick={() => setShowCreate((current) => !current)}>{showCreate ? "Cerrar formulario" : "Nuevo presupuesto"}</button> : null}
       </div>
 
       {showCreate && canManage ? <section className="creation-panel">
-        <div className="creation-panel-header"><div><div className="eyebrow">Nuevo presupuesto</div><h2>Vincular a expediente</h2><p>Se creará un único presupuesto principal con versiones sucesivas.</p></div><button className="btn secondary" type="button" onClick={() => setShowCreate(false)}>Cancelar</button></div>
+        <div className="creation-panel-header"><div><div className="eyebrow">Nuevo presupuesto</div><h2>Vincular a expediente</h2><p>Se creará un único presupuesto principal con versiones sucesivas y la moneda del expediente.</p></div><button className="btn secondary" type="button" onClick={() => setShowCreate(false)}>Cancelar</button></div>
         <form className="form" onSubmit={createProposal}>
-          <label>Expediente *<select autoFocus required value={caseId} onChange={(event) => setCaseId(event.target.value)}><option value="">Selecciona expediente</option>{availableCases.map((item) => <option key={item.id} value={item.id}>{item.case_code} · {item.clients?.display_name || item.destination || item.title || "Expediente"}</option>)}</select></label>
+          <label>Expediente *<select autoFocus required value={caseId} onChange={(event) => setCaseId(event.target.value)}><option value="">Selecciona expediente</option>{availableCases.map((item) => <option key={item.id} value={item.id}>{item.case_code} · {item.clients?.display_name || item.destination || item.title || "Expediente"} · {item.currency || "EUR"}</option>)}</select></label>
           {availableCases.length === 0 ? <p className="form-warning">No hay expedientes sin presupuesto.</p> : null}
           <div className="form-actions"><button className="btn" type="submit" disabled={saving || availableCases.length === 0}>{saving ? "Creando..." : "Crear y abrir presupuesto"}</button></div>
         </form>
@@ -132,7 +144,7 @@ export function ProposalIndexManager({ initialProposals = [], initialCases = [],
 
       {!canManage ? <p className="client-message" role="status">Modo consulta: tu rol puede revisar presupuestos, pero no crear ni modificar versiones.</p> : null}
       {message ? <p className="client-message" role="status">{message}</p> : null}
-      {proposals.length === 0 ? <div className="empty-state"><h2>Todavía no hay presupuestos</h2><p>{canManage ? "Crea un expediente y después su presupuesto." : "No hay presupuestos disponibles para consultar."}</p></div> : filtered.length === 0 ? <div className="empty-state"><h2>No hay coincidencias</h2><p>Cambia la búsqueda.</p></div> : <div className="table-scroll"><table><thead><tr><th>Expediente</th><th>Cliente</th><th>Destino</th><th>Estado</th><th>Versión</th><th>Venta</th><th></th></tr></thead><tbody>{filtered.map((proposal) => <tr key={proposal.id}><td><strong>{proposal.cases?.case_code || "Presupuesto"}</strong></td><td>{proposal.cases?.clients?.display_name || "—"}</td><td>{proposal.cases?.destination || "—"}</td><td>{statuses.get(proposal.status) || proposal.status}</td><td>v{numberValue(proposal.current_version?.version_number) || 1}</td><td>{money(proposal.current_version?.total_sale)}</td><td><a className="btn secondary" href={`/propuestas/editar/${encodeURIComponent(proposal.id)}`}>{canManage ? "Abrir" : "Consultar"}</a></td></tr>)}</tbody></table></div>}
+      {proposals.length === 0 ? <div className="empty-state"><h2>Todavía no hay presupuestos</h2><p>{canManage ? "Crea un expediente y después su presupuesto." : "No hay presupuestos disponibles para consultar."}</p></div> : filtered.length === 0 ? <div className="empty-state"><h2>No hay coincidencias</h2><p>Cambia la búsqueda.</p></div> : <div className="table-scroll"><table><thead><tr><th>Expediente</th><th>Cliente</th><th>Destino</th><th>Estado</th><th>Versión</th><th>Venta</th><th></th></tr></thead><tbody>{filtered.map((proposal) => <tr key={proposal.id}><td><strong>{proposal.cases?.case_code || "Presupuesto"}</strong><br /><small>{proposal.cases?.currency || "EUR"}</small></td><td>{proposal.cases?.clients?.display_name || "—"}</td><td>{proposal.cases?.destination || "—"}</td><td>{statuses.get(proposal.status) || proposal.status}</td><td>v{numberValue(proposal.current_version?.version_number) || 1}</td><td>{money(proposal.current_version?.total_sale, String(proposal.cases?.currency || "EUR"))}</td><td><a className="btn secondary" href={`/propuestas/editar/${encodeURIComponent(proposal.id)}`}>{canManage ? "Abrir" : "Consultar"}</a></td></tr>)}</tbody></table></div>}
     </section>
   </div>;
 }
