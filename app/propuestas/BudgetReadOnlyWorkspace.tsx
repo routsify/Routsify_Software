@@ -59,8 +59,8 @@ function numberValue(value: unknown) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function money(value: unknown) {
-  return new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(numberValue(value));
+function money(value: unknown, currency: string) {
+  return new Intl.NumberFormat("es-ES", { style: "currency", currency }).format(numberValue(value));
 }
 
 function relation(value: unknown): RecordRow | null {
@@ -103,6 +103,7 @@ export function BudgetReadOnlyWorkspace({ proposalInput }: { proposalInput: unkn
   const totals = versionTotals(version);
   const caseRow = relation(proposal.cases);
   const client = relation(caseRow?.clients);
+  const currency = String(caseRow?.currency || "EUR");
 
   return <div className="budget-page">
     <section className="card form-warning">
@@ -115,7 +116,7 @@ export function BudgetReadOnlyWorkspace({ proposalInput }: { proposalInput: unkn
         <div>
           <span className="eyebrow">{String(caseRow?.case_code || "Presupuesto")}</span>
           <h2>{String(client?.display_name || "Cliente")} · {String(caseRow?.destination || "Sin destino")}</h2>
-          <p>Versión {numberValue(version?.version_number) || 1} · {statusLabels[String(proposal.status || version?.status || "draft")] || String(proposal.status || version?.status || "Borrador")} · {lines.length} servicios</p>
+          <p>Versión {numberValue(version?.version_number) || 1} · {statusLabels[String(proposal.status || version?.status || "draft")] || String(proposal.status || version?.status || "Borrador")} · {lines.length} servicios · {currency}</p>
         </div>
         <div className="budget-header-actions">
           {caseRow?.id ? <a className="btn secondary" href={`/expedientes?caseId=${encodeURIComponent(String(caseRow.id))}`}>Abrir expediente</a> : null}
@@ -123,12 +124,12 @@ export function BudgetReadOnlyWorkspace({ proposalInput }: { proposalInput: unkn
       </div>
 
       <div className="budget-totals">
-        <div><span>Coste presupuestado</span><strong>{money(totals.cost)}</strong></div>
-        <div><span>Venta</span><strong>{money(totals.sale)}</strong></div>
-        <div><span>Beneficio previsto</span><strong>{money(totals.profit)}</strong></div>
+        <div><span>Coste presupuestado</span><strong>{money(totals.cost, currency)}</strong></div>
+        <div><span>Venta</span><strong>{money(totals.sale, currency)}</strong></div>
+        <div><span>Beneficio previsto</span><strong>{money(totals.profit, currency)}</strong></div>
         <div><span>Margen previsto</span><strong>{totals.margin.toFixed(1)}%</strong></div>
-        <div><span>Coste real / estimado</span><strong>{money(totals.realCost)}</strong></div>
-        <div><span>Beneficio real / estimado</span><strong>{money(totals.realProfit)}</strong><small> · margen {totals.realMargin.toFixed(1)}%</small></div>
+        <div><span>Coste real / estimado</span><strong>{money(totals.realCost, currency)}</strong></div>
+        <div><span>Beneficio real / estimado</span><strong>{money(totals.realProfit, currency)}</strong><small> · margen {totals.realMargin.toFixed(1)}%</small></div>
       </div>
 
       <section className="budget-lines-panel">
@@ -139,8 +140,8 @@ export function BudgetReadOnlyWorkspace({ proposalInput }: { proposalInput: unkn
             <td><strong>{serviceLabels[String(line.service_type_code || "custom")] || String(line.service_type_code || "Servicio")}</strong><br />{String(line.description_public || "—")}</td>
             <td>{String(line.start_date || "—")}<br /><small>{String(line.end_date || "")}</small></td>
             <td>{String(line.supplier_name || "—")}<br /><small>{String(line.destination_segment || "")}</small></td>
-            <td>{money(line.cost_budget)}{line.cost_real !== null && line.cost_real !== undefined ? <><br /><small>Real: {money(line.cost_real)}</small></> : null}</td>
-            <td>{money(line.sale_price)}</td>
+            <td>{money(line.cost_budget, currency)}{line.cost_real !== null && line.cost_real !== undefined ? <><br /><small>Real: {money(line.cost_real, currency)}</small></> : null}</td>
+            <td>{money(line.sale_price, currency)}</td>
             <td>{line.creates_expected_purchase === false ? "No" : "Sí"}</td>
           </tr>)}</tbody>
         </table></div> : <div className="empty-state"><h3>Presupuesto vacío</h3><p>Esta versión todavía no contiene servicios.</p></div>}
@@ -152,7 +153,7 @@ export function BudgetReadOnlyWorkspace({ proposalInput }: { proposalInput: unkn
           <thead><tr><th>Versión</th><th>Estado</th><th>Fecha</th><th>Venta</th><th>Coste</th><th>Bloqueada</th></tr></thead>
           <tbody>{versions.map((item, index) => {
             const itemTotals = versionTotals(item);
-            return <tr key={String(item.id || index)}><td>v{numberValue(item.version_number) || 1}</td><td>{statusLabels[String(item.status || "draft")] || String(item.status || "—")}</td><td>{item.created_at ? new Date(item.created_at).toLocaleDateString("es-ES") : "—"}</td><td>{money(itemTotals.sale)}</td><td>{money(itemTotals.cost)}</td><td>{item.locked ? "Sí" : "No"}</td></tr>;
+            return <tr key={String(item.id || index)}><td>v{numberValue(item.version_number) || 1}</td><td>{statusLabels[String(item.status || "draft")] || String(item.status || "—")}</td><td>{item.created_at ? new Date(item.created_at).toLocaleDateString("es-ES") : "—"}</td><td>{money(itemTotals.sale, currency)}</td><td>{money(itemTotals.cost, currency)}</td><td>{item.locked ? "Sí" : "No"}</td></tr>;
           })}</tbody>
         </table></div>
       </section>
