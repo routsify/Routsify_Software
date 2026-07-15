@@ -10,7 +10,11 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "validate:mvp": "node scripts/validate-mvp.mjs",
-    "validate:platform": "npm run validate:mvp && node scripts/validate-platform.mjs"
+    "validate:platform": "npm run validate:mvp && node scripts/validate-platform.mjs",
+    "test:e2e": "npx --yes @playwright/test@latest test",
+    "quality:dead-code": "npx --yes knip@5 --config knip.json",
+    "analyze:bundle": "next experimental-analyze --output",
+    "db:types": "npx --yes supabase@2 gen types typescript --project-id wphiurjzkxbkakiozgvf --schema public > lib/database.types.ts"
   },
   "dependencies": {
     "@supabase/ssr": "0.7.0",

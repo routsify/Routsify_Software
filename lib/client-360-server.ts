@@ -10,6 +10,7 @@ export type Client360Data = {
   payments: Record<string, unknown>[];
   timeline: Record<string, unknown>[];
   filloutUrl: string;
+  asOf: string;
 };
 
 const CLIENT_360_PROPOSAL_SELECT = "id,organization_id,case_id,status,current_version_id,created_at,updated_at,current_version:proposal_versions!proposals_current_version_fk(id,version_number,status,total_sale,total_cost,total_cost_budget,budgeted_profit,total_cost_real,real_profit,real_margin_pct,cost_deviation,accepted_at,created_at)" as const;
@@ -110,6 +111,7 @@ export async function getOrganizationClient360(organizationId: string, clientId:
       payments,
       timeline: (timelineResult.data || []) as Record<string, unknown>[],
       filloutUrl: settingValue(settingResult.data?.value),
+      asOf: new Date().toISOString(),
     },
   };
 }

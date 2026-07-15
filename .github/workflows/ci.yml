@@ -38,5 +38,20 @@ jobs:
           path: typecheck.log
           retention-days: 1
       - run: npm run validate:platform
-      - run: npm run lint
+      - name: Lint
+        id: lint
+        shell: bash
+        run: |
+          set +e
+          npm run lint > lint.log 2>&1
+          code=$?
+          cat lint.log
+          exit $code
+      - name: Upload lint diagnostics
+        if: failure() && steps.lint.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-diagnostics
+          path: lint.log
+          retention-days: 1
       - run: npm run build
