@@ -2,6 +2,7 @@ import { cache } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createServerClient } from "@supabase/ssr";
+import { hasPermission, type AppPermission } from "@/lib/rbac";
 import { getSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase-admin";
 
 function publicSupabaseConfig() {
@@ -45,4 +46,10 @@ const loadAppSession = cache(async () => {
 
 export async function requireAppSession() {
   return loadAppSession();
+}
+
+export async function requireAppPermission(permission: AppPermission) {
+  const session = await requireAppSession();
+  if (!hasPermission(session.role, permission)) redirect("/hoy?access=denied");
+  return session;
 }
