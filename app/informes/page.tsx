@@ -1,6 +1,6 @@
 import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
-import { requireAppSession } from "@/lib/app-auth";
+import { requireAppPermission } from "@/lib/app-auth";
 import { listOrganizationCases, listOrganizationClients, listOrganizationProposals, listOrganizationPurchases } from "@/lib/organization-repositories";
 
 function asRows(result: { ok: boolean; data?: unknown[] }) {
@@ -36,7 +36,7 @@ const purchaseLabels: Record<string, string> = {
 };
 
 export default async function ReportsPage() {
-  const session = await requireAppSession();
+  const session = await requireAppPermission("reports.view");
   const [clientsResult, casesResult, proposalsResult, purchasesResult] = await Promise.all([
     listOrganizationClients(session.organizationId),
     listOrganizationCases(session.organizationId),

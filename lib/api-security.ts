@@ -1,9 +1,11 @@
 import { timingSafeEqual } from "node:crypto";
 import { createServerClient } from "@supabase/ssr";
 import { NextRequest, NextResponse } from "next/server";
+import { hasPermission, type AppPermission } from "@/lib/rbac";
+import type { AppRole } from "@/lib/settings-master";
 import { getSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase-admin";
 
-export type AppRole = "admin" | "direction" | "sales" | "operations" | "billing" | "viewer";
+export type { AppRole } from "@/lib/settings-master";
 
 export type ApiAccessContext =
   | { ok: true; mode: "authenticated" | "internal_token"; organizationId: string; actorId: string; role: AppRole }
@@ -38,22 +40,26 @@ function bearerToken(request: NextRequest) {
   return header.toLowerCase().startsWith("bearer ") ? header.slice(7).trim() : "";
 }
 
-function allowedRoles(request: NextRequest): AppRole[] {
+function requiredPermission(request: NextRequest): AppPermission {
   const path = request.nextUrl.pathname;
   const method = request.method.toUpperCase();
   const isRead = method === "GET" || method === "HEAD";
-  if (path.startsWith("/api/routsify/settings/secrets") || path.startsWith("/api/routsify/settings/integrations")) return ["admin"];
-  if (path.startsWith("/api/routsify/settings") || path.startsWith("/api/routsify/system") || path.startsWith("/api/routsify/outbox")) return ["admin", "direction"];
-  if (path.startsWith("/api/routsify/payment-links") || path.includes("/payment-link")) return ["admin", "direction", "sales"];
-  if (path.startsWith("/api/payments") || path.includes("/fiscal")) return ["admin", "direction", "billing"];
-  if (path.startsWith("/api/routsify/proposals") || path.startsWith("/api/routsify/budgets")) return isRead ? ["admin", "direction", "sales", "operations", "billing", "viewer"] : ["admin", "direction", "sales"];
-  if (path.startsWith("/api/routsify/documents") || path.startsWith("/api/routsify/ocr") || path.startsWith("/api/documentos")) return ["admin", "sales"];
-  if (path.startsWith("/api/routsify/suppliers")) return isRead ? ["admin", "direction", "sales", "operations", "billing", "viewer"] : ["admin", "direction", "sales", "operations", "billing"];
-  if (path.startsWith("/api/routsify/expected-purchases") || path.includes("/travelers") || path.includes("/contracts")) return isRead ? ["admin", "direction", "sales", "operations", "billing"] : ["admin", "direction", "sales", "operations", "billing"];
-  if (path.includes("/tasks") || path.includes("/timeline")) return isRead ? ["admin", "direction", "sales", "operations", "billing", "viewer"] : ["admin", "direction", "sales", "operations", "billing"];
-  if (path.startsWith("/api/routsify/reports")) return ["admin", "direction", "sales", "operations", "billing"];
-  if (path.startsWith("/api/routsify/clients") || path.startsWith("/api/routsify/cases")) return isRead ? ["admin", "direction", "sales", "operations", "billing", "viewer"] : ["admin", "direction", "sales", "operations"];
-  return isRead ? ["admin", "direction", "sales", "operations", "billing", "viewer"] : ["admin", "direction"];
+
+  if (path.startsWith("/api/routsify/settings/secrets") || path.startsWith("/api/routsify/settings/integrations")) return "settings.secrets.manage";
+  if (path.startsWith("/api/routsify/settings")) return isRead ? "settings.view" : "settings.manage";
+  if (path.startsWith("/api/routsify/system") || path.startsWith("/api/routsify/outbox")) return "system.manage";
+  if (path.startsWith("/api/routsify/payment-links") || path.includes("/payment-link")) return "payment_links.manage";
+  if (path.startsWith("/api/payments") || path.includes("/fiscal")) return "payments.manage";
+  if (path.startsWith("/api/routsify/proposals") || path.startsWith("/api/routsify/budgets")) return isRead ? "budgets.view" : "budgets.manage";
+  if (path.startsWith("/api/routsify/documents") || path.startsWith("/api/routsify/ocr") || path.startsWith("/api/documentos")) return "documents.manage";
+  if (path.startsWith("/api/routsify/suppliers")) return isRead ? "suppliers.view" : "suppliers.manage";
+  if (path.startsWith("/api/routsify/expected-purchases")) return isRead ? "purchases.view" : "purchases.manage";
+  if (path.includes("/travelers") || path.includes("/contracts")) return isRead ? "operations.sensitive.view" : "operations.sensitive.manage";
+  if (path.includes("/tasks") || path.includes("/timeline")) return isRead ? "tasks.view" : "tasks.manage";
+  if (path.startsWith("/api/routsify/reports")) return "reports.view";
+  if (path.startsWith("/api/routsify/clients")) return isRead ? "clients.view" : "clients.manage";
+  if (path.startsWith("/api/routsify/cases")) return isRead ? "cases.view" : "cases.manage";
+  return isRead ? "app.view" : "system.manage";
 }
 
 async function authenticatedUser(request: NextRequest) {
@@ -87,7 +93,7 @@ export async function requireInternalAccess(request: NextRequest): Promise<ApiAc
   }
   const user = await authenticatedUser(request);
   if (!user) return { ok: false, status: 401, error: "authentication_required" };
-  if (!allowedRoles(request).includes(user.role)) return { ok: false, status: 403, error: "insufficient_role" };
+  if (!hasPermission(user.role, requiredPermission(request))) return { ok: false, status: 403, error: "insufficient_role" };
   return { ok: true, mode: "authenticated", organizationId: user.organizationId, actorId: user.userId, role: user.role };
 }
 

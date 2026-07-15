@@ -1,12 +1,12 @@
 import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
-import { requireAppSession } from "@/lib/app-auth";
+import { requireAppPermission } from "@/lib/app-auth";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { listOrganizationSecretStatuses } from "@/lib/organization-secrets-server";
 import { ProductionSettings } from "./ProductionSettings";
 
 export default async function SettingsPage() {
-  const session = await requireAppSession();
+  const session = await requireAppPermission("settings.view");
   const [{ data }, secretStatuses] = await Promise.all([
     getSupabaseAdminClient()
       .from("routsify_settings")
