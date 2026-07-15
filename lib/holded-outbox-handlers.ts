@@ -86,6 +86,19 @@ export async function syncHoldedPurchaseCandidates(organizationId: string) {
     .in("status", ["expected", "requested", "uploaded", "holded_candidate", "review_needed"]);
   if (error) throw new Error(error.message);
 
+  const expectedIds = (expected || []).map((purchase) => String(purchase.id));
+  const reviewedCandidateKeys = new Set<string>();
+  if (expectedIds.length) {
+    const { data: reviewedCandidates, error: reviewedError } = await db
+      .from("purchase_match_candidates")
+      .select("expected_purchase_id,holded_purchase_id,status")
+      .eq("organization_id", organizationId)
+      .in("expected_purchase_id", expectedIds)
+      .neq("status", "candidate");
+    if (reviewedError) throw new Error(reviewedError.message);
+    for (const candidate of reviewedCandidates || []) reviewedCandidateKeys.add(`${candidate.expected_purchase_id}:${candidate.holded_purchase_id}`);
+  }
+
   let candidates = 0;
   let matchedPurchases = 0;
   let reviewNeeded = 0;
@@ -106,7 +119,7 @@ export async function syncHoldedPurchaseCandidates(organizationId: string) {
         if (Math.abs(num(item.total || item.amount || item.subtotal) - expectedAmount) <= Math.max(2, expectedAmount * 0.02)) { score += 25; checks.push("amount"); }
         return { id, item, score, checks };
       })
-      .filter((candidate) => candidate.id && candidate.score >= minimumConfidence)
+      .filter((candidate) => candidate.id && candidate.score >= minimumConfidence && !reviewedCandidateKeys.has(`${p.id}:${candidate.id}`))
       .sort((left, right) => right.score - left.score)
       .slice(0, 3);
 
@@ -145,7 +158,7 @@ export async function syncHoldedPurchaseCandidates(organizationId: string) {
         status: "review_needed",
         match_score: null,
         match_checks: [],
-        review_notes: `No hay candidatos de Holded que alcancen el umbral configurado del ${minimumConfidence}%.`,
+        review_notes: `No hay candidatos de Holded que alcancen el umbral configurado del ${minimumConfidence}% o los candidatos ya fueron revisados manualmente.`,
         updated_at: new Date().toISOString(),
       }).eq("id", p.id).eq("organization_id", organizationId);
     }
