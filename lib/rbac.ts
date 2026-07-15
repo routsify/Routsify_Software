@@ -144,7 +144,7 @@ export function isAppRole(value: unknown): value is AppRole {
 
 export function hasPermission(role: string | null | undefined, permission: AppPermission) {
   if (!isAppRole(role)) return false;
-  return rolePermissions[role].includes(permission);
+  return (rolePermissions[role] as readonly AppPermission[]).includes(permission);
 }
 
 export const appNavigation = [
