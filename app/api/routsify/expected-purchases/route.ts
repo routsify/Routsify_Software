@@ -34,24 +34,30 @@ export async function POST(request: NextRequest) {
   if (!body || typeof body !== "object") return NextResponse.json({ ok: false, error: "invalid_body" }, { status: 400 });
   const source = body as Record<string, unknown>;
   const caseId = String(source.case_id || "").trim();
-  const supplierName = String(source.supplier_name || "").trim();
+  const supplierId = String(source.supplier_id || "").trim();
   const service = String(source.service || "").trim();
   const status = String(source.status || "expected");
   const amount = numberValue(source.amount);
   if (!caseId) return NextResponse.json({ ok: false, error: "case_required" }, { status: 400 });
-  if (supplierName.length < 2) return NextResponse.json({ ok: false, error: "supplier_name_required" }, { status: 400 });
+  if (!supplierId) return NextResponse.json({ ok: false, error: "supplier_required" }, { status: 400 });
   if (!allowedStatuses.has(status)) return NextResponse.json({ ok: false, error: "invalid_status" }, { status: 400 });
   if (amount < 0) return NextResponse.json({ ok: false, error: "invalid_amount" }, { status: 400 });
 
   const organizationId = access.organizationId;
   const supabase = getSupabaseAdminClient();
-  const { data: caseRow } = await supabase.from("cases").select("id").eq("id", caseId).eq("organization_id", organizationId).maybeSingle();
+  const [{ data: caseRow }, { data: supplier }] = await Promise.all([
+    supabase.from("cases").select("id").eq("id", caseId).eq("organization_id", organizationId).maybeSingle(),
+    supabase.from("suppliers").select("id,name,active").eq("id", supplierId).eq("organization_id", organizationId).maybeSingle(),
+  ]);
   if (!caseRow) return NextResponse.json({ ok: false, error: "case_not_found" }, { status: 404 });
+  if (!supplier) return NextResponse.json({ ok: false, error: "supplier_not_found" }, { status: 404 });
+  if (supplier.active === false) return NextResponse.json({ ok: false, error: "supplier_inactive" }, { status: 409 });
 
   const payload = {
     organization_id: organizationId,
     case_id: caseId,
-    supplier_name: supplierName,
+    supplier_id: supplier.id,
+    supplier_name: supplier.name,
     service: service || null,
     amount,
     expected_amount: amount,
