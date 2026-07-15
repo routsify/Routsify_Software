@@ -21,6 +21,7 @@ export async function transitionExpectedPurchase(input: {
   reason?: string | null;
   reviewNotes?: string | null;
   holdedPurchaseId?: string | null;
+  approvedCost?: number | null;
 }) {
   if (![...ACTIVE_STATUSES, ...FINAL_STATUSES].includes(input.status)) return { ok: false as const, error: "invalid_status" };
   const supabase = getSupabaseAdminClient();
@@ -30,11 +31,27 @@ export async function transitionExpectedPurchase(input: {
 
   const reason = input.reason?.trim() || "";
   if (input.status === "not_required" && reason.length < 5) return { ok: false as const, error: "not_required_reason_required" };
+  if (FINAL_STATUSES.has(String(existing.status)) && existing.status !== input.status) return { ok: false as const, error: "final_purchase_status_locked" };
+
   if (input.status === "approved") {
     const invoices = Array.isArray(existing.supplier_invoices) ? existing.supplier_invoices : [];
-    if (!invoices.length && !existing.holded_purchase_id && !input.holdedPurchaseId) return { ok: false as const, error: "invoice_or_holded_purchase_required" };
+    const holdedPurchaseId = input.holdedPurchaseId || existing.holded_purchase_id || null;
+    if (!invoices.length && !holdedPurchaseId) return { ok: false as const, error: "invoice_or_holded_purchase_required" };
+    const latestInvoice = [...invoices].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")))[0];
+    const approvedCost = input.approvedCost ?? Number(existing.invoice_total ?? latestInvoice?.total_amount ?? latestInvoice?.total ?? existing.expected_amount ?? existing.amount ?? 0);
+    if (!Number.isFinite(Number(approvedCost)) || Number(approvedCost) < 0) return { ok: false as const, error: "invalid_approved_cost" };
+    const { error: approveError } = await supabase.rpc("approve_expected_purchase", {
+      target_org: input.organizationId,
+      target_purchase: input.purchaseId,
+      target_holded_purchase_id: holdedPurchaseId || "",
+      approved_amount: Number(approvedCost),
+      actor: input.actorId,
+      review_note: input.reviewNotes?.trim() || null,
+    });
+    if (approveError) return { ok: false as const, error: approveError.message };
+    const { data, error } = await getExpectedPurchase(input.organizationId, input.purchaseId);
+    return error ? { ok: false as const, error: error.message } : { ok: true as const, data };
   }
-  if (FINAL_STATUSES.has(String(existing.status)) && existing.status !== input.status) return { ok: false as const, error: "final_purchase_status_locked" };
 
   const now = new Date().toISOString();
   const patch: Record<string, unknown> = { status: input.status, updated_at: now };
@@ -44,11 +61,6 @@ export async function transitionExpectedPurchase(input: {
     patch.not_required_reason = reason;
     patch.not_required_at = now;
     patch.not_required_by = input.actorId;
-  }
-  if (input.status === "approved") {
-    patch.approved_at = now;
-    patch.approved_by = input.actorId;
-    patch.sync_status = existing.holded_purchase_id || input.holdedPurchaseId ? "synced" : "manual_review";
   }
 
   const { data, error } = await supabase
