@@ -2,14 +2,17 @@ import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
 import { requireAppPermission } from "@/lib/app-auth";
 import { listOrganizationCases, listOrganizationClients } from "@/lib/organization-repositories";
+import { hasPermission } from "@/lib/rbac";
 import { CasesManager } from "./CasesManager";
+import { CasesReadOnlyTable } from "./CasesReadOnlyTable";
 
 export default async function CasesPage({ searchParams }: { searchParams: Promise<{ clientId?: string; caseId?: string }> }) {
   const session = await requireAppPermission("cases.view");
+  const canManage = hasPermission(session.role, "cases.manage");
   const [{ clientId, caseId }, caseResult, clientResult] = await Promise.all([
     searchParams,
     listOrganizationCases(session.organizationId),
-    listOrganizationClients(session.organizationId),
+    canManage ? listOrganizationClients(session.organizationId) : Promise.resolve({ ok: true as const, mode: "supabase" as const, data: [] }),
   ]);
   const rawCases = caseResult.ok ? caseResult.data : [];
   const cases = caseId
@@ -22,9 +25,11 @@ export default async function CasesPage({ searchParams }: { searchParams: Promis
       <PageHeader
         eyebrow="Expedientes"
         title="Centro operativo de expedientes"
-        description="Gestiona cliente, destino, fechas, estado y próxima acción de cada viaje."
+        description={canManage ? "Gestiona cliente, destino, fechas, estado y próxima acción de cada viaje." : "Consulta el estado, fechas, valor y próxima acción de cada viaje."}
       />
-      <CasesManager initialCases={cases} initialClients={clients} initialClientId={clientId || ""} />
+      {canManage
+        ? <CasesManager initialCases={cases} initialClients={clients} initialClientId={clientId || ""} />
+        : <CasesReadOnlyTable initialCases={cases} />}
     </AppShell>
   );
 }
