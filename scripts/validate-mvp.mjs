@@ -44,6 +44,7 @@ for (const file of [
   "app/api/routsify/tasks/[taskId]/route.ts",
   "app/api/routsify/clients/documents/[documentId]/ocr/route.ts",
   "supabase/migrations/0018_integrations_fiscal_ocr_privacy.sql",
+  "supabase/migrations/0019_settings_driven_business_policies.sql",
   "supabase/migrations/0005_routsify_settings_and_outbox_worker.sql",
   "supabase/migrations/0015_accept_proposal_version_rpc.sql",
   "components/AppShell.tsx",
@@ -69,6 +70,9 @@ for (const token of ["rolePermissions", "hasPermission", "settings.secrets.manag
 
 const effectiveSettings = read("lib/effective-settings-server.ts");
 for (const token of ["defaultSettings", "loadEffectiveSettings", "routsify_settings", "stringArray"]) assert(effectiveSettings.includes(token), `Missing effective settings token: ${token}`);
+
+const businessPolicies = read("supabase/migrations/0019_settings_driven_business_policies.sql");
+for (const token of ["routsify_setting_boolean", "purchases.auto_create", "cases.close.requires_purchases", "generate_expected_purchases_after_acceptance", "accept_proposal_version", "operational_close_preflight", "protect_case_closure"]) assert(businessPolicies.includes(token), `Missing settings-driven business policy token: ${token}`);
 
 const login = read("app/login/LoginForm.tsx");
 for (const token of ["signInWithPassword", "resetPasswordForEmail", "¿Has olvidado tu contraseña?", "showPassword", "safeNext"]) assert(login.includes(token), `Missing login token: ${token}`);
@@ -102,7 +106,7 @@ const payment = read("app/api/payments/manual/route.ts");
 for (const token of ["paymentPreflight", "proposal_not_accepted", "signed_contract_required", "payment_reference_required", "confirm_external_payment"]) assert(payment.includes(token), `Missing payment token: ${token}`);
 
 const contract = read("app/api/routsify/cases/[caseId]/contracts/route.ts");
-for (const token of ["accepted_proposal_required", "contract_signed", "Confirmar pago"]) assert(contract.includes(token), `Missing contract workflow token: ${token}`);
+for (const token of ["accepted_proposal_required", "contract_signed", "Confirmar pago", "contracts.block_missing_fiscal", "clients.fiscal.required", "client_fiscal_data_required"]) assert(contract.includes(token), `Missing contract workflow token: ${token}`);
 
 const budget = read("app/propuestas/BudgetManager.tsx");
 for (const token of ["Importar tabla", "service_type_code", "description_public", "margin_applied", "creates_expected_purchase", "Descargar plantilla"]) assert(budget.includes(token), `Missing budget editor token: ${token}`);
