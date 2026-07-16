@@ -16,8 +16,13 @@ function unwrapStoredValue(value: unknown) {
 
 function effectiveValue(key: string, stored: unknown): SettingValue | undefined {
   const definition = definitions.get(key);
-  if (!definition) return undefined;
   const value = unwrapStoredValue(stored);
+  if (!definition) {
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean" || Array.isArray(value) || (value && typeof value === "object")) {
+      return value as SettingValue;
+    }
+    return undefined;
+  }
   const resolved = value === null || value === undefined ? definition.defaultValue : value;
   return enforceProtectedSettingValue(key, resolved) as SettingValue;
 }
@@ -36,7 +41,7 @@ export async function loadEffectiveSettings(organizationId: string) {
 
   function get(key: string): SettingValue | undefined {
     const definition = definitions.get(key);
-    if (!definition) return undefined;
+    if (!definition) return stored.has(key) ? effectiveValue(key, stored.get(key)) : undefined;
     return effectiveValue(key, stored.has(key) ? stored.get(key) : definition.defaultValue);
   }
 
