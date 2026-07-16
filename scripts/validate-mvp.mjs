@@ -20,6 +20,8 @@ for (const file of [
   "lib/economics-server.ts",
   "lib/expected-purchases-server.ts",
   "lib/jobs-server.ts",
+  "lib/communications-server.ts",
+  "lib/communication-settings-server.ts",
   "lib/organization-secrets-server.ts",
   "lib/openai-ocr-server.ts",
   "lib/payment-workflow-server.ts",
@@ -28,6 +30,8 @@ for (const file of [
   "app/clientes/ClientOperationsOverview.tsx",
   "app/propuestas/BudgetManager.tsx",
   "app/compras/PurchasesManagerOperational.tsx",
+  "app/comunicaciones/page.tsx",
+  "app/comunicaciones/CommunicationsWorkspace.tsx",
   "app/expedientes/[caseCode]/ContractPaymentsTab.tsx",
   "app/expedientes/[caseCode]/ActivityTab.tsx",
   "app/api/documentos/upload-url/route.ts",
@@ -42,9 +46,14 @@ for (const file of [
   "app/api/routsify/proposals/[proposalId]/send/route.ts",
   "app/api/routsify/cases/[caseId]/contracts/route.ts",
   "app/api/routsify/tasks/[taskId]/route.ts",
+  "app/api/routsify/communications/sync/route.ts",
+  "app/api/routsify/communications/[followupId]/route.ts",
+  "app/api/routsify/communications/settings/route.ts",
+  "app/api/routsify/communications/templates/[templateId]/route.ts",
   "app/api/routsify/clients/documents/[documentId]/ocr/route.ts",
   "supabase/migrations/0018_integrations_fiscal_ocr_privacy.sql",
   "supabase/migrations/0019_settings_driven_business_policies.sql",
+  "supabase/migrations/0029_communication_followup_engine.sql",
   "supabase/migrations/0005_routsify_settings_and_outbox_worker.sql",
   "supabase/migrations/0015_accept_proposal_version_rpc.sql",
   "components/AppShell.tsx",
@@ -63,16 +72,33 @@ assert(runtime.includes('ROUTSIFY_ALLOW_PUBLIC_DEMO === "true"'), "Public demo m
 assert(!runtime.includes('ROUTSIFY_ALLOW_PUBLIC_DEMO !== "false"'), "Public demo must not be default");
 
 const security = read("lib/api-security.ts");
-for (const token of ["auth.getUser", "requiredPermission", "hasPermission", "timingSafeEqual"]) assert(security.includes(token), `Missing API security token: ${token}`);
+for (const token of ["auth.getUser", "requiredPermission", "hasPermission", "timingSafeEqual", "communications.templates.manage"]) assert(security.includes(token), `Missing API security token: ${token}`);
 
 const rbac = read("lib/rbac.ts");
-for (const token of ["rolePermissions", "hasPermission", "settings.secrets.manage", "reports.view", "appNavigation"]) assert(rbac.includes(token), `Missing RBAC token: ${token}`);
+for (const token of ["rolePermissions", "hasPermission", "settings.secrets.manage", "reports.view", "communications.view", "communications.manage", "appNavigation"]) assert(rbac.includes(token), `Missing RBAC token: ${token}`);
 
 const effectiveSettings = read("lib/effective-settings-server.ts");
 for (const token of ["defaultSettings", "loadEffectiveSettings", "routsify_settings", "stringArray"]) assert(effectiveSettings.includes(token), `Missing effective settings token: ${token}`);
 
 const businessPolicies = read("supabase/migrations/0019_settings_driven_business_policies.sql");
 for (const token of ["routsify_setting_boolean", "purchases.auto_create", "cases.close.requires_purchases", "generate_expected_purchases_after_acceptance", "accept_proposal_version", "operational_close_preflight", "protect_case_closure"]) assert(businessPolicies.includes(token), `Missing settings-driven business policy token: ${token}`);
+
+const communicationsMigration = read("supabase/migrations/0029_communication_followup_engine.sql");
+for (const token of ["communication_templates", "communication_followups", "thread_key", "sequence_step", "enable row level security"]) assert(communicationsMigration.includes(token), `Missing communication schema token: ${token}`);
+
+const communicationsEngine = read("lib/communications-server.ts");
+for (const token of ["proposal_followup", "contract_reminder", "payment_reminder", "supplier_invoice_request", "syncCommunicationFollowups", "mailto", "communication_followup"]) {
+  if (token === "mailto") continue;
+  assert(communicationsEngine.includes(token), `Missing communication engine token: ${token}`);
+}
+assert(!communicationsEngine.includes("sendEmail("), "Communication engine must not pretend to send email without a configured provider");
+assert(!communicationsEngine.includes("sendWhatsApp("), "Communication engine must not pretend to send WhatsApp without a configured provider");
+
+const communicationsWorkspace = read("app/comunicaciones/CommunicationsWorkspace.tsx");
+for (const token of ["mailto:", "wa.me", "Registrar envío", "Registrar respuesta", "Guardar cadencias", "Guardar plantilla"]) assert(communicationsWorkspace.includes(token), `Missing communications workspace token: ${token}`);
+
+const jobs = read("lib/jobs-server.ts");
+for (const token of ["communication_followup_sync", "syncCommunicationFollowupsForAllOrganizations"]) assert(jobs.includes(token), `Missing communication job token: ${token}`);
 
 const login = read("app/login/LoginForm.tsx");
 for (const token of ["signInWithPassword", "resetPasswordForEmail", "¿Has olvidado tu contraseña?", "showPassword", "safeNext"]) assert(login.includes(token), `Missing login token: ${token}`);
