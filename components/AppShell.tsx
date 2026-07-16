@@ -13,6 +13,7 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
   const theme = await loadAppTheme(session.organizationId);
   const visibleLabels = new Set(theme.navigation || appNavigation.map((item) => item.label));
   visibleLabels.add("Control operativo");
+  visibleLabels.add("Comunicaciones");
 
   const visibleNavigation = appNavigation.filter((item) =>
     hasPermission(session.role, item.permission) && visibleLabels.has(item.label),

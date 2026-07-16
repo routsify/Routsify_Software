@@ -12,6 +12,9 @@ export type AppPermission =
   | "suppliers.manage"
   | "purchases.view"
   | "purchases.manage"
+  | "communications.view"
+  | "communications.manage"
+  | "communications.templates.manage"
   | "operations.sensitive.view"
   | "operations.sensitive.manage"
   | "tasks.view"
@@ -37,6 +40,9 @@ const allPermissions: AppPermission[] = [
   "suppliers.manage",
   "purchases.view",
   "purchases.manage",
+  "communications.view",
+  "communications.manage",
+  "communications.templates.manage",
   "operations.sensitive.view",
   "operations.sensitive.manage",
   "tasks.view",
@@ -65,6 +71,9 @@ export const rolePermissions = {
     "suppliers.manage",
     "purchases.view",
     "purchases.manage",
+    "communications.view",
+    "communications.manage",
+    "communications.templates.manage",
     "operations.sensitive.view",
     "operations.sensitive.manage",
     "tasks.view",
@@ -87,6 +96,8 @@ export const rolePermissions = {
     "suppliers.manage",
     "purchases.view",
     "purchases.manage",
+    "communications.view",
+    "communications.manage",
     "operations.sensitive.view",
     "operations.sensitive.manage",
     "tasks.view",
@@ -106,6 +117,8 @@ export const rolePermissions = {
     "suppliers.manage",
     "purchases.view",
     "purchases.manage",
+    "communications.view",
+    "communications.manage",
     "operations.sensitive.view",
     "operations.sensitive.manage",
     "tasks.view",
@@ -121,6 +134,8 @@ export const rolePermissions = {
     "suppliers.manage",
     "purchases.view",
     "purchases.manage",
+    "communications.view",
+    "communications.manage",
     "operations.sensitive.view",
     "operations.sensitive.manage",
     "tasks.view",
@@ -154,6 +169,7 @@ export const appNavigation = [
   { href: "/expedientes", label: "Expedientes", permission: "cases.view" },
   { href: "/propuestas", label: "Presupuestos", permission: "budgets.view" },
   { href: "/compras", label: "Compras / Proveedores", permission: "purchases.view" },
+  { href: "/comunicaciones", label: "Comunicaciones", permission: "communications.view" },
   { href: "/informes", label: "Informes", permission: "reports.view" },
   { href: "/ajustes", label: "Ajustes", permission: "settings.view" },
 ] as const satisfies ReadonlyArray<{ href: string; label: string; permission: AppPermission }>;

@@ -48,6 +48,8 @@ function requiredPermission(request: NextRequest): AppPermission {
   if (path.startsWith("/api/routsify/settings/secrets") || path.startsWith("/api/routsify/settings/integrations")) return "settings.secrets.manage";
   if (path.startsWith("/api/routsify/settings")) return isRead ? "settings.view" : "settings.manage";
   if (path.startsWith("/api/routsify/system") || path.startsWith("/api/routsify/outbox")) return "system.manage";
+  if (path.startsWith("/api/routsify/communications/templates")) return isRead ? "communications.view" : "communications.templates.manage";
+  if (path.startsWith("/api/routsify/communications")) return isRead ? "communications.view" : "communications.manage";
   if (path.startsWith("/api/routsify/payment-links") || path.includes("/payment-link")) return "payment_links.manage";
   if (path.startsWith("/api/payments") || path.includes("/fiscal")) return "payments.manage";
   if (path.startsWith("/api/routsify/proposals") || path.startsWith("/api/routsify/budgets")) return isRead ? "budgets.view" : "budgets.manage";

@@ -1,9 +1,10 @@
+import { syncCommunicationFollowups } from "@/lib/communications-server";
 import { loadEffectiveSettings } from "@/lib/effective-settings-server";
 import { queueEligibleFinalInvoices } from "@/lib/fiscal-workflow-server";
 import { processOutboxBatch, syncHoldedPurchaseCandidates } from "@/lib/outbox-worker-server";
 import { getSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase-admin";
 
-export type RoutsifyJob = "holded_sync_pending" | "sync_holded_purchases" | "pre_trip_supplier_check" | "post_trip_supplier_check" | "operational_close_check" | "fiscal_final_invoice_check" | "privacy_retention_review";
+export type RoutsifyJob = "holded_sync_pending" | "communication_followup_sync" | "sync_holded_purchases" | "pre_trip_supplier_check" | "post_trip_supplier_check" | "operational_close_check" | "fiscal_final_invoice_check" | "privacy_retention_review";
 
 async function createOrRefreshOpenTask(input: {
   organizationId: string;
@@ -128,6 +129,25 @@ async function syncPurchaseCandidatesForAllOrganizations() {
   return results;
 }
 
+async function syncCommunicationFollowupsForAllOrganizations() {
+  const supabase = getSupabaseAdminClient();
+  const { data: organizations, error } = await supabase.from("organizations").select("id");
+  if (error) throw new Error(error.message);
+  const results = [];
+  for (const organization of organizations || []) {
+    try {
+      results.push({ organizationId: organization.id, ok: true, data: await syncCommunicationFollowups(String(organization.id)) });
+    } catch (error) {
+      results.push({ organizationId: organization.id, ok: false, error: error instanceof Error ? error.message : "communication_followup_sync_failed" });
+    }
+  }
+  return {
+    organizations: results.length,
+    failedOrganizations: results.filter((item) => !item.ok).length,
+    results,
+  };
+}
+
 async function purgeTechnicalLogs() {
   const supabase = getSupabaseAdminClient();
   const { data: organizations, error } = await supabase.from("organizations").select("id");
@@ -198,6 +218,7 @@ export async function runRoutsifyJob(job: RoutsifyJob) {
   if (!hasSupabaseAdminEnv()) return { ok: false as const, error: "supabase_admin_not_configured" };
   try {
     if (job === "holded_sync_pending") return { ok: true as const, job, data: await processOutboxBatch(50) };
+    if (job === "communication_followup_sync") return { ok: true as const, job, data: await syncCommunicationFollowupsForAllOrganizations() };
     if (job === "sync_holded_purchases") return { ok: true as const, job, data: await syncPurchaseCandidatesForAllOrganizations() };
     if (job === "pre_trip_supplier_check") return { ok: true as const, job, data: await createSupplierTasks("pre") };
     if (job === "post_trip_supplier_check") return { ok: true as const, job, data: await createSupplierTasks("post") };
