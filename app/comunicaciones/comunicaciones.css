@@ -1,0 +1,39 @@
+.communications-workspace { display: grid; gap: 18px; }
+.communication-kpis .kpi-card { width: 100%; text-align: left; color: inherit; cursor: pointer; }
+.communication-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 16px; }
+.communication-tabs { display: flex; flex-wrap: wrap; gap: 8px; }
+.communication-tabs button { border: 1px solid var(--border, #e4e7ec); border-radius: 999px; padding: 8px 13px; background: var(--surface, #fff); color: inherit; cursor: pointer; font-weight: 700; }
+.communication-tabs button.active { background: var(--primary, #379237); border-color: var(--primary, #379237); color: #fff; }
+.communication-list-card { padding: 20px; }
+.communication-list { display: grid; gap: 14px; }
+.communication-item { display: grid; gap: 13px; border: 1px solid var(--border, #e4e7ec); border-left: 4px solid #667085; border-radius: 14px; padding: 17px; background: var(--surface, #fff); }
+.communication-item-due { border-left-color: #b42318; }
+.communication-item-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.communication-item-head h3 { margin: 4px 0 3px; }
+.communication-item-head p { margin: 0; color: var(--muted, #667085); }
+.communication-dates { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: .88rem; color: var(--muted, #667085); }
+.communication-subject { padding: 9px 11px; border-radius: 10px; background: rgba(15, 23, 42, .04); }
+.communication-body { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.55; border: 1px solid var(--border, #e4e7ec); border-radius: 12px; padding: 14px; background: rgba(15, 23, 42, .025); }
+.communication-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.link-button.danger { color: #b42318; }
+.communication-template-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.communication-template-card { display: grid; align-content: start; gap: 12px; padding: 18px; }
+.communication-template-card label, .communication-settings-card label { display: grid; gap: 6px; font-weight: 700; }
+.communication-template-card input, .communication-template-card textarea, .communication-settings-card input, .communication-settings-card select { width: 100%; }
+.communication-template-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.communication-template-head div { display: grid; gap: 3px; }
+.communication-template-head small { color: var(--muted, #667085); }
+.communication-switch { display: flex !important; grid-template-columns: auto 1fr; align-items: center; gap: 8px !important; }
+.communication-switch input { width: auto !important; }
+.communication-settings-card { display: grid; gap: 16px; padding: 20px; }
+.communication-settings-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; align-items: end; }
+.muted { color: var(--muted, #667085); }
+@media (max-width: 1050px) {
+  .communication-template-grid { grid-template-columns: 1fr; }
+  .communication-settings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 720px) {
+  .communication-toolbar, .communication-item-head { align-items: stretch; flex-direction: column; }
+  .communication-settings-grid { grid-template-columns: 1fr; }
+  .communication-actions .btn { width: 100%; text-align: center; }
+}
