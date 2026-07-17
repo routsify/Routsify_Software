@@ -1,6 +1,20 @@
+import { timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { verifyWhatsAppWebhookSignature, whatsappConfiguration } from "@/lib/whatsapp-cloud-server";
+
+type WhatsAppWebhookPayload = {
+  object?: string;
+  entry?: Array<{
+    changes?: Array<{
+      value?: {
+        statuses?: Array<Record<string, unknown>>;
+        messages?: Array<Record<string, unknown>>;
+        contacts?: Array<Record<string, unknown>>;
+      };
+    }>;
+  }>;
+};
 
 function organizationId() {
   return process.env.ROUTSIFY_DEFAULT_ORGANIZATION_ID || "";
@@ -10,6 +24,12 @@ function digits(value: unknown) {
   return String(value || "").replace(/\D/g, "");
 }
 
+function safeEqual(left: string, right: string) {
+  const a = Buffer.from(left);
+  const b = Buffer.from(right);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
 export async function GET(request: NextRequest) {
   const orgId = organizationId();
   if (!orgId) return new NextResponse("organization_not_configured", { status: 503 });
@@ -17,7 +37,7 @@ export async function GET(request: NextRequest) {
   const mode = request.nextUrl.searchParams.get("hub.mode");
   const token = request.nextUrl.searchParams.get("hub.verify_token") || "";
   const challenge = request.nextUrl.searchParams.get("hub.challenge") || "";
-  if (mode === "subscribe" && config.verifyToken && token === config.verifyToken) return new NextResponse(challenge, { status: 200, headers: { "content-type": "text/plain" } });
+  if (mode === "subscribe" && config.verifyToken && safeEqual(token, config.verifyToken)) return new NextResponse(challenge, { status: 200, headers: { "content-type": "text/plain" } });
   return new NextResponse("verification_failed", { status: 403 });
 }
 
@@ -29,19 +49,29 @@ export async function POST(request: NextRequest) {
   const verification = verifyWhatsAppWebhookSignature(rawBody, request.headers.get("x-hub-signature-256"), config.appSecret);
   if (!verification.ok) return NextResponse.json({ ok: false, error: verification.error }, { status: verification.status });
 
-  const payload = JSON.parse(rawBody || "null") as { entry?: Array<{ changes?: Array<{ value?: { statuses?: Array<Record<string, unknown>>; messages?: Array<Record<string, unknown>>; contacts?: Array<Record<string, unknown>> } }> }> } | null;
+  let payload: WhatsAppWebhookPayload | null = null;
+  try {
+    const parsed = JSON.parse(rawBody || "null");
+    payload = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as WhatsAppWebhookPayload : null;
+  } catch {
+    payload = null;
+  }
+  if (!payload) return NextResponse.json({ ok: false, error: "invalid_whatsapp_payload" }, { status: 400 });
+  if (payload.object && payload.object !== "whatsapp_business_account") return NextResponse.json({ ok: true, ignored: true, reason: "unsupported_whatsapp_object" });
+
   const db = getSupabaseAdminClient();
   let statusUpdates = 0;
   let replies = 0;
 
-  for (const entry of payload?.entry || []) {
+  for (const entry of payload.entry || []) {
     for (const change of entry.changes || []) {
       const value = change.value || {};
       for (const status of value.statuses || []) {
         const messageId = String(status.id || "");
         const providerStatus = String(status.status || "");
         if (!messageId || !providerStatus) continue;
-        const timestamp = status.timestamp ? new Date(Number(status.timestamp) * 1000).toISOString() : new Date().toISOString();
+        const timestampValue = Number(status.timestamp);
+        const timestamp = Number.isFinite(timestampValue) ? new Date(timestampValue * 1000).toISOString() : new Date().toISOString();
         const patch: Record<string, unknown> = { provider_status: providerStatus, updated_at: new Date().toISOString() };
         if (providerStatus === "delivered") patch.delivered_at = timestamp;
         if (providerStatus === "read") patch.read_at = timestamp;
