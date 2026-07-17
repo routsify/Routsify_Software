@@ -4,17 +4,16 @@ import { useMemo, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import { defaultSettings, moduleFor, type AppSetting } from "@/lib/settings-master";
 import { enforceProtectedSettingValue, isProtectedSetting, protectedSettingDescription } from "@/lib/settings-invariants";
-import { IntegrationSecretsPanel } from "./IntegrationSecretsPanel";
+import { IntegrationSecretsPanel, type IntegrationSecretStatus } from "./IntegrationSecretsPanel";
 import { UserManagementPanel } from "./UserManagementPanel";
 
-type SecretStatus = { key: "holded_api_key" | "openai_api_key" | "fillout_webhook_secret" | "booking_webhook_secret"; configured: boolean; updatedAt: string | null };
 type TabId = "general" | "appearance" | "users" | "integrations" | "operations" | "security";
 
 const tabs: Array<{ id: TabId; label: string; description: string; modules: string[] }> = [
   { id: "general", label: "General", description: "Empresa, moneda, fechas y menú visible.", modules: ["general", "navigation"] },
   { id: "appearance", label: "Apariencia", description: "Colores, tipografía, densidad y composición.", modules: ["appearance"] },
   { id: "users", label: "Usuarios", description: "Altas, invitaciones, roles y permisos.", modules: [] },
-  { id: "integrations", label: "Integraciones", description: "Fillout, Routsify Booking, Holded y OCR.", modules: ["integrations"] },
+  { id: "integrations", label: "Integraciones", description: "Email, WhatsApp, Fillout, Booking, Holded y OCR.", modules: ["integrations"] },
   { id: "operations", label: "Operativa", description: "Clientes, expedientes, presupuestos, márgenes y compras.", modules: ["clients", "cases", "budgets", "margins", "purchases", "contracts", "fiscal"] },
   { id: "security", label: "Seguridad y sistema", description: "Webhooks, logs, caché y políticas técnicas.", modules: ["security", "logs", "system"] },
 ];
@@ -23,7 +22,7 @@ function sameValue(left: AppSetting["value"], right: AppSetting["value"]) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-export function ProductionSettings({ storedRows = [], secretStatuses = [], canManageSecrets = false, isAdmin = canManageSecrets }: { storedRows?: Record<string, unknown>[]; secretStatuses?: SecretStatus[]; canManageSecrets?: boolean; isAdmin?: boolean }) {
+export function ProductionSettings({ storedRows = [], secretStatuses = [], canManageSecrets = false, isAdmin = canManageSecrets }: { storedRows?: Record<string, unknown>[]; secretStatuses?: IntegrationSecretStatus[]; canManageSecrets?: boolean; isAdmin?: boolean }) {
   const router = useRouter();
   const initialSettings = useMemo(() => defaultSettings.map((setting) => {
     const stored = storedRows.find((row) => String(row.key || "") === setting.key);
@@ -144,7 +143,7 @@ export function ProductionSettings({ storedRows = [], secretStatuses = [], canMa
       <article className="settings-summary-card"><span>Control</span><strong>{isAdmin ? "Administrador" : "Consulta"}</strong><small>{isAdmin ? "Puedes modificar y aplicar la configuración." : "Los cambios están restringidos al administrador."}</small></article>
       <article className="settings-summary-card"><span>Cambios pendientes</span><strong>{dirtyKeys.length}</strong><small>{dirtyKeys.length ? "Pendientes de guardar" : "Configuración sincronizada"}</small></article>
       <article className="settings-summary-card"><span>Integraciones de entrada</span><strong>{Number(filloutEnabled) + Number(bookingEnabled)}/2</strong><small>Fillout y Routsify Booking activas</small></article>
-      <article className="settings-summary-card"><span>Credenciales</span><strong>{configuredSecrets}/4</strong><small>Holded, OCR y secretos de webhooks</small></article>
+      <article className="settings-summary-card"><span>Credenciales</span><strong>{configuredSecrets}/{secretStatuses.length || 9}</strong><small>Holded, OCR, email, WhatsApp y webhooks</small></article>
     </section>
 
     <nav className="settings-tabs" aria-label="Secciones de ajustes">{tabs.map((tab) => <button key={tab.id} type="button" className={`settings-tab ${activeTab === tab.id ? "active" : ""}`} onClick={() => { setActiveTab(tab.id); setMessage(null); setError(null); }}>{tab.label}</button>)}</nav>
