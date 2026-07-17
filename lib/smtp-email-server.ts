@@ -4,6 +4,10 @@ import tls, { type TLSSocket } from "node:tls";
 import { getOrganizationSecret } from "@/lib/organization-secrets-server";
 import { loadThirdPartyIntegrationConfig } from "@/lib/third-party-integration-config-server";
 
+const HOSTINGER_SMTP_HOST = "smtp.hostinger.com";
+const HOSTINGER_SMTP_PORT = 465;
+const SMTP_TIMEOUT_MS = 15_000;
+
 class SmtpSession {
   private buffer = "";
   private lines: string[] = [];
@@ -78,6 +82,7 @@ function formatAddress(name: string, address: string) {
 
 async function connect(input: { host: string; port: number; username: string; password: string }) {
   const socket = tls.connect({ host: input.host, port: input.port, servername: input.host, rejectUnauthorized: true });
+  socket.setTimeout(SMTP_TIMEOUT_MS, () => socket.destroy(new Error("smtp_timeout")));
   await once(socket, "secureConnect");
   const session = new SmtpSession(socket);
   await session.response([220]);
@@ -94,7 +99,13 @@ export async function smtpConfiguration(organizationId: string) {
     getOrganizationSecret(organizationId, "smtp_username"),
     getOrganizationSecret(organizationId, "smtp_password"),
   ]);
-  return { ...config.email, username, password };
+  return {
+    ...config.email,
+    smtpHost: config.email.smtpHost || HOSTINGER_SMTP_HOST,
+    smtpPort: config.email.smtpPort || HOSTINGER_SMTP_PORT,
+    username,
+    password,
+  };
 }
 
 export async function testSmtpConnection(organizationId: string) {
