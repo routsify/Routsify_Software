@@ -26,6 +26,8 @@ export async function testWhatsAppConnection(organizationId: string) {
   const config = await whatsappConfiguration(organizationId);
   if (!config.enabled) return { ok: false as const, status: 503, error: "whatsapp_integration_disabled" };
   if (!config.accessToken || !config.phoneNumberId) return { ok: false as const, status: 503, error: "whatsapp_credentials_not_configured" };
+  // The system-user token must include whatsapp_business_messaging;
+  // whatsapp_business_management is also needed to manage account assets.
   const response = await fetch(`https://graph.facebook.com/${config.graphVersion}/${config.phoneNumberId}?fields=display_phone_number,verified_name,quality_rating`, {
     headers: { Authorization: `Bearer ${config.accessToken}` },
     cache: "no-store",
