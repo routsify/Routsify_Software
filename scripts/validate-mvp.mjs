@@ -105,19 +105,19 @@ const communicationsEngine = read("lib/communications-server.ts");
 for (const token of ["proposal_followup", "contract_reminder", "payment_reminder", "supplier_invoice_request", "syncCommunicationFollowups", "communication_followup"]) assert(communicationsEngine.includes(token), `Missing communication engine token: ${token}`);
 
 const communicationsWorkspace = read("app/comunicaciones/CommunicationsWorkspace.tsx");
-for (const token of ["mailto:", "wa.me", "Enviar email", "Enviar WhatsApp", "Registrar envío manual", "Registrar respuesta", "Guardar cadencias", "Guardar plantilla"]) assert(communicationsWorkspace.includes(token), `Missing communications workspace token: ${token}`);
+for (const token of ["mailto:", "wa.me", "sendNow", "/send", "Registrar envío manual", "Registrar respuesta", "Guardar cadencias", "Guardar plantilla"]) assert(communicationsWorkspace.includes(token), `Missing communications workspace token: ${token}`);
 
 const emailProvider = read("lib/smtp-email-server.ts");
 for (const token of ["smtp.hostinger.com", "AUTH LOGIN", "sendTransactionalEmail", "testSmtpConnection", "Content-Transfer-Encoding: base64"]) assert(emailProvider.includes(token), `Missing SMTP token: ${token}`);
 
 const whatsappProvider = read("lib/whatsapp-cloud-server.ts");
-for (const token of ["graph.facebook.com", "whatsapp_business", "sendWhatsAppText", "x-hub-signature-256", "testWhatsAppConnection"]) assert(whatsappProvider.includes(token), `Missing WhatsApp token: ${token}`);
+for (const token of ["graph.facebook.com", "whatsapp_business", "sendWhatsAppText", "verifyWhatsAppWebhookSignature", "testWhatsAppConnection"]) assert(whatsappProvider.includes(token), `Missing WhatsApp token: ${token}`);
 
 const providerSend = read("app/api/routsify/communications/[followupId]/send/route.ts");
 for (const token of ["sendTransactionalEmail", "sendWhatsAppText", "provider_message_id", "updateCommunicationFollowupStatus"]) assert(providerSend.includes(token), `Missing provider send token: ${token}`);
 
 const whatsappWebhook = read("app/api/webhooks/whatsapp/route.ts");
-for (const token of ["hub.verify_token", "verifyWhatsAppWebhookSignature", "provider_status", "communication.answered"]) assert(whatsappWebhook.includes(token), `Missing WhatsApp webhook token: ${token}`);
+for (const token of ["hub.verify_token", "x-hub-signature-256", "verifyWhatsAppWebhookSignature", "provider_status", "communication.answered"]) assert(whatsappWebhook.includes(token), `Missing WhatsApp webhook token: ${token}`);
 
 const jobs = read("lib/jobs-server.ts");
 for (const token of ["communication_followup_sync", "syncCommunicationFollowupsForAllOrganizations"]) assert(jobs.includes(token), `Missing communication job token: ${token}`);
