@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getWebhookIntegrationConfig } from "@/lib/integration-config-server";
 import { enqueueOutboxEvent } from "@/lib/outbox-server";
 import { processOutboxBatch } from "@/lib/outbox-worker-server";
-import { providerIdempotencyKey, verifyWebhookRequest } from "@/lib/webhook-security";
+import { providerIdempotencyKey, verifyStaticBearerRequest, verifyWebhookRequest } from "@/lib/webhook-security";
 
 export const maxDuration = 60;
 
@@ -16,8 +16,14 @@ export async function POST(request: NextRequest) {
   if (!organizationId) return NextResponse.json({ ok: false, error: "organization_not_configured" }, { status: 503 });
   const configuration = await getWebhookIntegrationConfig(organizationId, "fillout");
   if (!configuration.enabled) return NextResponse.json({ ok: false, error: "fillout_integration_disabled" }, { status: 503 });
-  const verification = verifyWebhookRequest({ rawBody, secret: configuration.secret || undefined, signature: request.headers.get("x-routsify-signature"), timestamp: request.headers.get("x-routsify-timestamp"), eventId: request.headers.get("x-routsify-event-id") || request.headers.get("x-idempotency-key") });
+
+  const eventId = request.headers.get("x-routsify-event-id") || request.headers.get("x-idempotency-key") || request.headers.get("x-fillout-submission-id");
+  const hasHmacHeaders = Boolean(request.headers.get("x-routsify-signature") || request.headers.get("x-routsify-timestamp"));
+  const verification = hasHmacHeaders
+    ? verifyWebhookRequest({ rawBody, secret: configuration.secret || undefined, signature: request.headers.get("x-routsify-signature"), timestamp: request.headers.get("x-routsify-timestamp"), eventId })
+    : verifyStaticBearerRequest({ secret: configuration.secret || undefined, authorization: request.headers.get("authorization"), eventId });
   if (!verification.ok) return NextResponse.json({ ok: false, error: verification.error }, { status: verification.status });
+
   let payload: Record<string, unknown> | null = null;
   try {
     const parsed = JSON.parse(rawBody || "null");
