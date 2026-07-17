@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "crypto";
 
 export type WebhookVerification =
-  | { ok: true; mode: "hmac"; timestamp?: string; eventId?: string }
+  | { ok: true; mode: "hmac" | "bearer"; timestamp?: string; eventId?: string }
   | { ok: false; status: number; error: string };
 
 function safeEqual(left: string, right: string) {
@@ -24,7 +24,6 @@ export function canonicalJsonStringify(value: unknown): string {
 
 export function verifyWebhookRequest(input: { rawBody: string; secret?: string; signature?: string | null; timestamp?: string | null; eventId?: string | null; toleranceSeconds?: number }): WebhookVerification {
   if (!input.secret) return { ok: false, status: 503, error: "webhook_secret_required" };
-
   if (!input.signature || !input.timestamp) return { ok: false, status: 401, error: "missing_signature_or_timestamp" };
   const timestampMs = Number(input.timestamp) * 1000;
   if (!Number.isFinite(timestampMs)) return { ok: false, status: 401, error: "invalid_timestamp" };
@@ -36,6 +35,14 @@ export function verifyWebhookRequest(input: { rawBody: string; secret?: string; 
   const received = normalizeSignature(input.signature);
   if (!safeEqual(received, expected)) return { ok: false, status: 401, error: "invalid_signature" };
   return { ok: true, mode: "hmac", timestamp: input.timestamp, eventId: input.eventId || undefined };
+}
+
+export function verifyStaticBearerRequest(input: { secret?: string; authorization?: string | null; eventId?: string | null }): WebhookVerification {
+  if (!input.secret) return { ok: false, status: 503, error: "webhook_secret_required" };
+  const authorization = String(input.authorization || "");
+  const received = authorization.toLowerCase().startsWith("bearer ") ? authorization.slice(7).trim() : "";
+  if (!received || !safeEqual(received, input.secret)) return { ok: false, status: 401, error: "invalid_bearer_token" };
+  return { ok: true, mode: "bearer", eventId: input.eventId || undefined };
 }
 
 export function providerIdempotencyKey(input: { channel: string; eventType: string; payload: Record<string, unknown>; fallbackRawBody: string; eventId?: string | null }) {
