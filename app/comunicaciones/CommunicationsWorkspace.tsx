@@ -140,7 +140,7 @@ function SettingsEditor({ initial, canEdit }: { initial: CommunicationCadenceSet
   }
 
   return <section className="card communication-settings-card">
-    <div className="panel-head"><div><h2>Cadencias de seguimiento</h2><p>El sistema prepara tareas y mensajes. No envía automáticamente sin un proveedor externo configurado.</p></div></div>
+    <div className="panel-head"><div><h2>Cadencias de seguimiento</h2><p>El sistema prepara tareas y mensajes. Cuando el proveedor del canal está configurado, también permite enviarlos directamente.</p></div></div>
     <div className="communication-settings-grid">
       <label className="communication-switch"><input type="checkbox" checked={values.enabled} disabled={!canEdit} onChange={(event) => setValues((current) => ({ ...current, enabled: event.target.checked }))} /> Activar generación de seguimientos</label>
       <label>Canal preferido<select value={values.preferredChannel} disabled={!canEdit} onChange={(event) => setValues((current) => ({ ...current, preferredChannel: event.target.value as CommunicationCadenceSettings["preferredChannel"] }))}>
@@ -218,6 +218,21 @@ export function CommunicationsWorkspace({
     setMessage(status === "sent" ? "Envío registrado y siguiente seguimiento programado." : status === "answered" ? "Respuesta registrada; la cadencia queda cerrada." : status === "cancelled" ? "Seguimiento cancelado." : "Mensaje marcado como preparado.");
   }
 
+  async function sendNow(item: CommunicationFollowup) {
+    if (!window.confirm(`¿Enviar ahora este ${item.channel === "email" ? "email" : "WhatsApp"} desde Routsify?`)) return;
+    setSavingId(item.id);
+    setMessage(null);
+    const response = await fetch(`/api/routsify/communications/${encodeURIComponent(item.id)}/send`, { method: "POST" });
+    const result = await response.json().catch(() => null);
+    setSavingId(null);
+    if (!response.ok || !result?.ok) {
+      setMessage(String(result?.error || "No se pudo realizar el envío. Revisa la integración en Ajustes."));
+      return;
+    }
+    setFollowups((current) => current.map((currentItem) => currentItem.id === item.id ? result.data as CommunicationFollowup : currentItem));
+    setMessage(`${item.channel === "email" ? "Email" : "WhatsApp"} enviado y registrado correctamente.`);
+  }
+
   async function sync() {
     setSyncing(true);
     setMessage(null);
@@ -265,8 +280,8 @@ export function CommunicationsWorkspace({
 
     {tab === "settings" ? <SettingsEditor initial={initialSettings} canEdit={canManageTemplates} /> : null}
 
-    {!["templates", "settings"].includes(tab) ? <section className="card communication-list-card">
-      <div className="panel-head"><div><h2>{tab === "pending" ? "Mensajes que requieren acción" : tab === "sent" ? "Enviados sin respuesta registrada" : tab === "answered" ? "Seguimientos respondidos" : "Historial de comunicaciones"}</h2><p>Actualizado {formatDate(generatedAt)}. Abrir un mensaje no lo marca como enviado; registra el envío después de comprobarlo.</p></div></div>
+    {!['templates', 'settings'].includes(tab) ? <section className="card communication-list-card">
+      <div className="panel-head"><div><h2>{tab === "pending" ? "Mensajes que requieren acción" : tab === "sent" ? "Enviados sin respuesta registrada" : tab === "answered" ? "Seguimientos respondidos" : "Historial de comunicaciones"}</h2><p>Actualizado {formatDate(generatedAt)}. El envío directo se registra automáticamente; la apertura manual sigue disponible como alternativa.</p></div></div>
       {visible.length === 0 ? <div className="empty-state"><h2>No hay comunicaciones en esta sección</h2><p>El motor generará seguimientos cuando se cumplan las cadencias configuradas.</p></div> : <div className="communication-list">
         {visible.map((item) => {
           const href = messageHref(item);
@@ -282,9 +297,10 @@ export function CommunicationsWorkspace({
             <div className="communication-actions">
               <a className="btn secondary" href={contextHref(item)}>Abrir contexto</a>
               <button className="link-button" type="button" onClick={() => void copyBody(item)}>Copiar mensaje</button>
-              {href ? <a className="btn" href={href} target={item.channel === "whatsapp" ? "_blank" : undefined} rel={item.channel === "whatsapp" ? "noreferrer" : undefined}>Abrir {item.channel === "email" ? "email" : "WhatsApp"}</a> : null}
+              {canManage && (item.status === "planned" || item.status === "prepared") ? <button className="btn" type="button" disabled={savingId === item.id} onClick={() => void sendNow(item)}>{savingId === item.id ? "Enviando..." : `Enviar ${item.channel === "email" ? "email" : "WhatsApp"}`}</button> : null}
+              {href ? <a className="btn secondary" href={href} target={item.channel === "whatsapp" ? "_blank" : undefined} rel={item.channel === "whatsapp" ? "noreferrer" : undefined}>Abrir manualmente</a> : null}
               {canManage && item.status === "planned" ? <button className="link-button" type="button" disabled={savingId === item.id} onClick={() => void changeStatus(item.id, "prepared")}>Marcar preparada</button> : null}
-              {canManage && (item.status === "planned" || item.status === "prepared") ? <button className="link-button" type="button" disabled={savingId === item.id} onClick={() => void changeStatus(item.id, "sent")}>{savingId === item.id ? "Guardando..." : "Registrar envío"}</button> : null}
+              {canManage && (item.status === "planned" || item.status === "prepared") ? <button className="link-button" type="button" disabled={savingId === item.id} onClick={() => void changeStatus(item.id, "sent")}>Registrar envío manual</button> : null}
               {canManage && item.status === "sent" ? <button className="link-button" type="button" disabled={savingId === item.id} onClick={() => void changeStatus(item.id, "answered")}>Registrar respuesta</button> : null}
               {canManage && !["answered", "cancelled"].includes(item.status) ? <button className="link-button danger" type="button" disabled={savingId === item.id} onClick={() => void changeStatus(item.id, "cancelled")}>Cancelar</button> : null}
             </div>

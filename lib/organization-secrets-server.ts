@@ -1,6 +1,16 @@
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 
-export const organizationSecretKeys = ["holded_api_key", "openai_api_key", "fillout_webhook_secret", "booking_webhook_secret"] as const;
+export const organizationSecretKeys = [
+  "holded_api_key",
+  "openai_api_key",
+  "fillout_webhook_secret",
+  "booking_webhook_secret",
+  "smtp_username",
+  "smtp_password",
+  "whatsapp_access_token",
+  "whatsapp_verify_token",
+  "whatsapp_app_secret",
+] as const;
 export type OrganizationSecretKey = (typeof organizationSecretKeys)[number];
 
 function environmentFallback(secretKey: OrganizationSecretKey) {
@@ -8,6 +18,11 @@ function environmentFallback(secretKey: OrganizationSecretKey) {
   if (secretKey === "openai_api_key") return process.env.OPENAI_API_KEY || null;
   if (secretKey === "fillout_webhook_secret") return process.env.FORM_WEBHOOK_SECRET || null;
   if (secretKey === "booking_webhook_secret") return process.env.BOOKING_WEBHOOK_SECRET || null;
+  if (secretKey === "smtp_username") return process.env.SMTP_USERNAME || null;
+  if (secretKey === "smtp_password") return process.env.SMTP_PASSWORD || null;
+  if (secretKey === "whatsapp_access_token") return process.env.WHATSAPP_ACCESS_TOKEN || null;
+  if (secretKey === "whatsapp_verify_token") return process.env.WHATSAPP_VERIFY_TOKEN || null;
+  if (secretKey === "whatsapp_app_secret") return process.env.WHATSAPP_APP_SECRET || null;
   return null;
 }
 
@@ -48,7 +63,7 @@ export async function setOrganizationSecret(input: {
   actorId: string;
 }) {
   const value = input.value.trim();
-  if (value.length < 12 || value.length > 4096) throw new Error("invalid_secret_length");
+  if (value.length < 8 || value.length > 4096) throw new Error("invalid_secret_length");
   const { data, error } = await getSupabaseAdminClient().rpc("set_organization_secret", {
     target_org: input.organizationId,
     target_key: input.secretKey,

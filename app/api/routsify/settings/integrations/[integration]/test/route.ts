@@ -3,6 +3,8 @@ import { jsonAccessDenied, requireInternalAccess } from "@/lib/api-security";
 import { testHoldedModules } from "@/lib/holded-server";
 import { testOpenAIConnection } from "@/lib/openai-ocr-server";
 import { resolveOrganizationId } from "@/lib/request-context";
+import { testSmtpConnection } from "@/lib/smtp-email-server";
+import { testWhatsAppConnection } from "@/lib/whatsapp-cloud-server";
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ integration: string }> }) {
   const access = await requireInternalAccess(request);
@@ -17,6 +19,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (integration === "openai") {
       const data = await testOpenAIConnection(organizationId);
       return NextResponse.json({ ok: data.ok, integration, data }, { status: data.ok ? 200 : data.status });
+    }
+    if (integration === "email") {
+      const data = await testSmtpConnection(organizationId);
+      return NextResponse.json({ ok: data.ok, integration, data, error: data.ok ? undefined : data.error }, { status: data.ok ? 200 : data.status });
+    }
+    if (integration === "whatsapp") {
+      const data = await testWhatsAppConnection(organizationId);
+      return NextResponse.json({ ok: data.ok, integration, data, error: data.ok ? undefined : data.error }, { status: data.ok ? 200 : data.status });
     }
     return NextResponse.json({ ok: false, integration, error: "unsupported_integration" }, { status: 404 });
   } catch (error) {
