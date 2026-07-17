@@ -65,6 +65,7 @@ for (const file of [
   "supabase/migrations/0029_communication_followup_engine.sql",
   "supabase/migrations/0030_harden_auxiliary_rls_and_communication_indexes.sql",
   "supabase/migrations/0031_outbound_provider_delivery_tracking.sql",
+  "supabase/migrations/0032_expand_organization_secret_keys.sql",
   "supabase/migrations/0005_routsify_settings_and_outbox_worker.sql",
   "supabase/migrations/0015_accept_proposal_version_rpc.sql",
   "docs/THIRD_PARTY_INTEGRATIONS.md",
@@ -101,6 +102,9 @@ for (const token of ["communication_templates", "communication_followups", "thre
 const hardeningMigration = read("supabase/migrations/0030_harden_auxiliary_rls_and_communication_indexes.sql");
 for (const token of ["automation_rules_select_scoped", "saved_views_user_scoped", "communication_followups_insert_scoped", "communication_followups_task_id_idx"]) assert(hardeningMigration.includes(token), `Missing RLS hardening token: ${token}`);
 
+const secretMigration = read("supabase/migrations/0032_expand_organization_secret_keys.sql");
+for (const token of ["smtp_username", "smtp_password", "whatsapp_access_token", "whatsapp_verify_token", "whatsapp_app_secret", "fillout_webhook_secret", "booking_webhook_secret"]) assert(secretMigration.includes(token), `Missing Vault secret token: ${token}`);
+
 const communicationsEngine = read("lib/communications-server.ts");
 for (const token of ["proposal_followup", "contract_reminder", "payment_reminder", "supplier_invoice_request", "syncCommunicationFollowups", "communication_followup"]) assert(communicationsEngine.includes(token), `Missing communication engine token: ${token}`);
 
@@ -108,7 +112,7 @@ const communicationsWorkspace = read("app/comunicaciones/CommunicationsWorkspace
 for (const token of ["mailto:", "wa.me", "sendNow", "/send", "Registrar envío manual", "Registrar respuesta", "Guardar cadencias", "Guardar plantilla"]) assert(communicationsWorkspace.includes(token), `Missing communications workspace token: ${token}`);
 
 const emailProvider = read("lib/smtp-email-server.ts");
-for (const token of ["smtp.hostinger.com", "AUTH LOGIN", "sendTransactionalEmail", "testSmtpConnection", "Content-Transfer-Encoding: base64"]) assert(emailProvider.includes(token), `Missing SMTP token: ${token}`);
+for (const token of ["smtp.hostinger.com", "AUTH LOGIN", "sendTransactionalEmail", "testSmtpConnection", "Content-Transfer-Encoding: base64", "smtp_timeout"]) assert(emailProvider.includes(token), `Missing SMTP token: ${token}`);
 
 const whatsappProvider = read("lib/whatsapp-cloud-server.ts");
 for (const token of ["graph.facebook.com", "whatsapp_business", "sendWhatsAppText", "verifyWhatsAppWebhookSignature", "testWhatsAppConnection"]) assert(whatsappProvider.includes(token), `Missing WhatsApp token: ${token}`);
@@ -116,8 +120,11 @@ for (const token of ["graph.facebook.com", "whatsapp_business", "sendWhatsAppTex
 const providerSend = read("app/api/routsify/communications/[followupId]/send/route.ts");
 for (const token of ["sendTransactionalEmail", "sendWhatsAppText", "provider_message_id", "updateCommunicationFollowupStatus"]) assert(providerSend.includes(token), `Missing provider send token: ${token}`);
 
+const filloutWebhook = read("app/api/webhooks/forms/route.ts");
+for (const token of ["verifyStaticBearerRequest", "normalizeFilloutSubmission", "submissionId", "questions", "fillout_submission"]) assert(filloutWebhook.includes(token), `Missing Fillout webhook token: ${token}`);
+
 const whatsappWebhook = read("app/api/webhooks/whatsapp/route.ts");
-for (const token of ["hub.verify_token", "x-hub-signature-256", "verifyWhatsAppWebhookSignature", "provider_status", "communication.answered"]) assert(whatsappWebhook.includes(token), `Missing WhatsApp webhook token: ${token}`);
+for (const token of ["hub.verify_token", "x-hub-signature-256", "verifyWhatsAppWebhookSignature", "invalid_whatsapp_payload", "provider_status", "communication.answered"]) assert(whatsappWebhook.includes(token), `Missing WhatsApp webhook token: ${token}`);
 
 const jobs = read("lib/jobs-server.ts");
 for (const token of ["communication_followup_sync", "syncCommunicationFollowupsForAllOrganizations"]) assert(jobs.includes(token), `Missing communication job token: ${token}`);
