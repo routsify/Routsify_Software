@@ -23,6 +23,9 @@ for (const file of [
   "lib/communications-server.ts",
   "lib/communication-settings-server.ts",
   "lib/organization-secrets-server.ts",
+  "lib/third-party-integration-config-server.ts",
+  "lib/smtp-email-server.ts",
+  "lib/whatsapp-cloud-server.ts",
   "lib/openai-ocr-server.ts",
   "lib/payment-workflow-server.ts",
   "lib/fiscal-workflow-server.ts",
@@ -37,10 +40,15 @@ for (const file of [
   "app/api/documentos/upload-url/route.ts",
   "app/api/documentos/confirm-upload/route.ts",
   "app/api/payments/manual/route.ts",
+  "app/api/webhooks/forms/route.ts",
+  "app/api/webhooks/bookings/route.ts",
+  "app/api/webhooks/whatsapp/route.ts",
   "app/api/webhooks/payments/route.ts",
   "app/api/webhooks/holded/route.ts",
   "app/api/routsify/jobs/run/route.ts",
   "app/api/routsify/settings/secrets/[secretKey]/route.ts",
+  "app/api/routsify/settings/integrations/config/route.ts",
+  "app/api/routsify/settings/integrations/[integration]/test/route.ts",
   "app/api/routsify/proposals/[proposalId]/payment-link/route.ts",
   "app/api/routsify/proposals/[proposalId]/lines/bulk/route.ts",
   "app/api/routsify/proposals/[proposalId]/send/route.ts",
@@ -48,14 +56,18 @@ for (const file of [
   "app/api/routsify/tasks/[taskId]/route.ts",
   "app/api/routsify/communications/sync/route.ts",
   "app/api/routsify/communications/[followupId]/route.ts",
+  "app/api/routsify/communications/[followupId]/send/route.ts",
   "app/api/routsify/communications/settings/route.ts",
   "app/api/routsify/communications/templates/[templateId]/route.ts",
   "app/api/routsify/clients/documents/[documentId]/ocr/route.ts",
   "supabase/migrations/0018_integrations_fiscal_ocr_privacy.sql",
   "supabase/migrations/0019_settings_driven_business_policies.sql",
   "supabase/migrations/0029_communication_followup_engine.sql",
+  "supabase/migrations/0030_harden_auxiliary_rls_and_communication_indexes.sql",
+  "supabase/migrations/0031_outbound_provider_delivery_tracking.sql",
   "supabase/migrations/0005_routsify_settings_and_outbox_worker.sql",
   "supabase/migrations/0015_accept_proposal_version_rpc.sql",
+  "docs/THIRD_PARTY_INTEGRATIONS.md",
   "components/AppShell.tsx",
   "lib/navigation.ts",
 ]) assert(existsSync(join(root, file)), `Missing required file: ${file}`);
@@ -86,16 +98,26 @@ for (const token of ["routsify_setting_boolean", "purchases.auto_create", "cases
 const communicationsMigration = read("supabase/migrations/0029_communication_followup_engine.sql");
 for (const token of ["communication_templates", "communication_followups", "thread_key", "sequence_step", "enable row level security"]) assert(communicationsMigration.includes(token), `Missing communication schema token: ${token}`);
 
+const hardeningMigration = read("supabase/migrations/0030_harden_auxiliary_rls_and_communication_indexes.sql");
+for (const token of ["automation_rules_select_scoped", "saved_views_user_scoped", "communication_followups_insert_scoped", "communication_followups_task_id_idx"]) assert(hardeningMigration.includes(token), `Missing RLS hardening token: ${token}`);
+
 const communicationsEngine = read("lib/communications-server.ts");
-for (const token of ["proposal_followup", "contract_reminder", "payment_reminder", "supplier_invoice_request", "syncCommunicationFollowups", "mailto", "communication_followup"]) {
-  if (token === "mailto") continue;
-  assert(communicationsEngine.includes(token), `Missing communication engine token: ${token}`);
-}
-assert(!communicationsEngine.includes("sendEmail("), "Communication engine must not pretend to send email without a configured provider");
-assert(!communicationsEngine.includes("sendWhatsApp("), "Communication engine must not pretend to send WhatsApp without a configured provider");
+for (const token of ["proposal_followup", "contract_reminder", "payment_reminder", "supplier_invoice_request", "syncCommunicationFollowups", "communication_followup"]) assert(communicationsEngine.includes(token), `Missing communication engine token: ${token}`);
 
 const communicationsWorkspace = read("app/comunicaciones/CommunicationsWorkspace.tsx");
-for (const token of ["mailto:", "wa.me", "Registrar envío", "Registrar respuesta", "Guardar cadencias", "Guardar plantilla"]) assert(communicationsWorkspace.includes(token), `Missing communications workspace token: ${token}`);
+for (const token of ["mailto:", "wa.me", "Enviar email", "Enviar WhatsApp", "Registrar envío manual", "Registrar respuesta", "Guardar cadencias", "Guardar plantilla"]) assert(communicationsWorkspace.includes(token), `Missing communications workspace token: ${token}`);
+
+const emailProvider = read("lib/smtp-email-server.ts");
+for (const token of ["smtp.hostinger.com", "AUTH LOGIN", "sendTransactionalEmail", "testSmtpConnection", "Content-Transfer-Encoding: base64"]) assert(emailProvider.includes(token), `Missing SMTP token: ${token}`);
+
+const whatsappProvider = read("lib/whatsapp-cloud-server.ts");
+for (const token of ["graph.facebook.com", "whatsapp_business", "sendWhatsAppText", "x-hub-signature-256", "testWhatsAppConnection"]) assert(whatsappProvider.includes(token), `Missing WhatsApp token: ${token}`);
+
+const providerSend = read("app/api/routsify/communications/[followupId]/send/route.ts");
+for (const token of ["sendTransactionalEmail", "sendWhatsAppText", "provider_message_id", "updateCommunicationFollowupStatus"]) assert(providerSend.includes(token), `Missing provider send token: ${token}`);
+
+const whatsappWebhook = read("app/api/webhooks/whatsapp/route.ts");
+for (const token of ["hub.verify_token", "verifyWhatsAppWebhookSignature", "provider_status", "communication.answered"]) assert(whatsappWebhook.includes(token), `Missing WhatsApp webhook token: ${token}`);
 
 const jobs = read("lib/jobs-server.ts");
 for (const token of ["communication_followup_sync", "syncCommunicationFollowupsForAllOrganizations"]) assert(jobs.includes(token), `Missing communication job token: ${token}`);
@@ -106,7 +128,7 @@ assert(!login.includes("disabled={!canUseAuth}"), "Login inputs must remain writ
 for (const forbidden of ["Supabase Auth", ">RLS<", "middleware de autenticación", "ensure_profile_for_current_user"]) assert(!login.includes(forbidden), `Public login must not expose implementation detail: ${forbidden}`);
 
 const middleware = read("proxy.ts");
-for (const token of ["/api/routsify", "/api/documentos/confirm-upload", "authentication_required", "isPublicDemoAllowed"]) assert(middleware.includes(token), `Missing proxy token: ${token}`);
+for (const token of ["/api/routsify", "/api/webhooks/", "/api/documentos/confirm-upload", "authentication_required", "isPublicDemoAllowed"]) assert(middleware.includes(token), `Missing proxy token: ${token}`);
 
 const nav = read("lib/navigation.ts");
 for (const label of ["Inicio", "Clientes", "Expedientes", "Presupuestos", "Compras / Proveedores", "Informes", "Ajustes"]) assert(nav.includes(label), `Missing module: ${label}`);
@@ -120,7 +142,7 @@ const proposalSend = read("app/api/routsify/proposals/[proposalId]/send/route.ts
 for (const token of ["loadEffectiveSettings", "budgets.validity_days", "validity_days", "configuredValidityDays"]) assert(proposalSend.includes(token), `Missing proposal validity setting token: ${token}`);
 
 const webhook = read("lib/webhook-security.ts");
-for (const token of ["verifyWebhookRequest", "timingSafeEqual", "timestamp_out_of_tolerance", "providerIdempotencyKey"]) assert(webhook.includes(token), `Missing webhook token: ${token}`);
+for (const token of ["verifyWebhookRequest", "verifyStaticBearerRequest", "timingSafeEqual", "timestamp_out_of_tolerance", "providerIdempotencyKey"]) assert(webhook.includes(token), `Missing webhook token: ${token}`);
 
 const upload = read("app/api/documentos/upload-url/route.ts");
 for (const token of ["requireInternalAccess", "validatePrivateUpload", "sanitizeFileName"]) assert(upload.includes(token), `Missing upload token: ${token}`);
