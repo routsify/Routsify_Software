@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import tls, { type TLSSocket } from "node:tls";
 import { getOrganizationSecret } from "@/lib/organization-secrets-server";
@@ -136,7 +137,7 @@ export async function sendTransactionalEmail(input: {
     await connection.session.command(`RCPT TO:<${safeHeader(input.to)}>`, [250, 251]);
     await connection.session.command("DATA", [354]);
 
-    const messageId = `<${crypto.randomUUID()}@${config.fromAddress.split("@")[1] || "routsify.local"}>`;
+    const messageId = `<${randomUUID()}@${config.fromAddress.split("@")[1] || "routsify.local"}>`;
     const headers = [
       `Date: ${new Date().toUTCString()}`,
       `Message-ID: ${messageId}`,
