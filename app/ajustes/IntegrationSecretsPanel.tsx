@@ -6,7 +6,8 @@ const definitions = {
   holded_api_key: { title: "Holded", description: "Sincroniza contactos, presupuestos, proformas, facturas, compras y pagos.", integration: "holded", placeholder: "Pega aquí la API key de Holded" },
   openai_api_key: { title: "OpenAI OCR", description: "Extrae datos de DNI y pasaportes con revisión humana obligatoria.", integration: "openai", placeholder: "Pega aquí la API key de OpenAI" },
   fillout_webhook_secret: { title: "Fillout · token del webhook", description: "Token Bearer estático para autenticar las entregas de Fillout.", webhookPath: "/api/webhooks/forms", placeholder: "Crea un secreto aleatorio de al menos 12 caracteres" },
-  booking_webhook_secret: { title: "Routsify Booking · secreto HMAC", description: "Protege altas, cambios y cancelaciones de reservas de llamada.", webhookPath: "/api/webhooks/bookings", placeholder: "Crea un secreto HMAC de al menos 12 caracteres" },
+  booking_webhook_secret: { title: "Routsify Booking · secreto HMAC", description: "Protege altas, cambios y cancelaciones que Booking envía a Routsify.", webhookPath: "/api/webhooks/bookings", placeholder: "Crea un secreto HMAC de al menos 12 caracteres" },
+  booking_api_key: { title: "Routsify Booking · API Key", description: "Permite consultar disponibilidad, crear, reprogramar y cancelar llamadas desde Routsify Software.", integration: "booking", placeholder: "Pega aquí la API Key de call.routsify.com" },
   smtp_username: { title: "Hostinger Mail · usuario SMTP", description: "Dirección completa del buzón que enviará los correos.", placeholder: "nombre@tudominio.com" },
   smtp_password: { title: "Hostinger Mail · contraseña SMTP", description: "Contraseña del buzón de envío. Se almacena cifrada.", integration: "email", placeholder: "Contraseña del buzón" },
   whatsapp_access_token: { title: "Meta WhatsApp · access token", description: "Token de usuario del sistema con permisos de WhatsApp Business.", integration: "whatsapp", placeholder: "Token permanente de Meta" },
@@ -20,11 +21,33 @@ type TestResult = { ok?: boolean; data?: unknown; error?: string } | null;
 type IntegrationConfig = {
   email: { enabled: boolean; smtpHost: string; smtpPort: number; smtpSecure: boolean; fromName: string; fromAddress: string; replyTo: string };
   whatsapp: { enabled: boolean; graphVersion: string; phoneNumberId: string; businessAccountId: string };
+  booking: {
+    enabled: boolean;
+    baseUrl: string;
+    publicBookingUrl: string;
+    authMode: "x_api_key" | "bearer";
+    availabilityPath: string;
+    bookingsPath: string;
+    bookingPathTemplate: string;
+    defaultTimezone: string;
+    defaultDurationMinutes: number;
+  };
 };
 
 const emptyConfig: IntegrationConfig = {
   email: { enabled: false, smtpHost: "smtp.hostinger.com", smtpPort: 465, smtpSecure: true, fromName: "Routsify", fromAddress: "", replyTo: "" },
   whatsapp: { enabled: false, graphVersion: "v23.0", phoneNumberId: "", businessAccountId: "" },
+  booking: {
+    enabled: false,
+    baseUrl: "https://call.routsify.com/wp-json/routsify/v1",
+    publicBookingUrl: "https://call.routsify.com",
+    authMode: "x_api_key",
+    availabilityPath: "/availability",
+    bookingsPath: "/bookings",
+    bookingPathTemplate: "/bookings/{id}",
+    defaultTimezone: "Europe/Madrid",
+    defaultDurationMinutes: 30,
+  },
 };
 
 function resultText(result: TestResult) {
@@ -35,6 +58,7 @@ function resultText(result: TestResult) {
       const modules = Object.entries(data.modules as Record<string, { ok?: boolean }>).map(([key, value]) => `${key}: ${value.ok ? "OK" : "no disponible"}`).join(" · ");
       return `Conexión realizada. ${modules}`;
     }
+    if (Array.isArray(data?.routes)) return `Conexión realizada. La API publica ${data.routes.length} rutas en el namespace configurado.`;
     return "Conexión realizada correctamente.";
   }
   return `No se pudo validar: ${result.error || "revisa la credencial, configuración y permisos"}.`;
@@ -42,7 +66,7 @@ function resultText(result: TestResult) {
 
 export function IntegrationSecretsPanel({ initialStatuses, canManage }: { initialStatuses: IntegrationSecretStatus[]; canManage: boolean }) {
   const [statuses, setStatuses] = useState(initialStatuses);
-  const [values, setValues] = useState<Record<SecretKey, string>>({ holded_api_key: "", openai_api_key: "", fillout_webhook_secret: "", booking_webhook_secret: "", smtp_username: "", smtp_password: "", whatsapp_access_token: "", whatsapp_verify_token: "", whatsapp_app_secret: "" });
+  const [values, setValues] = useState<Record<SecretKey, string>>({ holded_api_key: "", openai_api_key: "", fillout_webhook_secret: "", booking_webhook_secret: "", booking_api_key: "", smtp_username: "", smtp_password: "", whatsapp_access_token: "", whatsapp_verify_token: "", whatsapp_app_secret: "" });
   const [busy, setBusy] = useState<string | null>(null);
   const [messages, setMessages] = useState<Record<string, string | null>>({});
   const [tests, setTests] = useState<Record<string, TestResult>>({});
@@ -124,6 +148,17 @@ export function IntegrationSecretsPanel({ initialStatuses, canManage }: { initia
         <label>Versión Graph API<input className="input" value={config.whatsapp.graphVersion} onChange={(event) => setConfig((current) => ({ ...current, whatsapp: { ...current.whatsapp, graphVersion: event.target.value } }))} disabled={!canManage} /></label>
         <label>Phone Number ID<input className="input" value={config.whatsapp.phoneNumberId} onChange={(event) => setConfig((current) => ({ ...current, whatsapp: { ...current.whatsapp, phoneNumberId: event.target.value } }))} disabled={!canManage} /></label>
         <label>WhatsApp Business Account ID<input className="input" value={config.whatsapp.businessAccountId} onChange={(event) => setConfig((current) => ({ ...current, whatsapp: { ...current.whatsapp, businessAccountId: event.target.value } }))} disabled={!canManage} /></label>
+      </div></article>
+      <article className="setting-field"><div className="setting-field-head"><div><strong>Routsify Booking API</strong><p>Conecta call.routsify.com para enviar enlaces, consultar huecos y gestionar reservas desde la ficha del cliente.</p></div></div><div className="settings-secret-grid">
+        <label>Activar Booking API<input type="checkbox" checked={config.booking.enabled} onChange={(event) => setConfig((current) => ({ ...current, booking: { ...current.booking, enabled: event.target.checked } }))} disabled={!canManage} /></label>
+        <label>Base API<input className="input" type="url" value={config.booking.baseUrl} onChange={(event) => setConfig((current) => ({ ...current, booking: { ...current.booking, baseUrl: event.target.value } }))} disabled={!canManage} /></label>
+        <label>URL pública de reserva<input className="input" type="url" value={config.booking.publicBookingUrl} onChange={(event) => setConfig((current) => ({ ...current, booking: { ...current.booking, publicBookingUrl: event.target.value } }))} disabled={!canManage} /></label>
+        <label>Autenticación<select value={config.booking.authMode} onChange={(event) => setConfig((current) => ({ ...current, booking: { ...current.booking, authMode: event.target.value as IntegrationConfig["booking"]["authMode"] } }))} disabled={!canManage}><option value="x_api_key">X-Routsify-API-Key</option><option value="bearer">Authorization Bearer</option></select></label>
+        <label>Ruta disponibilidad<input className="input" value={config.booking.availabilityPath} onChange={(event) => setConfig((current) => ({ ...current, booking: { ...current.booking, availabilityPath: event.target.value } }))} disabled={!canManage} /></label>
+        <label>Ruta reservas<input className="input" value={config.booking.bookingsPath} onChange={(event) => setConfig((current) => ({ ...current, booking: { ...current.booking, bookingsPath: event.target.value } }))} disabled={!canManage} /></label>
+        <label>Ruta reserva individual<input className="input" value={config.booking.bookingPathTemplate} onChange={(event) => setConfig((current) => ({ ...current, booking: { ...current.booking, bookingPathTemplate: event.target.value } }))} disabled={!canManage} /><small>Debe contener {"{id}"}.</small></label>
+        <label>Zona horaria<input className="input" value={config.booking.defaultTimezone} onChange={(event) => setConfig((current) => ({ ...current, booking: { ...current.booking, defaultTimezone: event.target.value } }))} disabled={!canManage} /></label>
+        <label>Duración predeterminada<input className="input" type="number" min={5} max={240} value={config.booking.defaultDurationMinutes} onChange={(event) => setConfig((current) => ({ ...current, booking: { ...current.booking, defaultDurationMinutes: Number(event.target.value) } }))} disabled={!canManage} /></label>
       </div></article>
     </div>
     {canManage ? <button className="btn" type="button" disabled={busy !== null} onClick={() => void saveConfig()}>{busy === "config" ? "Guardando..." : "Guardar configuración de proveedores"}</button> : null}
