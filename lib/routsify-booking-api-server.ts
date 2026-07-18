@@ -187,13 +187,13 @@ export async function testRoutsifyBookingApi(organizationId: string) {
     return {
       ok: true as const,
       status: result.status,
-      baseUrl: result.config.booking.baseUrl,
-      authMode: result.config.booking.authMode,
+      baseUrl: result.config.baseUrl,
+      authMode: result.config.authMode,
       routes,
       configuredEndpoints: {
-        availability: result.config.booking.availabilityPath,
-        bookings: result.config.booking.bookingsPath,
-        booking: result.config.booking.bookingPathTemplate,
+        availability: result.config.availabilityPath,
+        bookings: result.config.bookingsPath,
+        booking: result.config.bookingPathTemplate,
       },
       payload: routes.length ? undefined : result.payload,
     };
