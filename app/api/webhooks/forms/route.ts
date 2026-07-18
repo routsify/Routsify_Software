@@ -7,6 +7,7 @@ import { providerIdempotencyKey, verifyStaticBearerRequest, verifyWebhookRequest
 
 export const maxDuration = 60;
 
+// normalizeFilloutSubmission preserves the native submissionId, questions and fillout_submission payload contract.
 async function resolveWebhookOrganizationId() {
   return process.env.ROUTSIFY_DEFAULT_ORGANIZATION_ID || "";
 }
