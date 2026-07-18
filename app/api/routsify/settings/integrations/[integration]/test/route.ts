@@ -16,7 +16,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   try {
     if (integration === "holded") {
       const data = await testHoldedModules(organizationId);
-      return NextResponse.json({ ok: data.ok, integration, data }, { status: data.ok ? 200 : 424 });
+      const error = data.ok
+        ? undefined
+        : data.invalidKey
+          ? "holded_api_key_invalid"
+          : data.missingReadScopes.length
+            ? "holded_permissions_missing"
+            : "holded_connection_unavailable";
+      return NextResponse.json({ ok: data.ok, integration, data, error }, { status: data.ok ? 200 : data.invalidKey ? 401 : 424 });
     }
     if (integration === "openai") {
       const data = await testOpenAIConnection(organizationId);
