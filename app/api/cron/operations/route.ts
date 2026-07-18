@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { syncFilloutForAllOrganizations } from "@/lib/fillout-api-server";
 import { runRoutsifyJob, type RoutsifyJob } from "@/lib/jobs-server";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +16,8 @@ const jobs: RoutsifyJob[] = [
   "privacy_retention_review",
 ];
 
+type OperationName = RoutsifyJob | "fillout_submission_sync";
+
 function authorized(request: NextRequest) {
   const secret = process.env.CRON_SECRET;
   return Boolean(secret && request.headers.get("authorization") === `Bearer ${secret}`);
@@ -25,7 +28,14 @@ export async function GET(request: NextRequest) {
 
   const schedule = request.headers.get("x-vercel-cron-schedule") || "manual";
   const startedAt = new Date().toISOString();
-  const results: Array<{ job: RoutsifyJob; ok: boolean; data?: unknown; error?: string }> = [];
+  const results: Array<{ job: OperationName; ok: boolean; data?: unknown; error?: string }> = [];
+
+  try {
+    const fillout = await syncFilloutForAllOrganizations();
+    results.push({ job: "fillout_submission_sync", ok: fillout.failedOrganizations === 0, data: fillout, error: fillout.failedOrganizations ? "fillout_sync_partial_failure" : undefined });
+  } catch (error) {
+    results.push({ job: "fillout_submission_sync", ok: false, error: error instanceof Error ? error.message : "fillout_sync_failed" });
+  }
 
   for (const job of jobs) {
     const result = await runRoutsifyJob(job);
