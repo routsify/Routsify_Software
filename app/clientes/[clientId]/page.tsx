@@ -3,6 +3,7 @@ import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
 import { requireAppPermission } from "@/lib/app-auth";
 import { getOrganizationClient360 } from "@/lib/client-360-server";
+import { BookingApiPanel } from "./BookingApiPanel";
 import { Client360Workspace } from "./Client360Workspace";
 import "./client-360.css";
 
@@ -25,5 +26,6 @@ export default async function Client360Page({ params }: { params: Promise<{ clie
       description={contact}
     />
     <Client360Workspace data={result.data} />
+    <BookingApiPanel client={result.data.client} initialBookings={result.data.bookings} />
   </AppShell>;
 }

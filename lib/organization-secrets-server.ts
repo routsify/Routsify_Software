@@ -5,6 +5,7 @@ export const organizationSecretKeys = [
   "openai_api_key",
   "fillout_webhook_secret",
   "booking_webhook_secret",
+  "booking_api_key",
   "smtp_username",
   "smtp_password",
   "whatsapp_access_token",
@@ -18,6 +19,7 @@ function environmentFallback(secretKey: OrganizationSecretKey) {
   if (secretKey === "openai_api_key") return process.env.OPENAI_API_KEY || null;
   if (secretKey === "fillout_webhook_secret") return process.env.FORM_WEBHOOK_SECRET || null;
   if (secretKey === "booking_webhook_secret") return process.env.BOOKING_WEBHOOK_SECRET || null;
+  if (secretKey === "booking_api_key") return process.env.BOOKING_API_KEY || null;
   if (secretKey === "smtp_username") return process.env.SMTP_USERNAME || null;
   if (secretKey === "smtp_password") return process.env.SMTP_PASSWORD || null;
   if (secretKey === "whatsapp_access_token") return process.env.WHATSAPP_ACCESS_TOKEN || null;

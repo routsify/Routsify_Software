@@ -3,6 +3,7 @@ import { jsonAccessDenied, requireInternalAccess } from "@/lib/api-security";
 import { testHoldedModules } from "@/lib/holded-server";
 import { testOpenAIConnection } from "@/lib/openai-ocr-server";
 import { resolveOrganizationId } from "@/lib/request-context";
+import { testRoutsifyBookingApi } from "@/lib/routsify-booking-api-server";
 import { testSmtpConnection } from "@/lib/smtp-email-server";
 import { testWhatsAppConnection } from "@/lib/whatsapp-cloud-server";
 
@@ -26,6 +27,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
     if (integration === "whatsapp") {
       const data = await testWhatsAppConnection(organizationId);
+      return NextResponse.json({ ok: data.ok, integration, data, error: data.ok ? undefined : data.error }, { status: data.ok ? 200 : data.status });
+    }
+    if (integration === "booking") {
+      const data = await testRoutsifyBookingApi(organizationId);
       return NextResponse.json({ ok: data.ok, integration, data, error: data.ok ? undefined : data.error }, { status: data.ok ? 200 : data.status });
     }
     return NextResponse.json({ ok: false, integration, error: "unsupported_integration" }, { status: 404 });

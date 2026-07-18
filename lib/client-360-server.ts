@@ -42,11 +42,11 @@ export async function getOrganizationClient360(organizationId: string, clientId:
       .order("created_at", { ascending: false })
       .limit(50),
     db.from("bookings")
-      .select("id,client_id,lead_id,external_booking_id,event_type,starts_at,ends_at,status,source,created_at,updated_at")
+      .select("id,client_id,lead_id,external_booking_id,external_id,event_type,event_timestamp,starts_at,ends_at,status,source,payload,created_at,updated_at")
       .eq("organization_id", organizationId)
       .eq("client_id", clientId)
       .order("starts_at", { ascending: false })
-      .limit(50),
+      .limit(100),
     db.from("tasks")
       .select("id,client_id,case_id,title,status,priority,due_at,payload,blocker,created_at,updated_at")
       .eq("organization_id", organizationId)
