@@ -19,9 +19,10 @@ const secretDefinitions = {
 type SecretKey = keyof typeof secretDefinitions;
 type ToolId = "holded" | "email" | "whatsapp" | "fillout" | "booking" | "openai";
 
-export type IntegrationSecretStatus = { key: SecretKey; configured: boolean; updatedAt: string | null };
-type TestResult = { ok?: boolean; data?: unknown; error?: string } | null;
 type IntegrationSettingValue = string | number | boolean | string[] | Record<string, unknown>;
+type TestResult = { ok?: boolean; data?: unknown; error?: string } | null;
+
+export type IntegrationSecretStatus = { key: SecretKey; configured: boolean; updatedAt: string | null };
 
 type IntegrationConfig = {
   email: { enabled: boolean; smtpHost: string; smtpPort: number; smtpSecure: boolean; fromName: string; fromAddress: string; replyTo: string };
@@ -100,12 +101,7 @@ function resultText(result: TestResult) {
   return `No se pudo validar: ${result.error || "revisa la credencial y los permisos"}.`;
 }
 
-export function IntegrationSecretsPanel({
-  initialStatuses,
-  initialValues,
-  canManage,
-  onSettingsSaved,
-}: {
+export function IntegrationSecretsPanel({ initialStatuses, initialValues, canManage, onSettingsSaved }: {
   initialStatuses: IntegrationSecretStatus[];
   initialValues: Record<string, IntegrationSettingValue>;
   canManage: boolean;
@@ -113,16 +109,8 @@ export function IntegrationSecretsPanel({
 }) {
   const [statuses, setStatuses] = useState(initialStatuses);
   const [secretValues, setSecretValues] = useState<Record<SecretKey, string>>({
-    holded_api_key: "",
-    openai_api_key: "",
-    fillout_webhook_secret: "",
-    booking_webhook_secret: "",
-    booking_api_key: "",
-    smtp_username: "",
-    smtp_password: "",
-    whatsapp_access_token: "",
-    whatsapp_verify_token: "",
-    whatsapp_app_secret: "",
+    holded_api_key: "", openai_api_key: "", fillout_webhook_secret: "", booking_webhook_secret: "", booking_api_key: "",
+    smtp_username: "", smtp_password: "", whatsapp_access_token: "", whatsapp_verify_token: "", whatsapp_app_secret: "",
   });
   const [config, setConfig] = useState<IntegrationConfig>(emptyConfig);
   const [simple, setSimple] = useState<SimpleSettings>({
@@ -157,8 +145,12 @@ export function IntegrationSecretsPanel({
       .finally(() => setLoading(false));
   }, []);
 
-  function hasSecret(key: SecretKey) {
-    return Boolean(statusMap.get(key)?.configured || secretValues[key].trim());
+  function hasSavedSecret(key: SecretKey) {
+    return Boolean(statusMap.get(key)?.configured);
+  }
+
+  function hasAvailableSecret(key: SecretKey) {
+    return hasSavedSecret(key) || Boolean(secretValues[key].trim());
   }
 
   function isActive(tool: ToolId) {
@@ -172,12 +164,12 @@ export function IntegrationSecretsPanel({
 
   function isReady(tool: ToolId) {
     if (!isActive(tool)) return false;
-    if (tool === "holded") return hasSecret("holded_api_key");
-    if (tool === "openai") return hasSecret("openai_api_key");
-    if (tool === "email") return Boolean(config.email.fromAddress && hasSecret("smtp_password"));
-    if (tool === "whatsapp") return Boolean(config.whatsapp.phoneNumberId && hasSecret("whatsapp_access_token"));
-    if (tool === "fillout") return hasSecret("fillout_webhook_secret");
-    return Boolean(config.booking.publicBookingUrl && hasSecret("booking_api_key"));
+    if (tool === "holded") return hasSavedSecret("holded_api_key");
+    if (tool === "openai") return hasSavedSecret("openai_api_key");
+    if (tool === "email") return Boolean(config.email.fromAddress && hasSavedSecret("smtp_password"));
+    if (tool === "whatsapp") return Boolean(config.whatsapp.phoneNumberId && hasSavedSecret("whatsapp_access_token"));
+    if (tool === "fillout") return hasSavedSecret("fillout_webhook_secret");
+    return Boolean(config.booking.publicBookingUrl && hasSavedSecret("booking_api_key"));
   }
 
   function setToolActive(tool: ToolId, enabled: boolean) {
@@ -202,11 +194,7 @@ export function IntegrationSecretsPanel({
   async function saveSecret(key: SecretKey, explicitValue?: string) {
     const value = (explicitValue ?? secretValues[key]).trim();
     if (!value) return;
-    const response = await fetch(`/api/routsify/settings/secrets/${key}`, {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ value }),
-    });
+    const response = await fetch(`/api/routsify/settings/secrets/${key}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ value }) });
     const result = await response.json().catch(() => null);
     if (!response.ok || !result?.ok) throw new Error(String(result?.error || `No se pudo guardar ${secretDefinitions[key].title}.`));
     updateSecretStatus(key, true);
@@ -214,7 +202,7 @@ export function IntegrationSecretsPanel({
   }
 
   async function deleteSecret(key: SecretKey) {
-    if (!statusMap.get(key)?.configured) return;
+    if (!hasSavedSecret(key)) return;
     const response = await fetch(`/api/routsify/settings/secrets/${key}`, { method: "DELETE" });
     const result = await response.json().catch(() => null);
     if (!response.ok || !result?.ok) throw new Error(String(result?.error || `No se pudo desactivar ${secretDefinitions[key].title}.`));
@@ -222,22 +210,14 @@ export function IntegrationSecretsPanel({
   }
 
   async function saveProviderConfig(patch: Partial<IntegrationConfig>) {
-    const response = await fetch("/api/routsify/settings/integrations/config", {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(patch),
-    });
+    const response = await fetch("/api/routsify/settings/integrations/config", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) });
     const result = await response.json().catch(() => null);
     if (!response.ok || !result?.ok) throw new Error(String(result?.error || "No se pudo guardar la configuración."));
     setConfig(result.data as IntegrationConfig);
   }
 
   async function saveSimpleSettings(updates: Record<string, IntegrationSettingValue>) {
-    const response = await fetch("/api/routsify/settings", {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ settings: Object.entries(updates).map(([key, value]) => ({ key, value })) }),
-    });
+    const response = await fetch("/api/routsify/settings", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ settings: Object.entries(updates).map(([key, value]) => ({ key, value })) }) });
     const result = await response.json().catch(() => null);
     if (!response.ok || !result?.ok) throw new Error(String(result?.error || "No se pudieron guardar los ajustes."));
     onSettingsSaved?.(updates);
@@ -245,15 +225,15 @@ export function IntegrationSecretsPanel({
 
   function validateTool(tool: ToolId) {
     if (!isActive(tool)) return null;
-    if (tool === "holded" && !hasSecret("holded_api_key")) return "Pega la API Key de Holded antes de activar la conexión.";
-    if (tool === "openai" && !hasSecret("openai_api_key")) return "Pega la API Key de OpenAI antes de activar OCR.";
+    if (tool === "holded" && !hasAvailableSecret("holded_api_key")) return "Pega la API Key de Holded antes de activar la conexión.";
+    if (tool === "openai" && !hasAvailableSecret("openai_api_key")) return "Pega la API Key de OpenAI antes de activar OCR.";
     if (tool === "email" && !config.email.fromAddress.trim()) return "Indica el correo remitente.";
-    if (tool === "email" && !hasSecret("smtp_password")) return "Indica la contraseña SMTP del buzón.";
+    if (tool === "email" && !hasAvailableSecret("smtp_password")) return "Indica la contraseña SMTP del buzón.";
     if (tool === "whatsapp" && !config.whatsapp.phoneNumberId.trim()) return "Indica el Phone Number ID de WhatsApp.";
-    if (tool === "whatsapp" && !hasSecret("whatsapp_access_token")) return "Pega el access token de Meta.";
-    if (tool === "fillout" && !hasSecret("fillout_webhook_secret")) return "Crea o pega el token del webhook de Fillout.";
+    if (tool === "whatsapp" && !hasAvailableSecret("whatsapp_access_token")) return "Pega el access token de Meta.";
+    if (tool === "fillout" && !hasAvailableSecret("fillout_webhook_secret")) return "Crea o pega el token del webhook de Fillout.";
     if (tool === "booking" && !config.booking.publicBookingUrl.trim()) return "Indica la URL pública de reservas.";
-    if (tool === "booking" && !hasSecret("booking_api_key")) return "Pega la API Key de Routsify Booking.";
+    if (tool === "booking" && !hasAvailableSecret("booking_api_key")) return "Pega la API Key de Routsify Booking.";
     return null;
   }
 
@@ -270,8 +250,7 @@ export function IntegrationSecretsPanel({
       } else {
         if (tool === "email" && isActive(tool)) await saveSecret("smtp_username", config.email.fromAddress);
         for (const key of toolSecrets[tool]) {
-          if (key === "smtp_username") continue;
-          if (secretValues[key].trim()) await saveSecret(key);
+          if (key !== "smtp_username" && secretValues[key].trim()) await saveSecret(key);
         }
       }
 
@@ -279,10 +258,7 @@ export function IntegrationSecretsPanel({
       if (tool === "whatsapp") await saveProviderConfig({ whatsapp: config.whatsapp });
       if (tool === "booking") {
         await saveProviderConfig({ booking: config.booking });
-        await saveSimpleSettings({
-          "integrations.booking.enabled": simple.bookingWebhookEnabled,
-          "integrations.booking.source_label": simple.bookingSourceLabel,
-        });
+        await saveSimpleSettings({ "integrations.booking.enabled": simple.bookingWebhookEnabled, "integrations.booking.source_label": simple.bookingSourceLabel });
       }
       if (tool === "fillout") {
         await saveSimpleSettings({
@@ -292,7 +268,6 @@ export function IntegrationSecretsPanel({
           "integrations.fillout.source_label": simple.filloutSourceLabel,
         });
       }
-
       setMessages((current) => ({ ...current, [tool]: isActive(tool) ? "Configuración guardada." : "Integración desactivada." }));
     } catch (error) {
       setMessages((current) => ({ ...current, [tool]: error instanceof Error ? error.message : "No se pudo guardar la integración." }));
@@ -317,19 +292,12 @@ export function IntegrationSecretsPanel({
     setMessages((current) => ({ ...current, [tool]: "URL del webhook copiada." }));
   }
 
-  function secretInput(key: SecretKey, label = secretDefinitions[key].title) {
-    return <label className={styles.field}>
-      <span>{label}</span>
-      <input className="input" type="password" autoComplete="new-password" placeholder={statusMap.get(key)?.configured ? "Configurada · escribe solo para sustituirla" : secretDefinitions[key].placeholder} value={secretValues[key]} onChange={(event) => setSecretValues((current) => ({ ...current, [key]: event.target.value }))} disabled={!canManage || busy !== null} />
-    </label>;
+  function secretInput(key: SecretKey, label: string = secretDefinitions[key].title) {
+    return <label className={styles.field}><span>{label}</span><input className="input" type="password" autoComplete="new-password" placeholder={hasSavedSecret(key) ? "Configurada · escribe solo para sustituirla" : secretDefinitions[key].placeholder} value={secretValues[key]} onChange={(event) => setSecretValues((current) => ({ ...current, [key]: event.target.value }))} disabled={!canManage || busy !== null} /></label>;
   }
 
   function webhookEndpoint(path: string, tool: ToolId) {
-    return <div className={styles.endpoint}>
-      <span>Webhook</span>
-      <code>{origin ? `${origin}${path}` : path}</code>
-      <button className="btn secondary" type="button" onClick={() => void copyWebhook(path, tool)}>Copiar URL</button>
-    </div>;
+    return <div className={styles.endpoint}><span>Webhook</span><code>{origin ? `${origin}${path}` : path}</code><button className="btn secondary" type="button" onClick={() => void copyWebhook(path, tool)}>Copiar URL</button></div>;
   }
 
   function mainFields(tool: ToolId) {
@@ -364,9 +332,7 @@ export function IntegrationSecretsPanel({
     if (tool === "whatsapp") return <div className={styles.advancedGrid}>
       <label className={styles.field}><span>WhatsApp Business Account ID</span><input className="input" inputMode="numeric" value={config.whatsapp.businessAccountId} onChange={(event) => setConfig((current) => ({ ...current, whatsapp: { ...current.whatsapp, businessAccountId: event.target.value } }))} disabled={!canManage || busy !== null} /></label>
       <label className={styles.field}><span>Versión Graph API</span><input className="input" value={config.whatsapp.graphVersion} onChange={(event) => setConfig((current) => ({ ...current, whatsapp: { ...current.whatsapp, graphVersion: event.target.value } }))} disabled={!canManage || busy !== null} /></label>
-      {secretInput("whatsapp_verify_token", "Verify token")}
-      {secretInput("whatsapp_app_secret", "App secret")}
-      {webhookEndpoint("/api/webhooks/whatsapp", tool)}
+      {secretInput("whatsapp_verify_token", "Verify token")}{secretInput("whatsapp_app_secret", "App secret")}{webhookEndpoint("/api/webhooks/whatsapp", tool)}
     </div>;
     if (tool === "fillout") return <div className={styles.advancedGrid}>
       <label className={styles.field}><span>ID del formulario</span><input className="input" value={simple.filloutFormId} onChange={(event) => setSimple((current) => ({ ...current, filloutFormId: event.target.value }))} disabled={!canManage || busy !== null} /></label>
@@ -382,8 +348,7 @@ export function IntegrationSecretsPanel({
       <label className={styles.field}><span>Zona horaria</span><input className="input" value={config.booking.defaultTimezone} onChange={(event) => setConfig((current) => ({ ...current, booking: { ...current.booking, defaultTimezone: event.target.value } }))} disabled={!canManage || busy !== null} /></label>
       <label className={styles.field}><span>Duración predeterminada</span><input className="input" type="number" min={5} max={240} value={config.booking.defaultDurationMinutes} onChange={(event) => setConfig((current) => ({ ...current, booking: { ...current.booking, defaultDurationMinutes: Number(event.target.value) } }))} disabled={!canManage || busy !== null} /></label>
       <label className={styles.field}><span>Nombre del origen</span><input className="input" value={simple.bookingSourceLabel} onChange={(event) => setSimple((current) => ({ ...current, bookingSourceLabel: event.target.value }))} disabled={!canManage || busy !== null} /></label>
-      {secretInput("booking_webhook_secret", "Secreto del webhook")}
-      {webhookEndpoint("/api/webhooks/bookings", tool)}
+      {secretInput("booking_webhook_secret", "Secreto del webhook")}{webhookEndpoint("/api/webhooks/bookings", tool)}
     </div>;
     return null;
   }
@@ -392,11 +357,7 @@ export function IntegrationSecretsPanel({
   const readyCount = tools.filter((tool) => isReady(tool.id)).length;
 
   return <section className={styles.wrapper}>
-    <div className={styles.intro}>
-      <div><span className="eyebrow">Conexiones</span><h2>Herramientas conectadas</h2><p>Activa cada herramienta, completa únicamente los datos esenciales y prueba la conexión.</p></div>
-      <div className={styles.summary}><strong>{readyCount}/{tools.length}</strong><span>listas</span><small>{activeCount} activas</small></div>
-    </div>
-
+    <div className={styles.intro}><div><span className="eyebrow">Conexiones</span><h2>Herramientas conectadas</h2><p>Activa cada herramienta, completa únicamente los datos esenciales y prueba la conexión.</p></div><div className={styles.summary}><strong>{readyCount}/{tools.length}</strong><span>listas</span><small>{activeCount} activas</small></div></div>
     {!canManage ? <p className="form-warning">Puedes consultar el estado, pero solo un administrador puede cambiar credenciales o conexiones.</p> : null}
     {messages.global ? <p className="form-warning">{messages.global}</p> : null}
 
@@ -406,27 +367,17 @@ export function IntegrationSecretsPanel({
         const ready = isReady(tool.id);
         const result = tests[tool.id];
         const message = messages[tool.id];
-        const credentialWillBeRemoved = (tool.id === "holded" || tool.id === "openai") && !active && toolSecrets[tool.id].some((key) => statusMap.get(key)?.configured);
+        const advanced = advancedFields(tool.id);
+        const credentialWillBeRemoved = (tool.id === "holded" || tool.id === "openai") && !active && toolSecrets[tool.id].some(hasSavedSecret);
+        const isErrorMessage = Boolean(message && ["no se pudo", "indica", "pega", "error"].some((term) => message.toLowerCase().includes(term)));
         return <article className={`${styles.card} ${active ? styles.cardActive : ""}`} key={tool.id}>
-          <div className={styles.cardHeader}>
-            <div className={styles.identity}><span className={styles.logo}>{tool.short}</span><div><h3>{tool.name}</h3><p>{tool.description}</p></div></div>
-            <div className={styles.stateBlock}>
-              <label className={styles.toggle}><input type="checkbox" checked={active} onChange={(event) => setToolActive(tool.id, event.target.checked)} disabled={!canManage || busy !== null || loading} /><span>{active ? "Activada" : "Desactivada"}</span></label>
-              <span className={`${styles.status} ${ready ? styles.statusReady : active ? styles.statusPending : styles.statusOff}`}>{ready ? "✓ Activa" : active ? "Falta configurar" : "Desactivada"}</span>
-            </div>
-          </div>
-
+          <div className={styles.cardHeader}><div className={styles.identity}><span className={styles.logo}>{tool.short}</span><div><h3>{tool.name}</h3><p>{tool.description}</p></div></div><div className={styles.stateBlock}><label className={styles.toggle}><input type="checkbox" checked={active} onChange={(event) => setToolActive(tool.id, event.target.checked)} disabled={!canManage || busy !== null || loading} /><span>{active ? "Activada" : "Desactivada"}</span></label><span className={`${styles.status} ${ready ? styles.statusReady : active ? styles.statusPending : styles.statusOff}`}>{ready ? "✓ Activa" : active ? "Falta configurar" : "Desactivada"}</span></div></div>
           <div className={styles.mainFields}>{mainFields(tool.id)}</div>
           <p className={styles.secretHelp}>Las claves guardadas permanecen cifradas y nunca vuelven a mostrarse.</p>
           {credentialWillBeRemoved ? <p className={styles.warning}>Al guardar desactivada se eliminará la API Key almacenada.</p> : null}
-
-          {advancedFields(tool.id) ? <details className={styles.advanced}><summary>Configuración avanzada</summary>{advancedFields(tool.id)}</details> : null}
-
-          <div className={styles.actions}>
-            <button className="btn" type="button" onClick={() => void saveTool(tool.id)} disabled={!canManage || busy !== null || loading}>{busy === `save:${tool.id}` ? "Guardando..." : "Guardar"}</button>
-            <button className="btn secondary" type="button" onClick={() => void testTool(tool.id)} disabled={!canManage || !ready || busy !== null || loading}>{busy === `test:${tool.id}` ? "Probando..." : "Probar conexión"}</button>
-          </div>
-          {message ? <p className={message.toLowerCase().includes("no se pudo") || message.toLowerCase().includes("indica") || message.toLowerCase().includes("pega") || message.toLowerCase().includes("error") ? "form-warning" : "client-message"} role="status">{message}</p> : null}
+          {advanced ? <details className={styles.advanced}><summary>Configuración avanzada</summary>{advanced}</details> : null}
+          <div className={styles.actions}><button className="btn" type="button" onClick={() => void saveTool(tool.id)} disabled={!canManage || busy !== null || loading}>{busy === `save:${tool.id}` ? "Guardando..." : "Guardar"}</button><button className="btn secondary" type="button" onClick={() => void testTool(tool.id)} disabled={!canManage || !ready || busy !== null || loading}>{busy === `test:${tool.id}` ? "Probando..." : "Probar conexión"}</button></div>
+          {message ? <p className={isErrorMessage ? "form-warning" : "client-message"} role="status">{message}</p> : null}
           {resultText(result) ? <p className={result?.ok ? "client-message" : "form-warning"} role="status">{resultText(result)}</p> : null}
         </article>;
       })}
