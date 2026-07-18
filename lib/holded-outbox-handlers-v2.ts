@@ -73,11 +73,13 @@ async function estimate(row: WorkerRow): Promise<WorkerOutcome> {
   if (!versionId) throw new Error("proposal_version_id_required");
   const db = getSupabaseAdminClient();
   const { data: version, error } = await db.from("proposal_versions")
-    .select("id,total_sale,expires_at,holded_document_id,proposals(case_id,cases(case_code,client_id,currency))")
+    .select("id,total_sale,expires_at,proposals(id,holded_estimate_id,case_id,cases(case_code,client_id,currency))")
     .eq("organization_id", row.organization_id).eq("id", versionId).maybeSingle();
   if (error || !version) throw new Error(error?.message || "proposal_version_not_found");
-  if (version.holded_document_id) return { status: "done", message: "Presupuesto ya sincronizado." };
-  const caseRow = one(one(version.proposals)?.cases);
+  const proposal = one(version.proposals);
+  if (!proposal?.id) throw new Error("proposal_not_found");
+  if (proposal.holded_estimate_id) return { status: "done", message: "Presupuesto ya sincronizado." };
+  const caseRow = one(proposal.cases);
   const contactId = await ensureClientContact(row.organization_id, text(caseRow?.client_id));
   const { endpoints } = await holdedConfiguration(row.organization_id);
   const result = await holdedRequest({ organizationId: row.organization_id, method: "POST", path: endpoints.estimates, body: buildHoldedDocumentPayload({
@@ -86,9 +88,9 @@ async function estimate(row: WorkerRow): Promise<WorkerOutcome> {
   }) });
   if (!result.ok) throw failure(result);
   const remoteId = idOf(result.payload);
-  await db.from("proposal_versions").update({ holded_document_id: remoteId || null, holded_sync_status: remoteId ? "synced" : "manual_review", holded_last_synced_at: new Date().toISOString() })
-    .eq("id", version.id).eq("organization_id", row.organization_id);
-  return { status: remoteId ? "done" : "manual_review", message: remoteId ? "Presupuesto sincronizado con Holded v2." : "Holded no devolvió identificador.", metadata: { holded_document_id: remoteId || null } };
+  if (remoteId) await db.from("proposals").update({ holded_estimate_id: remoteId, updated_at: new Date().toISOString() })
+    .eq("id", proposal.id).eq("organization_id", row.organization_id);
+  return { status: remoteId ? "done" : "manual_review", message: remoteId ? "Presupuesto sincronizado con Holded v2." : "Holded no devolvió identificador.", metadata: { holded_estimate_id: remoteId || null } };
 }
 
 async function billing(row: WorkerRow, module: "proformas" | "invoices"): Promise<WorkerOutcome> {
