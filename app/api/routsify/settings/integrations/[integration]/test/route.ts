@@ -19,10 +19,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       const error = data.ok
         ? undefined
         : data.invalidKey
-          ? "holded_api_key_invalid"
+          ? "La API Key de Holded es inválida, está revocada o se ha copiado incompleta. Genera una nueva clave en Holded → Ajustes → API."
           : data.missingReadScopes.length
-            ? "holded_permissions_missing"
-            : "holded_connection_unavailable";
+            ? `La clave es válida, pero faltan permisos de lectura: ${data.missingReadScopes.join(", ")}. Actívalos en Holded y guarda de nuevo la clave.`
+            : "Holded no ha permitido consultar ningún módulo. Revisa que la cuenta tenga acceso a la API y que la clave incluya permisos de lectura y escritura.";
       return NextResponse.json({ ok: data.ok, integration, data, error }, { status: data.ok ? 200 : data.invalidKey ? 401 : 424 });
     }
     if (integration === "openai") {
