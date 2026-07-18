@@ -16,14 +16,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   try {
     if (integration === "holded") {
       const data = await testHoldedModules(organizationId);
-      const error = data.ok
+      const fullyReady = data.ok && data.missingReadScopes.length === 0 && data.availableModules.length === Object.keys(data.modules).length;
+      const error = fullyReady
         ? undefined
         : data.invalidKey
           ? "La API Key de Holded es inválida, está revocada o se ha copiado incompleta. Genera una nueva clave en Holded → Ajustes → API."
           : data.missingReadScopes.length
             ? `La clave es válida, pero faltan permisos de lectura: ${data.missingReadScopes.join(", ")}. Actívalos en Holded y guarda de nuevo la clave.`
-            : "Holded no ha permitido consultar ningún módulo. Revisa que la cuenta tenga acceso a la API y que la clave incluya permisos de lectura y escritura.";
-      return NextResponse.json({ ok: data.ok, integration, data, error }, { status: data.ok ? 200 : data.invalidKey ? 401 : 424 });
+            : "Holded no ha permitido consultar todos los módulos necesarios. Revisa que la clave incluya permisos de lectura y escritura para contactos, presupuestos, proformas, facturas, compras y pagos.";
+      return NextResponse.json({ ok: fullyReady, integration, data: { ...data, fullyReady }, error }, { status: fullyReady ? 200 : data.invalidKey ? 401 : 424 });
     }
     if (integration === "openai") {
       const data = await testOpenAIConnection(organizationId);
