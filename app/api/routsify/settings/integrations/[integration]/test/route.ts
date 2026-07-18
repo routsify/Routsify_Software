@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonAccessDenied, requireInternalAccess } from "@/lib/api-security";
+import { testFilloutApi } from "@/lib/fillout-api-server";
 import { testHoldedModules } from "@/lib/holded-server";
-import { getWebhookIntegrationConfig } from "@/lib/integration-config-server";
 import { testOpenAIConnection } from "@/lib/openai-ocr-server";
 import { resolveOrganizationId } from "@/lib/request-context";
 import { testRoutsifyBookingApi } from "@/lib/routsify-booking-api-server";
@@ -31,10 +31,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ ok: data.ok, integration, data, error: data.ok ? undefined : data.error }, { status: data.ok ? 200 : data.status });
     }
     if (integration === "fillout") {
-      const configuration = await getWebhookIntegrationConfig(organizationId, "fillout");
-      const ok = configuration.enabled && Boolean(configuration.secret);
-      const data = { enabled: configuration.enabled, secretConfigured: Boolean(configuration.secret) };
-      return NextResponse.json({ ok, integration, data, error: ok ? undefined : configuration.enabled ? "fillout_webhook_secret_not_configured" : "fillout_integration_disabled" }, { status: ok ? 200 : 424 });
+      const data = await testFilloutApi(organizationId);
+      return NextResponse.json({ ok: data.ok, integration, data, error: data.ok ? undefined : data.error }, { status: data.ok ? 200 : data.status });
     }
     if (integration === "booking") {
       const data = await testRoutsifyBookingApi(organizationId);
