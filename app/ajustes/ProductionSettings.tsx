@@ -13,7 +13,7 @@ const tabs: Array<{ id: TabId; label: string; description: string; modules: stri
   { id: "general", label: "General", description: "Empresa, moneda, fechas y menú visible.", modules: ["general", "navigation"] },
   { id: "appearance", label: "Apariencia", description: "Colores, tipografía, densidad y composición.", modules: ["appearance"] },
   { id: "users", label: "Usuarios", description: "Altas, invitaciones, roles y permisos.", modules: [] },
-  { id: "integrations", label: "Integraciones", description: "Email, WhatsApp, Fillout, Booking, Holded y OCR.", modules: ["integrations"] },
+  { id: "integrations", label: "Integraciones", description: "Activa y conecta cada herramienta desde una tarjeta sencilla.", modules: ["integrations"] },
   { id: "operations", label: "Operativa", description: "Clientes, expedientes, presupuestos, márgenes y compras.", modules: ["clients", "cases", "budgets", "margins", "purchases", "contracts", "fiscal"] },
   { id: "security", label: "Seguridad y sistema", description: "Webhooks, logs, caché y políticas técnicas.", modules: ["security", "logs", "system"] },
 ];
@@ -47,8 +47,6 @@ export function ProductionSettings({ storedRows = [], secretStatuses = [], canMa
   const activeDefinition = tabs.find((tab) => tab.id === activeTab) || tabs[0];
   const activeSettings = initialSettings.filter((setting) => activeDefinition.modules.includes(setting.module));
   const configuredSecrets = secretStatuses.filter((item) => item.configured).length;
-  const filloutEnabled = draftValues["integrations.fillout.enabled"] === true;
-  const bookingEnabled = draftValues["integrations.booking.enabled"] === true;
 
   function setValue(key: string, value: AppSetting["value"]) {
     setDraftValues((current) => ({ ...current, [key]: value }));
@@ -90,6 +88,11 @@ export function ProductionSettings({ storedRows = [], secretStatuses = [], canMa
     if (brand) brand.textContent = String(draftValues["company.name"] || "Routsify");
     setMessage("Cambios guardados y aplicados. El sistema ha actualizado la configuración efectiva.");
     router.refresh();
+  }
+
+  function syncIntegrationSettings(updates: Record<string, AppSetting["value"]>) {
+    setSavedValues((current) => ({ ...current, ...updates }));
+    setDraftValues((current) => ({ ...current, ...updates }));
   }
 
   function resetActiveTab() {
@@ -140,10 +143,9 @@ export function ProductionSettings({ storedRows = [], secretStatuses = [], canMa
 
   return <div className="settings-page">
     <section className="settings-summary">
-      <article className="settings-summary-card"><span>Control</span><strong>{isAdmin ? "Administrador" : "Consulta"}</strong><small>{isAdmin ? "Puedes modificar y aplicar la configuración." : "Los cambios están restringidos al administrador."}</small></article>
-      <article className="settings-summary-card"><span>Cambios pendientes</span><strong>{dirtyKeys.length}</strong><small>{dirtyKeys.length ? "Pendientes de guardar" : "Configuración sincronizada"}</small></article>
-      <article className="settings-summary-card"><span>Integraciones de entrada</span><strong>{Number(filloutEnabled) + Number(bookingEnabled)}/2</strong><small>Fillout y Routsify Booking activas</small></article>
-      <article className="settings-summary-card"><span>Credenciales</span><strong>{configuredSecrets}/{secretStatuses.length || 9}</strong><small>Holded, OCR, email, WhatsApp y webhooks</small></article>
+      <article className="settings-summary-card"><span>Control</span><strong>{isAdmin ? "Administrador" : "Consulta"}</strong><small>{isAdmin ? "Puedes modificar la configuración." : "Los cambios están restringidos."}</small></article>
+      <article className="settings-summary-card"><span>Cambios pendientes</span><strong>{dirtyKeys.length}</strong><small>{dirtyKeys.length ? "Pendientes de guardar" : "Todo sincronizado"}</small></article>
+      <article className="settings-summary-card"><span>Credenciales seguras</span><strong>{configuredSecrets}</strong><small>Guardadas de forma cifrada</small></article>
     </section>
 
     <nav className="settings-tabs" aria-label="Secciones de ajustes">{tabs.map((tab) => <button key={tab.id} type="button" className={`settings-tab ${activeTab === tab.id ? "active" : ""}`} onClick={() => { setActiveTab(tab.id); setMessage(null); setError(null); }}>{tab.label}</button>)}</nav>
@@ -151,13 +153,13 @@ export function ProductionSettings({ storedRows = [], secretStatuses = [], canMa
     {activeTab === "users" ? <UserManagementPanel canManage={isAdmin} /> : null}
 
     {activeTab !== "users" ? <section className="settings-section">
-      <div className="settings-section-header"><div><span className="eyebrow">Panel de control</span><h2>{activeDefinition.label}</h2><p>{activeDefinition.description}</p></div>{isAdmin && activeSettings.some((setting) => setting.editable) ? <button className="btn secondary" type="button" onClick={resetActiveTab} disabled={busy}>Restaurar valores de esta sección</button> : null}</div>
+      <div className="settings-section-header"><div><span className="eyebrow">Panel de control</span><h2>{activeDefinition.label}</h2><p>{activeDefinition.description}</p></div>{activeTab !== "integrations" && isAdmin && activeSettings.some((setting) => setting.editable) ? <button className="btn secondary" type="button" onClick={resetActiveTab} disabled={busy}>Restaurar valores de esta sección</button> : null}</div>
       {activeTab === "appearance" ? <div className="settings-preview" style={previewStyle}><aside className="settings-preview-sidebar"><strong>{String(draftValues["company.name"] || "Routsify")}</strong><span>Inicio</span><span>Clientes</span><span>Expedientes</span><span>Presupuestos</span></aside><div className="settings-preview-main"><span className="eyebrow">Vista previa inmediata</span><h2>Así se aplicará el estilo</h2><p>Los cambios visuales se muestran antes de guardar y se propagan al sistema al confirmar.</p><article className="settings-preview-card"><strong>Tarjeta de ejemplo</strong><p>Colores, fondos, radios, densidad y ancho del menú.</p><span className="settings-preview-button">Acción principal</span></article></div></div> : null}
-      {activeSettings.length ? <div className="settings-fields">{activeSettings.map(renderField)}</div> : null}
-      {activeTab === "integrations" ? <IntegrationSecretsPanel initialStatuses={secretStatuses} canManage={canManageSecrets} /> : null}
+      {activeTab !== "integrations" && activeSettings.length ? <div className="settings-fields">{activeSettings.map(renderField)}</div> : null}
+      {activeTab === "integrations" ? <IntegrationSecretsPanel initialStatuses={secretStatuses} initialValues={initialValues} canManage={canManageSecrets} onSettingsSaved={syncIntegrationSettings} /> : null}
     </section> : null}
 
-    {activeTab !== "users" && isAdmin ? <div className="settings-savebar"><div><strong>{dirtyKeys.length ? `${dirtyKeys.length} cambios sin guardar` : "Todos los ajustes están guardados"}</strong><p>{dirtyKeys.length ? "Los cambios no afectarán al sistema hasta pulsar Guardar." : "La configuración efectiva coincide con la pantalla."}</p></div><button className="btn" type="button" onClick={() => void saveChanges()} disabled={busy || !dirtyKeys.length}>{busy ? "Guardando..." : "Guardar y aplicar cambios"}</button></div> : null}
+    {activeTab !== "users" && activeTab !== "integrations" && isAdmin ? <div className="settings-savebar"><div><strong>{dirtyKeys.length ? `${dirtyKeys.length} cambios sin guardar` : "Todos los ajustes están guardados"}</strong><p>{dirtyKeys.length ? "Los cambios no afectarán al sistema hasta pulsar Guardar." : "La configuración efectiva coincide con la pantalla."}</p></div><button className="btn" type="button" onClick={() => void saveChanges()} disabled={busy || !dirtyKeys.length}>{busy ? "Guardando..." : "Guardar y aplicar cambios"}</button></div> : null}
     {message ? <p className="client-message settings-feedback" role="status">{message}</p> : null}
     {error ? <p className="form-warning settings-feedback" role="alert">{error}</p> : null}
   </div>;
