@@ -22,7 +22,8 @@ for (const field of ["contact_id", "vat_number", "due_date", "price", "bill_addr
 }
 assert(handlers.includes("ensureSupplierContact"), "Supplier purchases must create or reuse a Holded supplier contact");
 assert(handlers.includes('direction: "collection"'), "Client payments must be sent as Holded collections");
-assert(route.includes("holded_permissions_missing"), "Holded test route must explain missing permissions");
+assert(route.includes("missingReadScopes"), "Holded test route must expose missing scopes");
+assert(route.includes("faltan permisos de lectura"), "Holded test route must explain missing permissions in Spanish");
 assert(env.includes("HOLDED_API_BASE_URL=https://api.holded.com"), "Environment example must use the v2 Holded origin");
 
 console.log("Holded API v2 validation passed.");
