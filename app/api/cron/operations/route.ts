@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { syncFilloutForAllOrganizations } from "@/lib/fillout-api-server";
+import { syncFilloutForAllOrganizationsV2 } from "@/lib/fillout-sync-server";
 import { runRoutsifyJob, type RoutsifyJob } from "@/lib/jobs-server";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 const jobs: RoutsifyJob[] = [
   "holded_sync_pending",
@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
   const results: Array<{ job: OperationName; ok: boolean; data?: unknown; error?: string }> = [];
 
   try {
-    const fillout = await syncFilloutForAllOrganizations();
+    const fillout = await syncFilloutForAllOrganizationsV2();
     results.push({ job: "fillout_submission_sync", ok: fillout.failedOrganizations === 0, data: fillout, error: fillout.failedOrganizations ? "fillout_sync_partial_failure" : undefined });
   } catch (error) {
     results.push({ job: "fillout_submission_sync", ok: false, error: error instanceof Error ? error.message : "fillout_sync_failed" });
