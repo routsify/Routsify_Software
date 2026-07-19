@@ -6,7 +6,8 @@ import styles from "./IntegrationSecretsPanel.module.css";
 const secretDefinitions = {
   holded_api_key: { title: "API Key de Holded", placeholder: "Pega aquí la API Key de Holded" },
   openai_api_key: { title: "API Key de OpenAI", placeholder: "Pega aquí la API Key de OpenAI" },
-  fillout_webhook_secret: { title: "Token de Fillout", placeholder: "Token Bearer del webhook" },
+  fillout_api_key: { title: "API Key de Fillout", placeholder: "Pega aquí la API Key de Fillout" },
+  fillout_webhook_secret: { title: "Secreto del webhook de Fillout", placeholder: "Secreto opcional del webhook" },
   booking_webhook_secret: { title: "Secreto del webhook de Booking", placeholder: "Secreto HMAC del webhook" },
   booking_api_key: { title: "API Key de Routsify Booking", placeholder: "Pega aquí la API Key de call.routsify.com" },
   smtp_username: { title: "Usuario SMTP", placeholder: "nombre@tudominio.com" },
@@ -18,7 +19,6 @@ const secretDefinitions = {
 
 type SecretKey = keyof typeof secretDefinitions;
 type ToolId = "holded" | "email" | "whatsapp" | "fillout" | "booking" | "openai";
-
 type IntegrationSettingValue = string | number | boolean | string[] | Record<string, unknown>;
 type TestResult = { ok?: boolean; data?: unknown; error?: string } | null;
 
@@ -69,7 +69,7 @@ const tools: Array<{ id: ToolId; name: string; short: string; description: strin
   { id: "holded", name: "Holded", short: "H", description: "Contactos, presupuestos, facturas, compras y pagos." },
   { id: "email", name: "Hostinger Mail", short: "@", description: "Envío de correos desde el buzón corporativo." },
   { id: "whatsapp", name: "WhatsApp Business", short: "W", description: "Mensajes y seguimiento mediante Meta Cloud API." },
-  { id: "fillout", name: "Fillout", short: "F", description: "Solicitudes de viaje y formularios previos a la llamada." },
+  { id: "fillout", name: "Fillout", short: "F", description: "Solicitudes de viaje mediante la REST API de Fillout." },
   { id: "booking", name: "Routsify Booking", short: "B", description: "Enlaces, disponibilidad, reserva y modificación de llamadas." },
   { id: "openai", name: "OpenAI OCR", short: "AI", description: "Lectura asistida de DNI y pasaportes con revisión humana." },
 ];
@@ -78,7 +78,7 @@ const toolSecrets: Record<ToolId, SecretKey[]> = {
   holded: ["holded_api_key"],
   email: ["smtp_username", "smtp_password"],
   whatsapp: ["whatsapp_access_token", "whatsapp_verify_token", "whatsapp_app_secret"],
-  fillout: ["fillout_webhook_secret"],
+  fillout: ["fillout_api_key"],
   booking: ["booking_api_key", "booking_webhook_secret"],
   openai: ["openai_api_key"],
 };
@@ -87,10 +87,31 @@ function stringValue(value: unknown, fallback = "") {
   return typeof value === "string" ? value : fallback;
 }
 
+function booleanValue(value: unknown) {
+  return value === true || value === "true";
+}
+
+function extractFilloutFormId(value: string) {
+  const raw = value.trim();
+  if (!raw) return "";
+  if (/^[A-Za-z0-9_-]{6,}$/.test(raw) && !raw.includes(".")) return raw;
+  try {
+    const url = new URL(raw);
+    const parts = url.pathname.split("/").filter(Boolean);
+    const marker = parts.findIndex((part) => part === "t" || part === "form");
+    return marker >= 0 ? parts[marker + 1] || "" : parts.at(-1) || "";
+  } catch {
+    return "";
+  }
+}
+
 function resultText(result: TestResult) {
   if (!result) return null;
   if (result.ok) {
     const data = result.data as Record<string, unknown> | undefined;
+    if (data?.formName) {
+      return `Conexión realizada. Formulario ${String(data.formName)} · ${String(data.totalResponses ?? 0)} respuestas disponibles.`;
+    }
     if (data?.modules && typeof data.modules === "object") {
       const modules = Object.entries(data.modules as Record<string, { ok?: boolean }>).map(([key, value]) => `${key}: ${value.ok ? "OK" : "no disponible"}`).join(" · ");
       return `Conexión realizada. ${modules}`;
@@ -109,16 +130,25 @@ export function IntegrationSecretsPanel({ initialStatuses, initialValues, canMan
 }) {
   const [statuses, setStatuses] = useState(initialStatuses);
   const [secretValues, setSecretValues] = useState<Record<SecretKey, string>>({
-    holded_api_key: "", openai_api_key: "", fillout_webhook_secret: "", booking_webhook_secret: "", booking_api_key: "",
-    smtp_username: "", smtp_password: "", whatsapp_access_token: "", whatsapp_verify_token: "", whatsapp_app_secret: "",
+    holded_api_key: "",
+    openai_api_key: "",
+    fillout_api_key: "",
+    fillout_webhook_secret: "",
+    booking_webhook_secret: "",
+    booking_api_key: "",
+    smtp_username: "",
+    smtp_password: "",
+    whatsapp_access_token: "",
+    whatsapp_verify_token: "",
+    whatsapp_app_secret: "",
   });
   const [config, setConfig] = useState<IntegrationConfig>(emptyConfig);
   const [simple, setSimple] = useState<SimpleSettings>({
-    filloutEnabled: initialValues["integrations.fillout.enabled"] === true,
+    filloutEnabled: booleanValue(initialValues["integrations.fillout.enabled"]),
     filloutFormId: stringValue(initialValues["integrations.fillout.form_id"]),
     filloutPublicUrl: stringValue(initialValues["integrations.fillout.public_url"]),
     filloutSourceLabel: stringValue(initialValues["integrations.fillout.source_label"], "Fillout"),
-    bookingWebhookEnabled: initialValues["integrations.booking.enabled"] === true,
+    bookingWebhookEnabled: booleanValue(initialValues["integrations.booking.enabled"]),
     bookingSourceLabel: stringValue(initialValues["integrations.booking.source_label"], "Routsify Booking"),
   });
   const [credentialEnabled, setCredentialEnabled] = useState({
@@ -132,6 +162,10 @@ export function IntegrationSecretsPanel({ initialStatuses, initialValues, canMan
   const [loading, setLoading] = useState(true);
 
   const statusMap = useMemo(() => new Map(statuses.map((item) => [item.key, item])), [statuses]);
+  const effectiveFilloutFormId = useMemo(
+    () => simple.filloutFormId.trim() || extractFilloutFormId(simple.filloutPublicUrl),
+    [simple.filloutFormId, simple.filloutPublicUrl],
+  );
 
   useEffect(() => {
     setOrigin(window.location.origin);
@@ -168,7 +202,7 @@ export function IntegrationSecretsPanel({ initialStatuses, initialValues, canMan
     if (tool === "openai") return hasSavedSecret("openai_api_key");
     if (tool === "email") return Boolean(config.email.fromAddress && hasSavedSecret("smtp_password"));
     if (tool === "whatsapp") return Boolean(config.whatsapp.phoneNumberId && hasSavedSecret("whatsapp_access_token"));
-    if (tool === "fillout") return hasSavedSecret("fillout_webhook_secret");
+    if (tool === "fillout") return Boolean(simple.filloutPublicUrl.trim() && effectiveFilloutFormId && hasSavedSecret("fillout_api_key"));
     return Boolean(config.booking.publicBookingUrl && hasSavedSecret("booking_api_key"));
   }
 
@@ -194,7 +228,11 @@ export function IntegrationSecretsPanel({ initialStatuses, initialValues, canMan
   async function saveSecret(key: SecretKey, explicitValue?: string) {
     const value = (explicitValue ?? secretValues[key]).trim();
     if (!value) return;
-    const response = await fetch(`/api/routsify/settings/secrets/${key}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ value }) });
+    const response = await fetch(`/api/routsify/settings/secrets/${key}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ value }),
+    });
     const result = await response.json().catch(() => null);
     if (!response.ok || !result?.ok) throw new Error(String(result?.error || `No se pudo guardar ${secretDefinitions[key].title}.`));
     updateSecretStatus(key, true);
@@ -210,14 +248,22 @@ export function IntegrationSecretsPanel({ initialStatuses, initialValues, canMan
   }
 
   async function saveProviderConfig(patch: Partial<IntegrationConfig>) {
-    const response = await fetch("/api/routsify/settings/integrations/config", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) });
+    const response = await fetch("/api/routsify/settings/integrations/config", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(patch),
+    });
     const result = await response.json().catch(() => null);
     if (!response.ok || !result?.ok) throw new Error(String(result?.error || "No se pudo guardar la configuración."));
     setConfig(result.data as IntegrationConfig);
   }
 
   async function saveSimpleSettings(updates: Record<string, IntegrationSettingValue>) {
-    const response = await fetch("/api/routsify/settings", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ settings: Object.entries(updates).map(([key, value]) => ({ key, value })) }) });
+    const response = await fetch("/api/routsify/settings", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ settings: Object.entries(updates).map(([key, value]) => ({ key, value })) }),
+    });
     const result = await response.json().catch(() => null);
     if (!response.ok || !result?.ok) throw new Error(String(result?.error || "No se pudieron guardar los ajustes."));
     onSettingsSaved?.(updates);
@@ -231,7 +277,9 @@ export function IntegrationSecretsPanel({ initialStatuses, initialValues, canMan
     if (tool === "email" && !hasAvailableSecret("smtp_password")) return "Indica la contraseña SMTP del buzón.";
     if (tool === "whatsapp" && !config.whatsapp.phoneNumberId.trim()) return "Indica el Phone Number ID de WhatsApp.";
     if (tool === "whatsapp" && !hasAvailableSecret("whatsapp_access_token")) return "Pega el access token de Meta.";
-    if (tool === "fillout" && !hasAvailableSecret("fillout_webhook_secret")) return "Crea o pega el token del webhook de Fillout.";
+    if (tool === "fillout" && !simple.filloutPublicUrl.trim()) return "Indica la URL pública del formulario de Fillout.";
+    if (tool === "fillout" && !effectiveFilloutFormId) return "No se ha podido obtener el ID del formulario de Fillout.";
+    if (tool === "fillout" && !hasAvailableSecret("fillout_api_key")) return "Pega la API Key de Fillout.";
     if (tool === "booking" && !config.booking.publicBookingUrl.trim()) return "Indica la URL pública de reservas.";
     if (tool === "booking" && !hasAvailableSecret("booking_api_key")) return "Pega la API Key de Routsify Booking.";
     return null;
@@ -258,15 +306,20 @@ export function IntegrationSecretsPanel({ initialStatuses, initialValues, canMan
       if (tool === "whatsapp") await saveProviderConfig({ whatsapp: config.whatsapp });
       if (tool === "booking") {
         await saveProviderConfig({ booking: config.booking });
-        await saveSimpleSettings({ "integrations.booking.enabled": simple.bookingWebhookEnabled, "integrations.booking.source_label": simple.bookingSourceLabel });
+        await saveSimpleSettings({
+          "integrations.booking.enabled": simple.bookingWebhookEnabled,
+          "integrations.booking.source_label": simple.bookingSourceLabel,
+        });
       }
       if (tool === "fillout") {
-        await saveSimpleSettings({
+        const updates = {
           "integrations.fillout.enabled": simple.filloutEnabled,
-          "integrations.fillout.form_id": simple.filloutFormId,
-          "integrations.fillout.public_url": simple.filloutPublicUrl,
-          "integrations.fillout.source_label": simple.filloutSourceLabel,
-        });
+          "integrations.fillout.form_id": effectiveFilloutFormId,
+          "integrations.fillout.public_url": simple.filloutPublicUrl.trim(),
+          "integrations.fillout.source_label": simple.filloutSourceLabel.trim() || "Fillout",
+        };
+        await saveSimpleSettings(updates);
+        setSimple((current) => ({ ...current, filloutFormId: effectiveFilloutFormId }));
       }
       setMessages((current) => ({ ...current, [tool]: isActive(tool) ? "Configuración guardada." : "Integración desactivada." }));
     } catch (error) {
@@ -293,11 +346,26 @@ export function IntegrationSecretsPanel({ initialStatuses, initialValues, canMan
   }
 
   function secretInput(key: SecretKey, label: string = secretDefinitions[key].title) {
-    return <label className={styles.field}><span>{label}</span><input className="input" type="password" autoComplete="new-password" placeholder={hasSavedSecret(key) ? "Configurada · escribe solo para sustituirla" : secretDefinitions[key].placeholder} value={secretValues[key]} onChange={(event) => setSecretValues((current) => ({ ...current, [key]: event.target.value }))} disabled={!canManage || busy !== null} /></label>;
+    return <label className={styles.field}>
+      <span>{label}</span>
+      <input
+        className="input"
+        type="password"
+        autoComplete="new-password"
+        placeholder={hasSavedSecret(key) ? "Configurada · escribe solo para sustituirla" : secretDefinitions[key].placeholder}
+        value={secretValues[key]}
+        onChange={(event) => setSecretValues((current) => ({ ...current, [key]: event.target.value }))}
+        disabled={!canManage || busy !== null}
+      />
+    </label>;
   }
 
   function webhookEndpoint(path: string, tool: ToolId) {
-    return <div className={styles.endpoint}><span>Webhook</span><code>{origin ? `${origin}${path}` : path}</code><button className="btn secondary" type="button" onClick={() => void copyWebhook(path, tool)}>Copiar URL</button></div>;
+    return <div className={styles.endpoint}>
+      <span>Webhook</span>
+      <code>{origin ? `${origin}${path}` : path}</code>
+      <button className="btn secondary" type="button" onClick={() => void copyWebhook(path, tool)}>Copiar URL</button>
+    </div>;
   }
 
   function mainFields(tool: ToolId) {
@@ -313,8 +381,8 @@ export function IntegrationSecretsPanel({ initialStatuses, initialValues, canMan
       {secretInput("whatsapp_access_token", "Access token")}
     </>;
     if (tool === "fillout") return <>
-      <label className={styles.field}><span>URL pública del formulario</span><input className="input" type="url" value={simple.filloutPublicUrl} onChange={(event) => setSimple((current) => ({ ...current, filloutPublicUrl: event.target.value }))} disabled={!canManage || busy !== null} placeholder="https://form.fillout.com/..." /></label>
-      {secretInput("fillout_webhook_secret", "Token del webhook")}
+      <label className={styles.field}><span>URL pública del formulario</span><input className="input" type="url" value={simple.filloutPublicUrl} onChange={(event) => setSimple((current) => ({ ...current, filloutPublicUrl: event.target.value, filloutFormId: current.filloutFormId || extractFilloutFormId(event.target.value) }))} disabled={!canManage || busy !== null} placeholder="https://routsify.fillout.com/t/..." /></label>
+      {secretInput("fillout_api_key", "API Key de Fillout")}
     </>;
     return <>
       <label className={styles.field}><span>URL pública de reservas</span><input className="input" type="url" value={config.booking.publicBookingUrl} onChange={(event) => setConfig((current) => ({ ...current, booking: { ...current.booking, publicBookingUrl: event.target.value } }))} disabled={!canManage || busy !== null} /></label>
@@ -332,12 +400,14 @@ export function IntegrationSecretsPanel({ initialStatuses, initialValues, canMan
     if (tool === "whatsapp") return <div className={styles.advancedGrid}>
       <label className={styles.field}><span>WhatsApp Business Account ID</span><input className="input" inputMode="numeric" value={config.whatsapp.businessAccountId} onChange={(event) => setConfig((current) => ({ ...current, whatsapp: { ...current.whatsapp, businessAccountId: event.target.value } }))} disabled={!canManage || busy !== null} /></label>
       <label className={styles.field}><span>Versión Graph API</span><input className="input" value={config.whatsapp.graphVersion} onChange={(event) => setConfig((current) => ({ ...current, whatsapp: { ...current.whatsapp, graphVersion: event.target.value } }))} disabled={!canManage || busy !== null} /></label>
-      {secretInput("whatsapp_verify_token", "Verify token")}{secretInput("whatsapp_app_secret", "App secret")}{webhookEndpoint("/api/webhooks/whatsapp", tool)}
+      {secretInput("whatsapp_verify_token", "Verify token")}
+      {secretInput("whatsapp_app_secret", "App secret")}
+      {webhookEndpoint("/api/webhooks/whatsapp", tool)}
     </div>;
     if (tool === "fillout") return <div className={styles.advancedGrid}>
-      <label className={styles.field}><span>ID del formulario</span><input className="input" value={simple.filloutFormId} onChange={(event) => setSimple((current) => ({ ...current, filloutFormId: event.target.value }))} disabled={!canManage || busy !== null} /></label>
+      <label className={styles.field}><span>ID del formulario</span><input className="input" value={effectiveFilloutFormId} onChange={(event) => setSimple((current) => ({ ...current, filloutFormId: event.target.value }))} disabled={!canManage || busy !== null} /></label>
       <label className={styles.field}><span>Nombre del origen</span><input className="input" value={simple.filloutSourceLabel} onChange={(event) => setSimple((current) => ({ ...current, filloutSourceLabel: event.target.value }))} disabled={!canManage || busy !== null} /></label>
-      {webhookEndpoint("/api/webhooks/forms", tool)}
+      <p>La conexión consulta directamente la REST API de Fillout. No tienes que configurar ningún webhook para importar respuestas.</p>
     </div>;
     if (tool === "booking") return <div className={styles.advancedGrid}>
       <label className={styles.field}><span>Base API</span><input className="input" type="url" value={config.booking.baseUrl} onChange={(event) => setConfig((current) => ({ ...current, booking: { ...current.booking, baseUrl: event.target.value } }))} disabled={!canManage || busy !== null} /></label>
@@ -348,7 +418,8 @@ export function IntegrationSecretsPanel({ initialStatuses, initialValues, canMan
       <label className={styles.field}><span>Zona horaria</span><input className="input" value={config.booking.defaultTimezone} onChange={(event) => setConfig((current) => ({ ...current, booking: { ...current.booking, defaultTimezone: event.target.value } }))} disabled={!canManage || busy !== null} /></label>
       <label className={styles.field}><span>Duración predeterminada</span><input className="input" type="number" min={5} max={240} value={config.booking.defaultDurationMinutes} onChange={(event) => setConfig((current) => ({ ...current, booking: { ...current.booking, defaultDurationMinutes: Number(event.target.value) } }))} disabled={!canManage || busy !== null} /></label>
       <label className={styles.field}><span>Nombre del origen</span><input className="input" value={simple.bookingSourceLabel} onChange={(event) => setSimple((current) => ({ ...current, bookingSourceLabel: event.target.value }))} disabled={!canManage || busy !== null} /></label>
-      {secretInput("booking_webhook_secret", "Secreto del webhook")}{webhookEndpoint("/api/webhooks/bookings", tool)}
+      {secretInput("booking_webhook_secret", "Secreto del webhook")}
+      {webhookEndpoint("/api/webhooks/bookings", tool)}
     </div>;
     return null;
   }
@@ -376,7 +447,11 @@ export function IntegrationSecretsPanel({ initialStatuses, initialValues, canMan
           <p className={styles.secretHelp}>Las claves guardadas permanecen cifradas y nunca vuelven a mostrarse.</p>
           {credentialWillBeRemoved ? <p className={styles.warning}>Al guardar desactivada se eliminará la API Key almacenada.</p> : null}
           {advanced ? <details className={styles.advanced}><summary>Configuración avanzada</summary>{advanced}</details> : null}
-          <div className={styles.actions}><button className="btn" type="button" onClick={() => void saveTool(tool.id)} disabled={!canManage || busy !== null || loading}>{busy === `save:${tool.id}` ? "Guardando..." : "Guardar"}</button><button className="btn secondary" type="button" onClick={() => void testTool(tool.id)} disabled={!canManage || !ready || busy !== null || loading}>{busy === `test:${tool.id}` ? "Probando..." : "Probar conexión"}</button></div>
+          <div className={styles.actions}>
+            <button className="btn" type="button" onClick={() => void saveTool(tool.id)} disabled={!canManage || busy !== null || loading}>{busy === `save:${tool.id}` ? "Guardando..." : "Guardar"}</button>
+            <button className="btn secondary" type="button" onClick={() => void testTool(tool.id)} disabled={!canManage || !ready || busy !== null || loading}>{busy === `test:${tool.id}` ? "Probando..." : "Probar conexión"}</button>
+            {tool.id === "fillout" ? <a className="btn secondary" href="/ajustes/fillout">Sincronizar respuestas</a> : null}
+          </div>
           {message ? <p className={isErrorMessage ? "form-warning" : "client-message"} role="status">{message}</p> : null}
           {resultText(result) ? <p className={result?.ok ? "client-message" : "form-warning"} role="status">{resultText(result)}</p> : null}
         </article>;
