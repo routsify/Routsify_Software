@@ -107,7 +107,8 @@ async function requireFilloutConfiguration(organizationId: string) {
   const settings = await loadFilloutSettings(organizationId);
   if (!settings.enabled) throw new Error("fillout_integration_disabled");
   if (!settings.formId) throw new Error("fillout_form_id_missing");
-  const apiKey = await getOrganizationSecret(organizationId, "fillout_api_key");
+  // This existing encrypted slot is retained for compatibility, but stores the REST API key.
+  const apiKey = await getOrganizationSecret(organizationId, "fillout_webhook_secret");
   if (!apiKey) throw new Error("fillout_api_key_not_configured");
   return { settings, apiKey };
 }
