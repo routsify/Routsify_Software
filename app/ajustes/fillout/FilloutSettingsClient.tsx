@@ -54,7 +54,7 @@ export function FilloutSettingsClient(props: Props) {
     setSync(null);
     try {
       if (apiKey.trim()) {
-        const secretResponse = await fetch("/api/routsify/settings/secrets/fillout_api_key", {
+        const secretResponse = await fetch("/api/routsify/settings/secrets/fillout_webhook_secret", {
           method: "PUT",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ value: apiKey.trim() }),
