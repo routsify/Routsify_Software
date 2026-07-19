@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { stageFilloutRepair } from "@/lib/fillout-repair-stage-server";
 import { runFilloutRepair, validFilloutRepairToken } from "@/lib/fillout-repair-server";
 
 export const dynamic = "force-dynamic";
@@ -18,7 +19,9 @@ export async function GET(request: NextRequest) {
   if (!phases.has(phase)) return NextResponse.json({ ok: false, error: "invalid_phase" }, { status: 400 });
 
   try {
-    const data = await runFilloutRepair({ organizationId: ORGANIZATION_ID, runId, phase: phase as "stage" | "reset" | "enqueue" | "process" | "enrich" | "verify", limit });
+    const data = phase === "stage"
+      ? await stageFilloutRepair(ORGANIZATION_ID, runId)
+      : await runFilloutRepair({ organizationId: ORGANIZATION_ID, runId, phase: phase as "reset" | "enqueue" | "process" | "enrich" | "verify", limit });
     return NextResponse.json({ ok: true, data });
   } catch (error) {
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "fillout_repair_failed" }, { status: 500 });
