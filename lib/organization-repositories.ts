@@ -9,14 +9,115 @@ function oneRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" ? value as Record<string, unknown> : null;
 }
 
-export async function listOrganizationClients(organizationId: string): Promise<RepositoryResult<unknown[]>> {
+const CLIENT_SELECT = "id,client_type,display_name,email,email_normalized,phone,phone_normalized,tax_id,billing_address,country,language,source,holded_contact_id,notes,created_at,updated_at";
+const CLIENT_PAGE_SIZES = new Set([50, 100, 150, 200]);
+
+export type OrganizationClientStats = {
+  total: number;
+  withEmail: number;
+  withPhone: number;
+  fiscalComplete: number;
+};
+
+export type OrganizationClientPage = {
+  items: unknown[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  query: string;
+  stats: OrganizationClientStats;
+};
+
+function normalizeClientPageSize(value?: number) {
+  const candidate = Number(value || 50);
+  return CLIENT_PAGE_SIZES.has(candidate) ? candidate : 50;
+}
+
+function normalizeClientPage(value?: number) {
+  const candidate = Math.floor(Number(value || 1));
+  return Number.isFinite(candidate) && candidate > 0 ? candidate : 1;
+}
+
+function cleanClientQuery(value?: string) {
+  return String(value || "").trim().slice(0, 100).replace(/[,%()\\]/g, " ").replace(/\s+/g, " ");
+}
+
+export async function listOrganizationClientsPage(
+  organizationId: string,
+  options: { page?: number; pageSize?: number; query?: string } = {},
+): Promise<RepositoryResult<OrganizationClientPage>> {
   if (!hasSupabaseAdminEnv()) return unavailable();
-  const { data, error } = await getSupabaseAdminClient().from("clients")
-    .select("id,client_type,display_name,email,email_normalized,phone,phone_normalized,tax_id,billing_address,country,language,source,holded_contact_id,notes,created_at,updated_at")
-    .eq("organization_id", organizationId)
-    .order("created_at", { ascending: false })
-    .limit(200);
-  return error ? { ok: false, mode: "supabase", error: error.message } : { ok: true, mode: "supabase", data: data || [] };
+  const db = getSupabaseAdminClient();
+  const requestedPage = normalizeClientPage(options.page);
+  const pageSize = normalizeClientPageSize(options.pageSize);
+  const query = cleanClientQuery(options.query);
+
+  let rowsQuery = db
+    .from("clients")
+    .select(CLIENT_SELECT, { count: "exact" })
+    .eq("organization_id", organizationId);
+  if (query) {
+    const like = `%${query}%`;
+    rowsQuery = rowsQuery.or(`display_name.ilike.${like},email.ilike.${like},phone.ilike.${like},tax_id.ilike.${like},country.ilike.${like}`);
+  }
+
+  const requestedFrom = (requestedPage - 1) * pageSize;
+  const requestedTo = requestedFrom + pageSize - 1;
+  const [rowsResult, totalResult, emailResult, phoneResult, fiscalResult] = await Promise.all([
+    rowsQuery.order("created_at", { ascending: false }).range(requestedFrom, requestedTo),
+    db.from("clients").select("id", { count: "exact", head: true }).eq("organization_id", organizationId),
+    db.from("clients").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).not("email", "is", null).neq("email", ""),
+    db.from("clients").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).not("phone", "is", null).neq("phone", ""),
+    db.from("clients").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).not("tax_id", "is", null).neq("tax_id", "").not("billing_address->>address", "is", null).neq("billing_address->>address", ""),
+  ]);
+
+  const firstError = [rowsResult.error, totalResult.error, emailResult.error, phoneResult.error, fiscalResult.error].find(Boolean);
+  if (firstError) return { ok: false, mode: "supabase", error: firstError.message };
+
+  const filteredTotal = rowsResult.count || 0;
+  const totalPages = Math.max(1, Math.ceil(filteredTotal / pageSize));
+  const page = Math.min(requestedPage, totalPages);
+  let items = rowsResult.data || [];
+
+  if (page !== requestedPage && filteredTotal > 0) {
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
+    let correctedQuery = db.from("clients").select(CLIENT_SELECT).eq("organization_id", organizationId);
+    if (query) {
+      const like = `%${query}%`;
+      correctedQuery = correctedQuery.or(`display_name.ilike.${like},email.ilike.${like},phone.ilike.${like},tax_id.ilike.${like},country.ilike.${like}`);
+    }
+    const corrected = await correctedQuery.order("created_at", { ascending: false }).range(from, to);
+    if (corrected.error) return { ok: false, mode: "supabase", error: corrected.error.message };
+    items = corrected.data || [];
+  }
+
+  return {
+    ok: true,
+    mode: "supabase",
+    data: {
+      items,
+      total: filteredTotal,
+      page,
+      pageSize,
+      totalPages,
+      query,
+      stats: {
+        total: totalResult.count || 0,
+        withEmail: emailResult.count || 0,
+        withPhone: phoneResult.count || 0,
+        fiscalComplete: fiscalResult.count || 0,
+      },
+    },
+  };
+}
+
+export async function listOrganizationClients(organizationId: string): Promise<RepositoryResult<unknown[]>> {
+  const result = await listOrganizationClientsPage(organizationId, { page: 1, pageSize: 200 });
+  return result.ok
+    ? { ok: true, mode: "supabase", data: result.data.items }
+    : result;
 }
 
 export async function listOrganizationClientActivity(organizationId: string): Promise<RepositoryResult<{ leads: unknown[]; bookings: unknown[]; tasks: unknown[]; cases: unknown[]; filloutUrl: string }>> {
