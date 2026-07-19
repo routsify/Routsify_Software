@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { isPublicDemoAllowed } from "@/lib/runtime-mode";
 
 const PUBLIC_PAGE_PREFIXES = ["/login", "/propuestas/"];
-const PUBLIC_API_PREFIXES = ["/api/health", "/api/propuestas/", "/api/webhooks/", "/api/cron/", "/api/internal/fillout-repair"];
+const PUBLIC_API_PREFIXES = ["/api/health", "/api/propuestas/", "/api/webhooks/", "/api/cron/"];
 const PRIVATE_API_PREFIXES = ["/api/routsify", "/api/documentos/confirm-upload", "/api/documentos/upload-url", "/api/documentos/read-url", "/api/payments/"];
 
 function publicSupabaseConfig() {
