@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonAccessDenied, requireInternalAccess } from "@/lib/api-security";
 import { createClientRepository } from "@/lib/server-repositories";
-import { listOrganizationClients } from "@/lib/organization-repositories";
+import { listOrganizationClients, listOrganizationClientsPage } from "@/lib/organization-repositories";
 import { resolveOrganizationId } from "@/lib/request-context";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { enqueueOutboxEvent } from "@/lib/outbox-server";
@@ -10,7 +10,15 @@ export async function GET(request: NextRequest) {
   const access = await requireInternalAccess(request);
   if (!access.ok) return jsonAccessDenied(access);
   const organizationId = await resolveOrganizationId(request, access.organizationId);
-  const result = await listOrganizationClients(organizationId);
+  const params = request.nextUrl.searchParams;
+  const paginated = params.get("paginated") === "1" || params.has("page") || params.has("pageSize") || params.has("q");
+  const result = paginated
+    ? await listOrganizationClientsPage(organizationId, {
+        page: Number(params.get("page") || 1),
+        pageSize: Number(params.get("pageSize") || 50),
+        query: params.get("q") || "",
+      })
+    : await listOrganizationClients(organizationId);
   return NextResponse.json(result);
 }
 
