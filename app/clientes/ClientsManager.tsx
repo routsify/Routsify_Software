@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useState } from "react";
 import { usePermission } from "@/components/PermissionProvider";
 import type { Client } from "@/lib/types";
 
@@ -15,8 +15,26 @@ type Draft = {
   country: string;
   notes: string;
 };
+type ClientStats = { total: number; withEmail: number; withPhone: number; fiscalComplete: number };
+type ClientPage = {
+  items: unknown[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  query: string;
+  stats: ClientStats;
+};
+type ImportSummary = {
+  totalRows: number;
+  imported: number;
+  duplicates: number;
+  invalid: number;
+  errors: Array<{ row: number; message: string }>;
+};
 
 const emptyDraft: Draft = { display_name: "", email: "", phone: "", client_type: "person", tax_id: "", billing_address: "", country: "ES", notes: "" };
+const pageSizes = [50, 100, 150, 200];
 
 function normalizeClient(input: unknown): ClientRow {
   const row = input as Record<string, unknown>;
@@ -67,41 +85,98 @@ function clientInitials(client?: ClientRow) {
 
 function apiErrorMessage(result: unknown, action: "create" | "update") {
   const error = String((result as { error?: unknown } | null)?.error || "");
-  if (error.includes("duplicate") || error.includes("unique")) return "Ya existe un cliente con ese email.";
+  if (error.includes("duplicate") || error.includes("unique") || error === "client_already_exists") return "Ya existe un cliente con ese email o teléfono.";
   if (error === "invalid_email") return "El email no tiene un formato válido.";
   if (error === "invalid_country") return "El país debe indicarse con dos letras, por ejemplo ES.";
   if (error === "client_name_required") return "Introduce el nombre del cliente.";
   return action === "create" ? "No se pudo crear el cliente." : "No se pudieron guardar los cambios.";
 }
 
-export function ClientsManager({ initialClients = [] }: { initialClients?: unknown[] }) {
+function importErrorMessage(result: unknown) {
+  const error = String((result as { error?: unknown } | null)?.error || "");
+  if (error === "import_file_required") return "Selecciona un archivo CSV.";
+  if (error === "import_csv_required") return "La importación requiere un archivo CSV basado en la plantilla.";
+  if (error === "import_file_too_large") return "El archivo supera el máximo permitido de 5 MB.";
+  if (error === "empty_import_file") return "El archivo está vacío.";
+  if (error === "import_file_has_no_rows") return "La plantilla no contiene clientes para importar.";
+  if (error === "import_name_column_required") return "No se encuentra la columna nombre en la plantilla.";
+  if (error === "import_row_limit_exceeded") return "Puedes importar un máximo de 2.000 clientes por archivo.";
+  return "No se pudo completar la importación.";
+}
+
+export function ClientsManager({ initialPage }: { initialPage: ClientPage }) {
   const canManage = usePermission("clients.manage");
   const canManageCases = usePermission("cases.manage");
-  const [clients, setClients] = useState<ClientRow[]>(() => initialClients.map(normalizeClient));
+  const [clients, setClients] = useState<ClientRow[]>(() => initialPage.items.map(normalizeClient));
   const [selectedId, setSelectedId] = useState<string | null>(() => clients[0]?.id || null);
-  const [query, setQuery] = useState("");
+  const [page, setPage] = useState(initialPage.page);
+  const [pageSize, setPageSize] = useState(initialPage.pageSize);
+  const [total, setTotal] = useState(initialPage.total);
+  const [totalPages, setTotalPages] = useState(initialPage.totalPages);
+  const [stats, setStats] = useState<ClientStats>(initialPage.stats);
+  const [queryInput, setQueryInput] = useState(initialPage.query || "");
+  const [query, setQuery] = useState(initialPage.query || "");
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [editDraft, setEditDraft] = useState<Draft>(emptyDraft);
   const [showCreate, setShowCreate] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importSummary, setImportSummary] = useState<ImportSummary | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [importing, setImporting] = useState(false);
 
-  const filtered = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    if (!needle) return clients;
-    return clients.filter((client) => [client.display_name, client.email, client.phone, client.tax_id, client.country].filter(Boolean).join(" ").toLowerCase().includes(needle));
-  }, [clients, query]);
-
-  const selected = clients.find((client) => client.id === selectedId) || filtered[0] || clients[0] || null;
-  const fiscalComplete = clients.filter((client) => client.tax_id && billingAddressText(client.billing_address) !== "—").length;
-  const withEmail = clients.filter((client) => client.email).length;
-  const withPhone = clients.filter((client) => client.phone).length;
+  const selected = clients.find((client) => client.id === selectedId) || clients[0] || null;
+  const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const rangeEnd = Math.min(page * pageSize, total);
 
   function updateDraft<K extends keyof Draft>(key: K, value: Draft[K]) { setDraft((current) => ({ ...current, [key]: value })); }
   function updateEditDraft<K extends keyof Draft>(key: K, value: Draft[K]) { setEditDraft((current) => ({ ...current, [key]: value })); }
   function closeCreate() { if (!saving) { setShowCreate(false); setDraft(emptyDraft); } }
   function startEdit() { if (canManage && selected) { setEditDraft(draftFromClient(selected)); setShowEdit(true); setMessage(null); } }
+
+  async function loadPage(nextPage: number, nextPageSize = pageSize, nextQuery = query) {
+    setLoading(true);
+    const params = new URLSearchParams({ paginated: "1", page: String(nextPage), pageSize: String(nextPageSize) });
+    if (nextQuery) params.set("q", nextQuery);
+    const response = await fetch(`/api/routsify/clients?${params.toString()}`, { cache: "no-store" });
+    const result = await response.json().catch(() => null);
+    setLoading(false);
+    if (!response.ok || !result?.ok || !result?.data) {
+      setMessage("No se pudo cargar la página de clientes.");
+      return false;
+    }
+    const data = result.data as ClientPage;
+    const rows = data.items.map(normalizeClient);
+    setClients(rows);
+    setPage(data.page);
+    setPageSize(data.pageSize);
+    setTotal(data.total);
+    setTotalPages(data.totalPages);
+    setStats(data.stats);
+    setSelectedId(rows[0]?.id || null);
+    setShowEdit(false);
+    return true;
+  }
+
+  async function submitSearch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const nextQuery = queryInput.trim();
+    setQuery(nextQuery);
+    await loadPage(1, pageSize, nextQuery);
+  }
+
+  async function clearSearch() {
+    setQueryInput("");
+    setQuery("");
+    await loadPage(1, pageSize, "");
+  }
+
+  async function changePageSize(value: number) {
+    await loadPage(1, value, query);
+  }
 
   async function createClient(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -127,9 +202,9 @@ export function ClientsManager({ initialClients = [] }: { initialClients?: unkno
     const result = await response.json().catch(() => null);
     setSaving(false);
     if (!response.ok || !result?.ok) return setMessage(apiErrorMessage(result, "create"));
-    const created = normalizeClient(result.data);
-    setClients((current) => [created, ...current.filter((client) => client.id !== created.id)]);
-    setSelectedId(created.id); setDraft(emptyDraft); setShowCreate(false); setMessage("Cliente creado correctamente.");
+    setDraft(emptyDraft); setShowCreate(false); setQueryInput(""); setQuery("");
+    await loadPage(1, pageSize, "");
+    setMessage("Cliente creado correctamente.");
   }
 
   async function saveClient(event: FormEvent<HTMLFormElement>) {
@@ -160,6 +235,25 @@ export function ClientsManager({ initialClients = [] }: { initialClients?: unkno
     setSelectedId(updated.id); setShowEdit(false); setMessage("Cliente actualizado correctamente.");
   }
 
+  async function importClients(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!canManage) return setMessage("Tu rol tiene acceso de consulta a clientes.");
+    if (!importFile) return setMessage("Selecciona el archivo CSV completado.");
+    setImporting(true); setMessage(null); setImportSummary(null);
+    const form = new FormData();
+    form.set("file", importFile);
+    const response = await fetch("/api/routsify/clients/import", { method: "POST", body: form });
+    const result = await response.json().catch(() => null);
+    setImporting(false);
+    if (!response.ok || !result?.ok) return setMessage(importErrorMessage(result));
+    const summary = result.data as ImportSummary;
+    setImportSummary(summary);
+    setImportFile(null);
+    setQueryInput(""); setQuery("");
+    await loadPage(1, pageSize, "");
+    setMessage(`Importación terminada: ${summary.imported} clientes creados, ${summary.duplicates} duplicados omitidos y ${summary.invalid} filas con errores.`);
+  }
+
   const clientForm = (value: Draft, update: <K extends keyof Draft>(key: K, value: Draft[K]) => void) => <>
     <label>Nombre o razón social *<input className="input" required autoComplete="name" value={value.display_name} onChange={(event) => update("display_name", event.target.value)} /></label>
     <div className="grid grid-2"><label>Email<input className="input" type="email" autoComplete="email" value={value.email} onChange={(event) => update("email", event.target.value)} /></label><label>Teléfono<input className="input" type="tel" autoComplete="tel" value={value.phone} onChange={(event) => update("phone", event.target.value)} /></label></div>
@@ -170,22 +264,42 @@ export function ClientsManager({ initialClients = [] }: { initialClients?: unkno
 
   return <div className="clients-page">
     <section className="client-kpis">
-      <div className="kpi-card"><span className="kpi-icon">C</span><span className="kpi-copy"><strong>Clientes</strong><b>{clients.length}</b><small>Total registrados</small></span></div>
-      <div className="kpi-card"><span className="kpi-icon">@</span><span className="kpi-copy"><strong>Con email</strong><b>{withEmail}</b><small>Contacto disponible</small></span></div>
-      <div className="kpi-card"><span className="kpi-icon">☎</span><span className="kpi-copy"><strong>Con teléfono</strong><b>{withPhone}</b><small>Seguimiento directo</small></span></div>
-      <div className="kpi-card"><span className="kpi-icon">F</span><span className="kpi-copy"><strong>Fiscal completo</strong><b>{fiscalComplete}</b><small>NIF y dirección</small></span></div>
+      <div className="kpi-card"><span className="kpi-icon">C</span><span className="kpi-copy"><strong>Clientes</strong><b>{stats.total}</b><small>Total registrados</small></span></div>
+      <div className="kpi-card"><span className="kpi-icon">@</span><span className="kpi-copy"><strong>Con email</strong><b>{stats.withEmail}</b><small>Contacto disponible</small></span></div>
+      <div className="kpi-card"><span className="kpi-icon">☎</span><span className="kpi-copy"><strong>Con teléfono</strong><b>{stats.withPhone}</b><small>Seguimiento directo</small></span></div>
+      <div className="kpi-card"><span className="kpi-icon">F</span><span className="kpi-copy"><strong>Fiscal completo</strong><b>{stats.fiscalComplete}</b><small>NIF y dirección</small></span></div>
     </section>
 
     <section className="clients-layout">
       <div className="card clients-main" id="clientes-listado">
-        <div className="client-filters client-filters-simple">
-          <input className="input" placeholder="Buscar por nombre, email, teléfono o NIF..." value={query} onChange={(event) => setQuery(event.target.value)} />
-          {canManage ? <button className={showCreate ? "btn secondary" : "btn"} type="button" onClick={() => setShowCreate((current) => !current)} aria-expanded={showCreate}>{showCreate ? "Cerrar formulario" : "Nuevo cliente"}</button> : null}
+        <form className="client-filters client-filters-simple" onSubmit={submitSearch}>
+          <input className="input" placeholder="Buscar en todos los clientes por nombre, email, teléfono o NIF..." value={queryInput} onChange={(event) => setQueryInput(event.target.value)} />
+          <button className="btn secondary" type="submit" disabled={loading}>{loading ? "Buscando..." : "Buscar"}</button>
+          {query ? <button className="btn secondary" type="button" onClick={clearSearch} disabled={loading}>Limpiar</button> : null}
+        </form>
+
+        <div className="form-actions">
+          <label>Mostrar <select value={pageSize} onChange={(event) => changePageSize(Number(event.target.value))} disabled={loading}>{pageSizes.map((size) => <option key={size} value={size}>{size}</option>)}</select> clientes por página</label>
+          {canManage ? <><a className="btn secondary" href="/api/routsify/clients/import/template">Descargar plantilla</a><button className={showImport ? "btn secondary" : "btn"} type="button" onClick={() => { setShowImport((current) => !current); setShowCreate(false); setMessage(null); }}>{showImport ? "Cerrar importación" : "Importar clientes"}</button><button className={showCreate ? "btn secondary" : "btn"} type="button" onClick={() => { setShowCreate((current) => !current); setShowImport(false); setMessage(null); }} aria-expanded={showCreate}>{showCreate ? "Cerrar formulario" : "Nuevo cliente"}</button></> : null}
         </div>
+
+        {showImport && canManage ? <section className="creation-panel"><div className="creation-panel-header"><div><div className="eyebrow">Importación de clientes</div><h2>Plantilla CSV compatible con Excel</h2><p>Descarga la plantilla, completa una fila por cliente y guárdala como CSV. Se admiten hasta 2.000 filas. Los clientes que ya existan por email o teléfono se omitirán sin duplicarlos.</p></div><button className="btn secondary" type="button" onClick={() => setShowImport(false)} disabled={importing}>Cerrar</button></div><form className="form" onSubmit={importClients}><label>Archivo CSV<input className="input" type="file" accept=".csv,text/csv" onChange={(event) => setImportFile(event.target.files?.[0] || null)} /></label><div className="form-actions"><a className="btn secondary" href="/api/routsify/clients/import/template">Descargar plantilla vacía</a><button className="btn" type="submit" disabled={importing || !importFile}>{importing ? "Importando..." : "Importar clientes"}</button></div></form>{importSummary ? <div className="client-message"><strong>Resultado:</strong> {importSummary.imported} importados · {importSummary.duplicates} duplicados omitidos · {importSummary.invalid} con errores.{importSummary.errors.length ? <details><summary>Ver errores de filas</summary><ul>{importSummary.errors.slice(0, 20).map((error) => <li key={`${error.row}-${error.message}`}>Fila {error.row}: {error.message}</li>)}</ul></details> : null}</div> : null}</section> : null}
+
         {showCreate && canManage ? <section className="creation-panel"><div className="creation-panel-header"><div><div className="eyebrow">Nuevo cliente</div><h2>Datos básicos y fiscales</h2><p>Guarda los datos disponibles; podrás completarlos después.</p></div><button className="btn secondary" type="button" onClick={closeCreate} disabled={saving}>Cancelar</button></div><form className="form" onSubmit={createClient}>{clientForm(draft, updateDraft)}<div className="form-actions"><button className="btn secondary" type="button" onClick={closeCreate} disabled={saving}>Cancelar</button><button className="btn" type="submit" disabled={saving}>{saving ? "Guardando..." : "Guardar cliente"}</button></div></form></section> : null}
-        {!canManage ? <p className="client-message" role="status">Modo consulta: tu rol puede revisar clientes, pero no crear ni modificar sus datos.</p> : null}
+        {!canManage ? <p className="client-message" role="status">Modo consulta: tu rol puede revisar clientes, pero no crear, importar ni modificar sus datos.</p> : null}
         {message ? <p className="client-message" role="status">{message}</p> : null}
-        {clients.length === 0 ? <div className="empty-state"><h2>Todavía no hay clientes</h2><p>{canManage ? "Crea tu primer cliente para empezar." : "No hay clientes disponibles para consultar."}</p></div> : filtered.length === 0 ? <div className="empty-state"><h2>No hay coincidencias</h2><p>Cambia la búsqueda.</p></div> : <div className="table-scroll"><table><thead><tr><th>Cliente</th><th>Email</th><th>Teléfono</th><th>País</th><th>Fiscal</th><th></th></tr></thead><tbody>{filtered.map((client) => <tr key={client.id} className={client.id === selected?.id ? "selected-row" : ""}><td><button className="table-link" type="button" onClick={() => { setSelectedId(client.id); setShowEdit(false); }}><strong>{client.display_name}</strong></button></td><td>{client.email || "—"}</td><td>{client.phone || "—"}</td><td>{client.country || "—"}</td><td>{client.tax_id && billingAddressText(client.billing_address) !== "—" ? "Completo" : "Pendiente"}</td><td><a className="btn secondary" href={`/clientes/${encodeURIComponent(client.id)}`}>Ficha 360</a></td></tr>)}</tbody></table></div>}
+        {loading ? <p className="client-message" role="status">Cargando clientes...</p> : null}
+
+        {clients.length === 0 ? <div className="empty-state"><h2>{query ? "No hay coincidencias" : "Todavía no hay clientes"}</h2><p>{query ? "Cambia la búsqueda o límpiala." : canManage ? "Crea o importa tu primer cliente para empezar." : "No hay clientes disponibles para consultar."}</p></div> : <div className="table-scroll"><table><thead><tr><th>Cliente</th><th>Email</th><th>Teléfono</th><th>País</th><th>Fiscal</th><th></th></tr></thead><tbody>{clients.map((client) => <tr key={client.id} className={client.id === selected?.id ? "selected-row" : ""}><td><button className="table-link" type="button" onClick={() => { setSelectedId(client.id); setShowEdit(false); }}><strong>{client.display_name}</strong></button></td><td>{client.email || "—"}</td><td>{client.phone || "—"}</td><td>{client.country || "—"}</td><td>{client.tax_id && billingAddressText(client.billing_address) !== "—" ? "Completo" : "Pendiente"}</td><td><a className="btn secondary" href={`/clientes/${encodeURIComponent(client.id)}`}>Ficha 360</a></td></tr>)}</tbody></table></div>}
+
+        <div className="form-actions" aria-label="Paginación de clientes">
+          <span>Mostrando {rangeStart}-{rangeEnd} de {total}{query ? " coincidencias" : " clientes"}</span>
+          <button className="btn secondary" type="button" onClick={() => loadPage(1)} disabled={loading || page <= 1}>Primera</button>
+          <button className="btn secondary" type="button" onClick={() => loadPage(page - 1)} disabled={loading || page <= 1}>Anterior</button>
+          <strong>Página {page} de {totalPages}</strong>
+          <button className="btn secondary" type="button" onClick={() => loadPage(page + 1)} disabled={loading || page >= totalPages}>Siguiente</button>
+          <button className="btn secondary" type="button" onClick={() => loadPage(totalPages)} disabled={loading || page >= totalPages}>Última</button>
+        </div>
       </div>
 
       <aside className="client-side card" id="cliente-panel">
