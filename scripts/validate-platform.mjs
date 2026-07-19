@@ -19,12 +19,22 @@ const pkg = JSON.parse(read("package.json"));
 const env = read(".env.example");
 const nextConfig = read("next.config.mjs");
 const netlify = existsSync(join(root, "netlify.toml")) ? read("netlify.toml") : "";
+const secretRoute = read("app/api/routsify/settings/secrets/[secretKey]/route.ts");
 
 assert(pkg.scripts?.["platform:build"], "Missing platform:build script");
 assert(pkg.scripts?.["validate:platform"], "Missing validate:platform script");
 assert(!pkg.scripts?.["netlify:build"], "Remove platform-specific netlify:build script; auto-deploy is handled by the platform");
 assert(!pkg.scripts?.["smoke:netlify"], "Remove smoke:netlify script; deployment smoke checks are external/manual");
 assert(!JSON.stringify(pkg).includes('"latest"'), "Dependencies must not use latest");
+
+assert(
+  secretRoute.includes('return value === "booking_webhook_secret";'),
+  "Only the deferred Booking webhook secret may be blocked by the secret settings route",
+);
+assert(
+  !secretRoute.includes('value === "fillout_webhook_secret" ||'),
+  "Fillout REST API key storage must not be blocked as a deferred webhook secret",
+);
 
 if (netlify) {
   assert(netlify.includes('command = "npm run platform:build"'), "Netlify must use the generic platform:build command");
