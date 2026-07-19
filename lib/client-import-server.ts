@@ -114,7 +114,7 @@ export async function importClientsFromCsv(organizationId: string, csv: string):
   const errors: ImportError[] = [];
   const candidates: Array<{ rowNumber: number; insert: JsonRow; email: string; phone: string }> = [];
   const seenEmails = new Set<string>();
-  const seenPhones = new Set<string>();
+  const seenPhoneOnlyClients = new Set<string>();
   let duplicates = 0;
 
   for (const raw of rawRows) {
@@ -148,12 +148,14 @@ export async function importClientsFromCsv(organizationId: string, csv: string):
       duplicates += 1;
       continue;
     }
-    if (phoneNormalized && seenPhones.has(phoneNormalized)) {
+    // Un teléfono puede pertenecer a una familia. Solo actúa como identidad principal
+    // cuando la fila no dispone de email.
+    if (!email && phoneNormalized && seenPhoneOnlyClients.has(phoneNormalized)) {
       duplicates += 1;
       continue;
     }
     if (email) seenEmails.add(email);
-    if (phoneNormalized) seenPhones.add(phoneNormalized);
+    if (!email && phoneNormalized) seenPhoneOnlyClients.add(phoneNormalized);
 
     candidates.push({
       rowNumber: raw.rowNumber,
@@ -188,14 +190,17 @@ export async function importClientsFromCsv(organizationId: string, csv: string):
     if (error) throw new Error(error.message);
     for (const item of data || []) if (item.email_normalized) existingEmails.add(String(item.email_normalized));
   }
-  for (const values of chunk(Array.from(new Set(candidates.map((item) => item.phone).filter(Boolean))), 200)) {
+  const phoneOnlyValues = candidates.filter((item) => !item.email).map((item) => item.phone).filter(Boolean);
+  for (const values of chunk(Array.from(new Set(phoneOnlyValues)), 200)) {
     const { data, error } = await db.from("clients").select("phone_normalized").eq("organization_id", organizationId).in("phone_normalized", values);
     if (error) throw new Error(error.message);
     for (const item of data || []) if (item.phone_normalized) existingPhones.add(String(item.phone_normalized));
   }
 
   const pending = candidates.filter((candidate) => {
-    const duplicate = (candidate.email && existingEmails.has(candidate.email)) || (candidate.phone && existingPhones.has(candidate.phone));
+    const duplicate = candidate.email
+      ? existingEmails.has(candidate.email)
+      : Boolean(candidate.phone && existingPhones.has(candidate.phone));
     if (duplicate) duplicates += 1;
     return !duplicate;
   });
