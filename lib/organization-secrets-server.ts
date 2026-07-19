@@ -3,7 +3,6 @@ import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 export const organizationSecretKeys = [
   "holded_api_key",
   "openai_api_key",
-  "fillout_api_key",
   "fillout_webhook_secret",
   "booking_webhook_secret",
   "booking_api_key",
@@ -18,7 +17,6 @@ export type OrganizationSecretKey = (typeof organizationSecretKeys)[number];
 function environmentFallback(secretKey: OrganizationSecretKey) {
   if (secretKey === "holded_api_key") return process.env.HOLDED_API_KEY || null;
   if (secretKey === "openai_api_key") return process.env.OPENAI_API_KEY || null;
-  if (secretKey === "fillout_api_key") return process.env.FILLOUT_API_KEY || null;
   if (secretKey === "fillout_webhook_secret") return process.env.FORM_WEBHOOK_SECRET || null;
   if (secretKey === "booking_webhook_secret") return process.env.BOOKING_WEBHOOK_SECRET || null;
   if (secretKey === "booking_api_key") return process.env.BOOKING_API_KEY || null;
