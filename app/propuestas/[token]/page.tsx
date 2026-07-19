@@ -35,7 +35,7 @@ export default async function PublicProposalPage({ params }: { params: Promise<{
           <div className="table-scroll"><table><thead><tr><th>Servicio</th><th>Detalle</th><th>Precio</th></tr></thead><tbody>{proposal.lines.map(([name, text, price], index) => <tr key={`${name}-${index}`}><td><strong>{name}</strong></td><td>{text}</td><td>{Number(price).toLocaleString("es-ES", { style: "currency", currency: "EUR" })}</td></tr>)}</tbody><tfoot><tr><th colSpan={2}>Total</th><th>{proposal.total.toLocaleString("es-ES", { style: "currency", currency: "EUR" })}</th></tr></tfoot></table></div>
         </section>
 
-        <section className="card" style={{ marginTop: 28 }}><div className="eyebrow">Condiciones</div><h2>Aceptación y siguientes pasos</h2><p>La aceptación confirma la conformidad con los servicios e importes mostrados. A continuación, Routsify preparará el contrato, solicitará la documentación necesaria y coordinará los pagos y reservas correspondientes.</p></section>
+        <section className="card" style={{ marginTop: 28 }}><div className="eyebrow">Condiciones</div><h2>Aceptación y siguientes pasos</h2><p>{proposal.terms}</p></section>
       </div>
     </div>
   );
