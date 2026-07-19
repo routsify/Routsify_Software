@@ -1,9 +1,9 @@
-import { enqueueOutboxEvent, providerIdempotencyKey } from "@/lib/integration-outbox-server";
-import { loadFilloutSettings } from "@/lib/fillout-api-server";
+import { enqueueOutboxEvent } from "@/lib/outbox-server";
 import { normalizeFilloutSubmission } from "@/lib/fillout-submission-server";
 import { getOrganizationSecret } from "@/lib/organization-secrets-server";
 import { processOutboxBatch } from "@/lib/outbox-worker-server";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
+import { providerIdempotencyKey } from "@/lib/webhook-security";
 
 const FILLOUT_ORIGINS = ["https://api.fillout.com/v1/api", "https://eu-api.fillout.com/v1/api"] as const;
 const PAGE_SIZE = 150;
@@ -13,15 +13,61 @@ const MAX_PROCESSING_ROUNDS = 10;
 
 type JsonRow = Record<string, unknown>;
 type SubmissionList = { responses?: JsonRow[]; totalResponses?: number; pageCount?: number };
+type FilloutSettings = { enabled: boolean; formId: string; publicUrl: string; sourceLabel: string };
 
 function text(value: unknown) {
   return String(value || "").trim();
+}
+
+function settingValue(value: unknown) {
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "boolean" || typeof value === "number") return value;
+  if (value && typeof value === "object" && "value" in value) return (value as JsonRow).value;
+  return value;
+}
+
+function extractFormId(value: string) {
+  const raw = value.trim();
+  if (!raw) return "";
+  if (/^[A-Za-z0-9_-]{6,}$/.test(raw) && !raw.includes(".")) return raw;
+  try {
+    const url = new URL(raw);
+    const parts = url.pathname.split("/").filter(Boolean);
+    const marker = parts.findIndex((part) => part === "t" || part === "form");
+    return marker >= 0 && parts[marker + 1] ? parts[marker + 1] : parts.at(-1) || "";
+  } catch {
+    return "";
+  }
 }
 
 function chunks<T>(rows: T[], size: number) {
   const result: T[][] = [];
   for (let index = 0; index < rows.length; index += size) result.push(rows.slice(index, index + size));
   return result;
+}
+
+async function loadSettings(organizationId: string): Promise<FilloutSettings> {
+  const keys = [
+    "integrations.fillout.enabled",
+    "integrations.fillout.form_id",
+    "integrations.fillout.public_url",
+    "integrations.fillout.source_label",
+  ];
+  const { data, error } = await getSupabaseAdminClient()
+    .from("routsify_settings")
+    .select("key,value")
+    .eq("organization_id", organizationId)
+    .in("key", keys);
+  if (error) throw new Error(error.message);
+  const values = new Map((data || []).map((row) => [String(row.key), settingValue(row.value)]));
+  const publicUrl = text(values.get("integrations.fillout.public_url"));
+  const configuredFormId = text(values.get("integrations.fillout.form_id"));
+  return {
+    enabled: values.get("integrations.fillout.enabled") === true || values.get("integrations.fillout.enabled") === "true",
+    formId: configuredFormId || extractFormId(publicUrl),
+    publicUrl,
+    sourceLabel: text(values.get("integrations.fillout.source_label")) || "Fillout",
+  };
 }
 
 async function filloutRequest<T>(apiKey: string, path: string): Promise<{ data: T; origin: string }> {
@@ -93,7 +139,7 @@ async function pendingFilloutCount(organizationId: string) {
 }
 
 export async function syncFilloutSubmissionsV2(organizationId: string, options: { full?: boolean; maxPages?: number } = {}) {
-  const settings = await loadFilloutSettings(organizationId);
+  const settings = await loadSettings(organizationId);
   if (!settings.enabled) return { ok: true as const, skipped: true as const, reason: "fillout_integration_disabled", fetched: 0, queued: 0, duplicates: 0, failed: 0, remaining: 0 };
   if (!settings.formId) throw new Error("fillout_form_id_missing");
   const apiKey = await getOrganizationSecret(organizationId, "fillout_webhook_secret");
