@@ -109,20 +109,29 @@ async function latestSubmittedAt(organizationId: string) {
 async function enqueueSubmission(organizationId: string, submission: JsonRow, formId: string, sourceLabel: string) {
   const normalized = normalizeFilloutSubmission({ ...submission, form_id: formId, source_label: sourceLabel });
   const submissionId = text(normalized.submission_id || submission.submissionId || submission.submission_id);
-  if (!submissionId) return { duplicate: false, skipped: true };
+  if (!submissionId) return { ok: false, duplicate: false, skipped: true };
+  const payload = { ...normalized, verificationMode: "fillout_rest_api" };
   const result = await enqueueOutboxEvent({
     organizationId,
-    provider: "fillout",
     channel: "form",
     eventType: "lead.created",
-    entityType: "integration_event",
-    idempotencyKey: providerIdempotencyKey("fillout", submissionId),
-    payload: { ...normalized, verificationMode: "fillout_rest_api" },
+    idempotencyKey: providerIdempotencyKey({
+      channel: "fillout",
+      eventType: "lead.created",
+      payload,
+      fallbackRawBody: JSON.stringify(submission),
+      eventId: submissionId,
+    }),
+    payload,
     risk: "low",
     businessRule: "Formulario externo entra primero como solicitud, nunca como expediente directo.",
     nextAction: "Cualificar solicitud y deduplicar cliente.",
   });
-  return { duplicate: Boolean(result.duplicate), skipped: false };
+  return {
+    ok: result.ok,
+    duplicate: Boolean("duplicate" in result && result.duplicate),
+    skipped: Boolean("skipped" in result && result.skipped),
+  };
 }
 
 async function pendingFilloutCount(organizationId: string) {
@@ -170,9 +179,7 @@ export async function syncFilloutSubmissionsV2(organizationId: string, options: 
     for (const batch of chunks(submissions, ENQUEUE_CONCURRENCY)) {
       const results = await Promise.allSettled(batch.map((submission) => enqueueSubmission(organizationId, submission, settings.formId, settings.sourceLabel)));
       for (const result of results) {
-        if (result.status === "rejected") {
-          failed += 1;
-        } else if (result.value.skipped) {
+        if (result.status === "rejected" || !result.value.ok || result.value.skipped && !result.value.duplicate) {
           failed += 1;
         } else if (result.value.duplicate) {
           duplicates += 1;
@@ -195,7 +202,7 @@ export async function syncFilloutSubmissionsV2(organizationId: string, options: 
   }
 
   return {
-    ok: failed === 0,
+    ok: failed === 0 && remaining === 0,
     skipped: false as const,
     fetched,
     queued,
