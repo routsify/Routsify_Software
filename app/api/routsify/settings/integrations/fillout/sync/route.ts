@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonAccessDenied, requireInternalAccess } from "@/lib/api-security";
-import { syncFilloutSubmissions } from "@/lib/fillout-api-server";
+import { syncFilloutSubmissionsV2 } from "@/lib/fillout-sync-server";
 import { resolveOrganizationId } from "@/lib/request-context";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
   const access = await requireInternalAccess(request);
@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
   const organizationId = await resolveOrganizationId(request, access.organizationId);
   const body = await request.json().catch(() => ({}));
   try {
-    const data = await syncFilloutSubmissions(organizationId, {
+    const data = await syncFilloutSubmissionsV2(organizationId, {
       full: body?.full === true,
       maxPages: Number.isFinite(Number(body?.maxPages)) ? Number(body.maxPages) : undefined,
     });
