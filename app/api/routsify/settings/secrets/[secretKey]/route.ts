@@ -4,7 +4,7 @@ import { deleteOrganizationSecret, isOrganizationSecretKey, setOrganizationSecre
 import { resolveOrganizationId } from "@/lib/request-context";
 
 function isDeferredWebhookKey(value: string) {
-  return value === "fillout_webhook_secret" || value === "booking_webhook_secret";
+  return value === "booking_webhook_secret";
 }
 
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ secretKey: string }> }) {
