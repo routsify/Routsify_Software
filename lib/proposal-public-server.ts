@@ -1,6 +1,8 @@
 import { verifyProposalToken, hashProposalToken } from "@/lib/proposal-token";
 import { getSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase-admin";
 
+const DEFAULT_PROPOSAL_TERMS = "La aceptación confirma la conformidad con los servicios, fechas e importes mostrados en esta versión. Routsify preparará el contrato, solicitará la documentación necesaria y coordinará los pagos y reservas correspondientes conforme a las condiciones contractuales aplicables.";
+
 export type PublicProposalView = {
   client: string;
   clientEmail?: string | null;
@@ -13,6 +15,7 @@ export type PublicProposalView = {
   highlights: string[];
   itinerary: [string, string][];
   lines: [string, string, number][];
+  terms: string;
 };
 
 export type PublicProposalResolution =
@@ -50,6 +53,7 @@ function mapSupabaseProposal(input: { caseRow: Record<string, unknown>; versionR
     highlights: stringArray(snapshot.highlights, []),
     itinerary: itineraryArray(snapshot.itinerary),
     lines: input.lines.map((line) => [String(line.service_type_code || "Servicio"), String(line.description_public || "Servicio incluido"), Number(line.sale_price || 0)] as [string, string, number]),
+    terms: String(input.versionRow.terms_snapshot || DEFAULT_PROPOSAL_TERMS),
   };
 }
 
@@ -73,7 +77,7 @@ export async function resolvePublicProposal(token: string): Promise<PublicPropos
 
     const { data: versionRow, error: versionError } = await supabase
       .from("proposal_versions")
-      .select("id,proposal_id,version_number,status,total_sale,total_cost,locked,snapshot,expires_at")
+      .select("id,proposal_id,version_number,status,total_sale,total_cost,locked,snapshot,terms_snapshot,expires_at")
       .eq("id", payload.versionId)
       .eq("proposal_id", payload.proposalId)
       .single();

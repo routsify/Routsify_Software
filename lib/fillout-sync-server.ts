@@ -14,6 +14,7 @@ const MAX_PROCESSING_ROUNDS = 10;
 type JsonRow = Record<string, unknown>;
 type SubmissionList = { responses?: JsonRow[]; totalResponses?: number; pageCount?: number };
 type FilloutSettings = { enabled: boolean; formId: string; publicUrl: string; sourceLabel: string };
+type FilloutSyncMode = "full_import" | "incremental";
 
 function text(value: unknown) {
   return String(value || "").trim();
@@ -106,11 +107,17 @@ async function latestSubmittedAt(organizationId: string) {
   return text(payload.submitted_at || payload.submissionTime || payload.submission_time);
 }
 
-async function enqueueSubmission(organizationId: string, submission: JsonRow, formId: string, sourceLabel: string) {
+async function enqueueSubmission(
+  organizationId: string,
+  submission: JsonRow,
+  formId: string,
+  sourceLabel: string,
+  syncMode: FilloutSyncMode,
+) {
   const normalized = normalizeFilloutSubmission({ ...submission, form_id: formId, source_label: sourceLabel });
   const submissionId = text(normalized.submission_id || submission.submissionId || submission.submission_id);
   if (!submissionId) return { ok: false, duplicate: false, skipped: true };
-  const payload = { ...normalized, verificationMode: "fillout_rest_api" };
+  const payload = { ...normalized, verificationMode: "fillout_rest_api", sync_mode: syncMode };
   const result = await enqueueOutboxEvent({
     organizationId,
     channel: "form",
@@ -125,7 +132,7 @@ async function enqueueSubmission(organizationId: string, submission: JsonRow, fo
     payload,
     risk: "low",
     businessRule: "Formulario externo entra primero como solicitud, nunca como expediente directo.",
-    nextAction: "Cualificar solicitud y deduplicar cliente.",
+    nextAction: syncMode === "full_import" ? "Importar histórico sin generar tareas urgentes." : "Cualificar solicitud y deduplicar cliente.",
   });
   return {
     ok: result.ok,
@@ -155,6 +162,7 @@ export async function syncFilloutSubmissionsV2(organizationId: string, options: 
   if (!apiKey) throw new Error("fillout_api_key_not_configured");
 
   const maxPages = Math.min(100, Math.max(1, Number(options.maxPages || DEFAULT_MAX_PAGES)));
+  const syncMode: FilloutSyncMode = options.full ? "full_import" : "incremental";
   const afterDate = options.full ? "" : await latestSubmittedAt(organizationId);
   let offset = 0;
   let fetched = 0;
@@ -177,7 +185,7 @@ export async function syncFilloutSubmissionsV2(organizationId: string, options: 
     fetched += submissions.length;
 
     for (const batch of chunks(submissions, ENQUEUE_CONCURRENCY)) {
-      const results = await Promise.allSettled(batch.map((submission) => enqueueSubmission(organizationId, submission, settings.formId, settings.sourceLabel)));
+      const results = await Promise.allSettled(batch.map((submission) => enqueueSubmission(organizationId, submission, settings.formId, settings.sourceLabel, syncMode)));
       for (const result of results) {
         if (result.status === "rejected" || !result.value.ok || result.value.skipped && !result.value.duplicate) {
           failed += 1;
@@ -204,6 +212,7 @@ export async function syncFilloutSubmissionsV2(organizationId: string, options: 
   return {
     ok: failed === 0 && remaining === 0,
     skipped: false as const,
+    syncMode,
     fetched,
     queued,
     duplicates,
