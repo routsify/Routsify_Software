@@ -34,7 +34,7 @@ export default async function FilloutSettingsPage() {
       initialFormId={String(rawValue(rows, "integrations.fillout.form_id") || "")}
       initialPublicUrl={String(rawValue(rows, "integrations.fillout.public_url") || "")}
       initialSourceLabel={String(rawValue(rows, "integrations.fillout.source_label") || "Fillout")}
-      apiKeyConfigured={statuses.some((item) => item.key === "fillout_api_key" && item.configured)}
+      apiKeyConfigured={statuses.some((item) => item.key === "fillout_webhook_secret" && item.configured)}
     />
   </AppShell>;
 }
