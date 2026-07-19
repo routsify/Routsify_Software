@@ -6,8 +6,7 @@ import styles from "./IntegrationSecretsPanel.module.css";
 const secretDefinitions = {
   holded_api_key: { title: "API Key de Holded", placeholder: "Pega aquí la API Key de Holded" },
   openai_api_key: { title: "API Key de OpenAI", placeholder: "Pega aquí la API Key de OpenAI" },
-  fillout_api_key: { title: "API Key de Fillout", placeholder: "Pega aquí la API Key de Fillout" },
-  fillout_webhook_secret: { title: "Secreto del webhook de Fillout", placeholder: "Secreto opcional del webhook" },
+  fillout_webhook_secret: { title: "API Key de Fillout", placeholder: "Pega aquí la API Key de Fillout" },
   booking_webhook_secret: { title: "Secreto del webhook de Booking", placeholder: "Secreto HMAC del webhook" },
   booking_api_key: { title: "API Key de Routsify Booking", placeholder: "Pega aquí la API Key de call.routsify.com" },
   smtp_username: { title: "Usuario SMTP", placeholder: "nombre@tudominio.com" },
@@ -78,7 +77,7 @@ const toolSecrets: Record<ToolId, SecretKey[]> = {
   holded: ["holded_api_key"],
   email: ["smtp_username", "smtp_password"],
   whatsapp: ["whatsapp_access_token", "whatsapp_verify_token", "whatsapp_app_secret"],
-  fillout: ["fillout_api_key"],
+  fillout: ["fillout_webhook_secret"],
   booking: ["booking_api_key", "booking_webhook_secret"],
   openai: ["openai_api_key"],
 };
@@ -132,7 +131,6 @@ export function IntegrationSecretsPanel({ initialStatuses, initialValues, canMan
   const [secretValues, setSecretValues] = useState<Record<SecretKey, string>>({
     holded_api_key: "",
     openai_api_key: "",
-    fillout_api_key: "",
     fillout_webhook_secret: "",
     booking_webhook_secret: "",
     booking_api_key: "",
@@ -202,7 +200,7 @@ export function IntegrationSecretsPanel({ initialStatuses, initialValues, canMan
     if (tool === "openai") return hasSavedSecret("openai_api_key");
     if (tool === "email") return Boolean(config.email.fromAddress && hasSavedSecret("smtp_password"));
     if (tool === "whatsapp") return Boolean(config.whatsapp.phoneNumberId && hasSavedSecret("whatsapp_access_token"));
-    if (tool === "fillout") return Boolean(simple.filloutPublicUrl.trim() && effectiveFilloutFormId && hasSavedSecret("fillout_api_key"));
+    if (tool === "fillout") return Boolean(simple.filloutPublicUrl.trim() && effectiveFilloutFormId && hasSavedSecret("fillout_webhook_secret"));
     return Boolean(config.booking.publicBookingUrl && hasSavedSecret("booking_api_key"));
   }
 
@@ -279,7 +277,7 @@ export function IntegrationSecretsPanel({ initialStatuses, initialValues, canMan
     if (tool === "whatsapp" && !hasAvailableSecret("whatsapp_access_token")) return "Pega el access token de Meta.";
     if (tool === "fillout" && !simple.filloutPublicUrl.trim()) return "Indica la URL pública del formulario de Fillout.";
     if (tool === "fillout" && !effectiveFilloutFormId) return "No se ha podido obtener el ID del formulario de Fillout.";
-    if (tool === "fillout" && !hasAvailableSecret("fillout_api_key")) return "Pega la API Key de Fillout.";
+    if (tool === "fillout" && !hasAvailableSecret("fillout_webhook_secret")) return "Pega la API Key de Fillout.";
     if (tool === "booking" && !config.booking.publicBookingUrl.trim()) return "Indica la URL pública de reservas.";
     if (tool === "booking" && !hasAvailableSecret("booking_api_key")) return "Pega la API Key de Routsify Booking.";
     return null;
@@ -382,7 +380,7 @@ export function IntegrationSecretsPanel({ initialStatuses, initialValues, canMan
     </>;
     if (tool === "fillout") return <>
       <label className={styles.field}><span>URL pública del formulario</span><input className="input" type="url" value={simple.filloutPublicUrl} onChange={(event) => setSimple((current) => ({ ...current, filloutPublicUrl: event.target.value, filloutFormId: current.filloutFormId || extractFilloutFormId(event.target.value) }))} disabled={!canManage || busy !== null} placeholder="https://routsify.fillout.com/t/..." /></label>
-      {secretInput("fillout_api_key", "API Key de Fillout")}
+      {secretInput("fillout_webhook_secret", "API Key de Fillout")}
     </>;
     return <>
       <label className={styles.field}><span>URL pública de reservas</span><input className="input" type="url" value={config.booking.publicBookingUrl} onChange={(event) => setConfig((current) => ({ ...current, booking: { ...current.booking, publicBookingUrl: event.target.value } }))} disabled={!canManage || busy !== null} /></label>
