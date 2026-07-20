@@ -1,8 +1,9 @@
 import { test, expect } from "@playwright/test";
 
 const ready = Boolean(process.env.E2E_EMAIL && process.env.E2E_PASSWORD);
-const marker = String(process.env.GITHUB_RUN_ID || Date.now());
-const tag = `[PRUEBA E2E ROUTSIFY ${marker}]`;
+const certifiedClientId = "d4112107-3f9c-4ff6-a0df-db7a371121fc";
+
+test.describe.configure({ retries: 0 });
 
 async function login(page) {
   await page.goto("/login");
@@ -14,7 +15,12 @@ async function login(page) {
 
 async function api(page, path, method = "GET", body) {
   const result = await page.evaluate(async ({ path, method, body }) => {
-    const response = await fetch(path, { method, headers: body ? { "content-type": "application/json" } : undefined, body: body ? JSON.stringify(body) : undefined, cache: "no-store" });
+    const response = await fetch(path, {
+      method,
+      headers: body ? { "content-type": "application/json" } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+      cache: "no-store",
+    });
     const raw = await response.text();
     let payload = null;
     try { payload = raw ? JSON.parse(raw) : null; } catch { payload = { raw }; }
@@ -45,20 +51,39 @@ function day(delta) {
 
 test.skip(!ready, "E2E credentials required");
 
-test("real Holded contact estimate purchase payment proforma invoice", async ({ page }) => {
+test("real Holded estimate purchase payment proforma invoice", async ({ page }) => {
   test.setTimeout(300000);
   await login(page);
-  const email = `info+e2e-${marker}@routsify.com`;
-  const client = await api(page, "/api/routsify/clients", "POST", { display_name: `${tag} Cliente Holded`, email, phone: "+34600000000", client_type: "person", country: "ES", tax_id: `E2E${marker.slice(-8)}`, billing_address: { address: "Calle Prueba 1", city: "Madrid", postal_code: "28001", country_code: "ES" }, notes: `${tag} borrar tras verificar` });
-  const clientId = String(client.data.id);
-  await drain(page, "contacto");
-  const syncedClient = await api(page, `/api/routsify/clients/${clientId}`);
-  expect(String(syncedClient.data.holded_contact_id || "")).not.toBe("");
 
-  const supplier = await api(page, "/api/routsify/suppliers", "POST", { name: `${tag} Proveedor Holded`, category: "E2E", email, phone: "+34600000001", tax_id: `E2EP${marker.slice(-7)}`, country: "ES", billing_address: { address: "Calle Prueba 2", city: "Madrid", postal_code: "28002", country_code: "ES" }, notes: `${tag} borrar tras verificar` });
+  const marker = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const tag = `[PRUEBA E2E ROUTSIFY ${marker}]`;
+  const email = `info+e2e-${marker}@routsify.com`;
+
+  const syncedClient = await api(page, `/api/routsify/clients/${certifiedClientId}`);
+  expect(String(syncedClient.data.holded_contact_id || "")).not.toBe("");
+  const clientId = certifiedClientId;
+
+  const supplier = await api(page, "/api/routsify/suppliers", "POST", {
+    name: `${tag} Proveedor Holded`,
+    category: "E2E",
+    email,
+    phone: "+34600000001",
+    tax_id: `E2EP${marker.replace(/\W/g, "").slice(-7)}`,
+    country: "ES",
+    billing_address: { address: "Calle Prueba 2", city: "Madrid", postal_code: "28002", country_code: "ES" },
+    notes: `${tag} borrar tras verificar`,
+  });
   const supplierId = String(supplier.data.id);
 
-  const createdCase = await api(page, "/api/routsify/cases", "POST", { client_id: clientId, title: `${tag} Expediente Holded`, destination: "Lisboa", trip_start: day(-15), trip_end: day(-10), currency: "EUR", final_notes: `${tag} borrar tras verificar` });
+  const createdCase = await api(page, "/api/routsify/cases", "POST", {
+    client_id: clientId,
+    title: `${tag} Expediente Holded`,
+    destination: "Lisboa",
+    trip_start: day(-15),
+    trip_end: day(-10),
+    currency: "EUR",
+    final_notes: `${tag} borrar tras verificar`,
+  });
   const caseId = String(createdCase.data.id);
   const caseCode = String(createdCase.data.case_code);
 
@@ -69,14 +94,34 @@ test("real Holded contact estimate purchase payment proforma invoice", async ({ 
   expect(version).toBeTruthy();
   const versionId = String(version.id);
 
-  await api(page, `/api/routsify/proposals/${proposalId}/lines`, "POST", { proposal_version_id: versionId, service_type_code: "custom", description_public: `${tag} Servicio de viaje`, description_internal: `${tag} compra de prueba`, supplier_id: supplierId, destination_segment: "Lisboa", start_date: day(-15), end_date: day(-10), cost_budget: 10, sale_price: 15, creates_expected_purchase: true });
+  await api(page, `/api/routsify/proposals/${proposalId}/lines`, "POST", {
+    proposal_version_id: versionId,
+    service_type_code: "custom",
+    description_public: `${tag} Servicio de viaje`,
+    description_internal: `${tag} compra de prueba`,
+    supplier_id: supplierId,
+    destination_segment: "Lisboa",
+    start_date: day(-15),
+    end_date: day(-10),
+    cost_budget: 10,
+    sale_price: 15,
+    creates_expected_purchase: true,
+  });
   const sent = await api(page, `/api/routsify/proposals/${proposalId}/send`, "POST", { validity_days: 7 });
   expect(String(sent.data.url || "")).toContain("/propuestas/");
   await drain(page, "presupuesto");
 
   const publicPath = new URL(sent.data.url).pathname;
-  await api(page, `${publicPath}/accept`, "POST", { acceptor_name: `${tag} Aceptación`, acceptor_email: email, terms_accepted: true });
-  await api(page, `/api/routsify/cases/${caseId}/contracts`, "POST", { status: "signed", title: `${tag} Contrato firmado`, notes: `${tag} firma de prueba` });
+  await api(page, `${publicPath}/accept`, "POST", {
+    acceptor_name: `${tag} Aceptación`,
+    acceptor_email: email,
+    terms_accepted: true,
+  });
+  await api(page, `/api/routsify/cases/${caseId}/contracts`, "POST", {
+    status: "signed",
+    title: `${tag} Contrato firmado`,
+    notes: `${tag} firma de prueba`,
+  });
 
   const purchases = await api(page, "/api/routsify/expected-purchases");
   const purchase = list(purchases).find((row) => String(row.case_id) === caseId);
@@ -86,10 +131,21 @@ test("real Holded contact estimate purchase payment proforma invoice", async ({ 
   await drain(page, "compra");
   const syncedPurchase = await api(page, `/api/routsify/expected-purchases/${purchaseId}`);
   expect(String(syncedPurchase.data.holded_purchase_id || "")).not.toBe("");
-  await api(page, `/api/routsify/expected-purchases/${purchaseId}`, "PATCH", { status: "approved", approved_cost: 10, review_notes: `${tag} aprobada` });
+  await api(page, `/api/routsify/expected-purchases/${purchaseId}`, "PATCH", {
+    status: "approved",
+    approved_cost: 10,
+    review_notes: `${tag} aprobada`,
+  });
 
   const reference = `E2E-${marker}`;
-  await api(page, "/api/payments/manual", "POST", { caseId, amount: 15, reference, currency: "EUR", method: "manual_e2e", notes: `${tag} pago total` });
+  await api(page, "/api/payments/manual", "POST", {
+    caseId,
+    amount: 15,
+    reference,
+    currency: "EUR",
+    method: "manual_e2e",
+    notes: `${tag} pago total`,
+  });
   const fiscalBatch = await drain(page, "proforma y cobro");
   expect(Number(fiscalBatch.processed || 0)).toBeGreaterThanOrEqual(2);
 
