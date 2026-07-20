@@ -19,25 +19,25 @@
     "db:types": "npx --yes supabase@2 gen types typescript --project-id wphiurjzkxbkakiozgvf --schema public > lib/database.types.ts"
   },
   "dependencies": {
-    "@supabase/ssr": "0.7.0",
-    "@supabase/supabase-js": "2.110.2",
+    "@supabase/ssr": "0.12.3",
+    "@supabase/supabase-js": "2.110.7",
     "echarts": "6.1.0",
-    "lucide-react": "0.468.0",
+    "lucide-react": "0.577.0",
     "next": "16.2.10",
-    "react": "19.2.1",
-    "react-dom": "19.2.1"
+    "react": "19.2.7",
+    "react-dom": "19.2.7"
   },
   "devDependencies": {
     "@netlify/plugin-nextjs": "5.15.12",
-    "@types/node": "22.10.5",
-    "@types/react": "19.2.1",
-    "@types/react-dom": "19.2.1",
-    "eslint": "9.17.0",
+    "@types/node": "22.20.1",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "eslint": "9.39.5",
     "eslint-config-next": "16.2.10",
-    "postcss": "8.5.17",
-    "typescript": "5.7.3"
+    "postcss": "8.5.20",
+    "typescript": "5.9.3"
   },
   "overrides": {
-    "postcss": "8.5.17"
+    "postcss": "8.5.20"
   }
 }
