@@ -35,41 +35,31 @@ async function selectPublishedSlot(context) {
     expect(response).not.toBeNull();
     expect(response.status()).toBeLessThan(500);
 
-    const availableDates = await publicPage.locator('button[aria-label$="Día disponible"]').evaluateAll((nodes) => nodes
+    const dates = await publicPage.locator('button[aria-label$="Día disponible"]').evaluateAll((nodes) => nodes
       .filter((node) => !node.disabled && (node.offsetWidth > 0 || node.offsetHeight > 0))
       .map((node) => String(node.getAttribute("aria-label") || "").match(/^(\d{4}-\d{2}-\d{2}) Día disponible$/)?.[1])
       .filter(Boolean));
-    expect(availableDates.length, "Booking no publica ningún día disponible").toBeGreaterThan(0);
+    expect(dates.length, "Booking no publica ningún día disponible").toBeGreaterThan(0);
 
     const todayMadrid = new Intl.DateTimeFormat("en-CA", {
-      timeZone: "Europe/Madrid",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
+      timeZone: "Europe/Madrid", year: "numeric", month: "2-digit", day: "2-digit",
     }).format(new Date());
-    const selectedDate = availableDates.find((date) => date > todayMadrid) || availableDates[0];
+    const selectedDate = dates.find((date) => date > todayMadrid) || dates[0];
     await publicPage.locator(`button[aria-label="${selectedDate} Día disponible"]`).click();
 
-    await expect.poll(async () => {
-      const buttons = await publicPage.locator("button").evaluateAll((nodes) => nodes
-        .filter((node) => !node.disabled && (node.offsetWidth > 0 || node.offsetHeight > 0))
-        .map((node) => `${node.getAttribute("aria-label") || ""} ${node.textContent || ""}`));
-      return buttons.some((value) => /\b(?:[01]?\d|2[0-3]):[0-5]\d\b/.test(value));
-    }, { timeout: 15000 }).toBe(true);
-
-    const timeCandidates = await publicPage.locator("button").evaluateAll((nodes) => nodes
-      .filter((node) => !node.disabled && (node.offsetWidth > 0 || node.offsetHeight > 0))
-      .map((node) => `${node.getAttribute("aria-label") || ""} ${node.textContent || ""}`)
-      .map((value) => value.match(/\b(?:[01]?\d|2[0-3]):[0-5]\d\b/)?.[0])
-      .filter(Boolean));
-    expect(timeCandidates.length, `No hay horas publicadas para ${selectedDate}`).toBeGreaterThan(0);
-    const selectedTime = timeCandidates[0].padStart(5, "0");
-
-    // Julio de 2026 en Europe/Madrid usa CEST (UTC+02:00).
-    const startsAt = new Date(`${selectedDate}T${selectedTime}:00+02:00`);
+    const slotButton = publicPage.locator('button.routsify-booking__slot[data-slot]:not([disabled])').first();
+    await expect(slotButton).toBeVisible({ timeout: 15000 });
+    const encoded = await slotButton.getAttribute("data-slot");
+    expect(encoded).toBeTruthy();
+    const providerSlot = JSON.parse(decodeURIComponent(encoded));
+    const startUtc = String(providerSlot.start_utc || "").trim();
+    const durationMinutes = Number(providerSlot.duration_minutes || 0);
+    expect(startUtc).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+    expect(durationMinutes).toBeGreaterThan(0);
+    const startsAt = new Date(`${startUtc.replace(" ", "T")}Z`);
     expect(Number.isNaN(startsAt.getTime())).toBe(false);
     expect(startsAt.getTime()).toBeGreaterThan(Date.now());
-    return { selectedDate, selectedTime, startsAt: startsAt.toISOString() };
+    return { selectedDate, localTime: String(providerSlot.time || ""), startsAt: startsAt.toISOString(), durationMinutes };
   } finally {
     await publicPage.close();
   }
@@ -97,7 +87,7 @@ test("Booking creates, updates and cancels a real reservation", async ({ page, c
     const created = await call(page, "/api/routsify/clients/booking/reservations", "POST", {
       clientId: client.id,
       startsAt: slot.startsAt,
-      durationMinutes: 30,
+      durationMinutes: slot.durationMinutes,
       timezone: "Europe/Madrid",
       notes: `[PRUEBA E2E ROUTSIFY ${marker}] Reserva temporal`,
       privacyAccepted: true,
