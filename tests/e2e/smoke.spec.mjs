@@ -93,7 +93,8 @@ test.describe("authenticated critical-path smoke", () => {
 
     const search = page.getByPlaceholder("Buscar en todos los clientes por nombre, email, teléfono o NIF...");
     await search.fill("info@routsify.com");
-    await page.getByRole("button", { name: "Buscar", exact: true }).click();
+    await search.press("Enter");
+    await expect(page.getByText(/Mostrando \d+-\d+ de \d+ coincidencias/)).toBeVisible();
     await expect(page.getByText("info@routsify.com", { exact: true }).first()).toBeVisible();
     await page.getByRole("button", { name: "Limpiar", exact: true }).click();
 
