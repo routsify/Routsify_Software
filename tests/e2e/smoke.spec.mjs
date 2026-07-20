@@ -2,6 +2,26 @@ import { test, expect } from "@playwright/test";
 
 const hasCredentials = Boolean(process.env.E2E_EMAIL && process.env.E2E_PASSWORD);
 
+async function signIn(page) {
+  await page.goto("/login");
+  await page.getByLabel("Email").fill(process.env.E2E_EMAIL);
+  await page.getByLabel("Contraseña").fill(process.env.E2E_PASSWORD);
+  await page.getByRole("button", { name: "Entrar", exact: true }).click();
+  await expect(page).toHaveURL(/\/(hoy|clientes|expedientes|propuestas)/, { timeout: 20_000 });
+  await expect(page.getByRole("button", { name: "Salir", exact: true })).toBeVisible();
+}
+
+async function expectOperationalPage(page, path) {
+  const response = await page.goto(path, { waitUntil: "domcontentloaded" });
+  expect(response, `No se recibió respuesta al abrir ${path}`).not.toBeNull();
+  expect(response.status(), `${path} devolvió HTTP ${response.status()}`).toBeLessThan(500);
+  await expect(page).not.toHaveURL(/\/login(?:\?|$)/);
+  await expect(page.locator("body")).not.toContainText("Application error");
+  await expect(page.locator("body")).not.toContainText("Could not embed because more than one relationship was found");
+  await expect(page.locator("body")).not.toContainText("Internal Server Error");
+  await expect(page.locator("h1").first()).toBeVisible({ timeout: 15_000 });
+}
+
 test("health endpoint is operational", async ({ request }) => {
   const response = await request.get("/api/health");
   expect(response.ok()).toBeTruthy();
@@ -14,7 +34,7 @@ test("login page renders the access form", async ({ page }) => {
   await page.goto("/login");
   await expect(page.getByLabel("Email")).toBeVisible();
   await expect(page.getByLabel("Contraseña")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Entrar" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Entrar", exact: true })).toBeVisible();
 });
 
 test("protected pages redirect an anonymous browser to login", async ({ page }) => {
@@ -26,20 +46,66 @@ test("protected pages redirect an anonymous browser to login", async ({ page }) 
 test.describe("authenticated critical-path smoke", () => {
   test.skip(!hasCredentials, "Set E2E_EMAIL and E2E_PASSWORD GitHub secrets to enable authenticated smoke tests.");
 
-  test("admin can sign in and open core operational modules", async ({ page }) => {
-    await page.goto("/login");
-    await page.getByLabel("Email").fill(process.env.E2E_EMAIL);
-    await page.getByLabel("Contraseña").fill(process.env.E2E_PASSWORD);
-    await page.getByRole("button", { name: "Entrar" }).click();
-    await expect(page).toHaveURL(/\/(hoy|clientes|expedientes|propuestas)/, { timeout: 20_000 });
+  test("admin can sign in and open every operational module", async ({ page }) => {
+    await signIn(page);
 
-    for (const path of ["/hoy", "/clientes", "/expedientes", "/propuestas", "/compras", "/proveedores", "/comunicaciones"]) {
-      await page.goto(path);
-      await expect(page).not.toHaveURL(/\/login(?:\?|$)/);
-      await expect(page.locator("body")).not.toContainText("Application error");
-      await expect(page.locator("body")).not.toContainText("Could not embed because more than one relationship was found");
-      if (path === "/hoy") await expect(page.getByText("Próxima mejor acción")).toBeVisible();
-      if (path === "/comunicaciones") await expect(page.getByRole("heading", { name: "Comunicaciones" })).toBeVisible();
-    }
+    const modulePaths = [
+      "/hoy",
+      "/control",
+      "/clientes",
+      "/solicitudes",
+      "/expedientes",
+      "/propuestas",
+      "/compras",
+      "/proveedores",
+      "/comunicaciones",
+      "/informes",
+      "/tareas",
+      "/facturacion",
+      "/contratos",
+      "/documentos",
+      "/viajeros",
+      "/cierre",
+      "/integraciones",
+      "/seguridad",
+      "/ajustes",
+    ];
+
+    for (const path of modulePaths) await expectOperationalPage(page, path);
+
+    await page.goto("/hoy");
+    await expect(page.getByText("Próxima mejor acción", { exact: true })).toBeVisible();
+
+    await page.goto("/comunicaciones");
+    await expect(page.getByRole("heading", { name: "Comunicaciones", exact: true })).toBeVisible();
+  });
+
+  test("clients pagination, global search and import controls work", async ({ page }) => {
+    await signIn(page);
+    await page.goto("/clientes");
+    await expect(page.getByRole("heading", { name: "Clientes", exact: true })).toBeVisible();
+
+    const pageSize = page.getByLabel(/Mostrar .* clientes por página/);
+    await expect(pageSize).toBeVisible();
+    await expect(pageSize.locator("option")).toHaveText(["50", "100", "150", "200"]);
+    await pageSize.selectOption("100");
+    await expect(page.getByText(/Mostrando 1-\d+ de \d+ clientes/)).toBeVisible();
+
+    const filters = page.locator("form.client-filters");
+    const search = filters.getByPlaceholder("Buscar en todos los clientes por nombre, email, teléfono o NIF...");
+    await search.fill("info@routsify.com");
+    const [searchResponse] = await Promise.all([
+      page.waitForResponse((response) => response.url().includes("/api/routsify/clients?") && response.url().includes("q=info%40routsify.com")),
+      filters.getByRole("button", { name: "Buscar", exact: true }).click(),
+    ]);
+    expect(searchResponse.ok()).toBeTruthy();
+    await expect(page.getByText(/Mostrando \d+-\d+ de \d+ coincidencias/)).toBeVisible();
+    await expect(page.getByText("info@routsify.com", { exact: true }).first()).toBeVisible();
+    await filters.getByRole("button", { name: "Limpiar", exact: true }).click();
+
+    await expect(page.getByRole("link", { name: "Descargar plantilla", exact: true })).toHaveAttribute("href", "/api/routsify/clients/import/template");
+    await page.getByRole("button", { name: "Importar clientes", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Plantilla CSV compatible con Excel", exact: true })).toBeVisible();
+    await expect(page.getByLabel("Archivo CSV")).toBeVisible();
   });
 });
