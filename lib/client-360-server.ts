@@ -8,6 +8,7 @@ export type Client360Data = {
   cases: Record<string, unknown>[];
   proposals: Record<string, unknown>[];
   payments: Record<string, unknown>[];
+  communications: Record<string, unknown>[];
   timeline: Record<string, unknown>[];
   filloutUrl: string;
   asOf: string;
@@ -34,7 +35,7 @@ export async function getOrganizationClient360(organizationId: string, clientId:
   if (clientError) return { ok: false, error: clientError.message };
   if (!client) return { ok: false, error: "client_not_found" };
 
-  const [leadsResult, bookingsResult, tasksResult, casesResult, timelineResult, settingResult] = await Promise.all([
+  const [leadsResult, bookingsResult, tasksResult, casesResult, communicationsResult, timelineResult, settingResult] = await Promise.all([
     db.from("leads")
       .select("id,client_id,source,status,campaign,destination,travel_start,travel_end,travelers,budget_hint,possible_duplicate_client_id,created_at,updated_at")
       .eq("organization_id", organizationId)
@@ -59,6 +60,12 @@ export async function getOrganizationClient360(organizationId: string, clientId:
       .eq("client_id", clientId)
       .order("created_at", { ascending: false })
       .limit(100),
+    db.from("communication_followups")
+      .select("id,client_id,case_id,kind,channel,subject,body,status,due_at,sent_at,answered_at,provider,provider_status,delivered_at,read_at,failed_at,provider_error,created_at,updated_at")
+      .eq("organization_id", organizationId)
+      .eq("client_id", clientId)
+      .order("created_at", { ascending: false })
+      .limit(100),
     db.from("timeline_events")
       .select("id,client_id,case_id,event_type,title,payload,created_by,created_at")
       .eq("organization_id", organizationId)
@@ -72,7 +79,7 @@ export async function getOrganizationClient360(organizationId: string, clientId:
       .maybeSingle(),
   ]);
 
-  const firstError = [leadsResult.error, bookingsResult.error, tasksResult.error, casesResult.error, timelineResult.error].find(Boolean);
+  const firstError = [leadsResult.error, bookingsResult.error, tasksResult.error, casesResult.error, communicationsResult.error, timelineResult.error].find(Boolean);
   if (firstError) return { ok: false, error: firstError.message };
 
   const cases = (casesResult.data || []) as Record<string, unknown>[];
@@ -109,6 +116,7 @@ export async function getOrganizationClient360(organizationId: string, clientId:
       cases,
       proposals,
       payments,
+      communications: (communicationsResult.data || []) as Record<string, unknown>[],
       timeline: (timelineResult.data || []) as Record<string, unknown>[],
       filloutUrl: settingValue(settingResult.data?.value),
       asOf: new Date().toISOString(),
