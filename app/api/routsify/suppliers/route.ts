@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonAccessDenied, requireInternalAccess } from "@/lib/api-security";
+import { listOrganizationSuppliers, listOrganizationSuppliersPage } from "@/lib/organization-repositories";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 
 function text(value: unknown, max = 240) {
@@ -12,14 +13,23 @@ const select = "id,name,category,email,phone,tax_id,country,billing_address,note
 export async function GET(request: NextRequest) {
   const access = await requireInternalAccess(request);
   if (!access.ok) return jsonAccessDenied(access);
-  const { data, error } = await getSupabaseAdminClient().from("suppliers")
-    .select(select)
-    .eq("organization_id", access.organizationId)
-    .order("active", { ascending: false })
-    .order("name", { ascending: true })
-    .limit(500);
-  if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
-  return NextResponse.json({ ok: true, data: data || [] });
+  const params = request.nextUrl.searchParams;
+  if (params.get("paginated") === "1") {
+    const result = await listOrganizationSuppliersPage(access.organizationId, {
+      page: Number(params.get("page") || 1),
+      pageSize: Number(params.get("pageSize") || 50),
+      query: params.get("q") || "",
+      status: params.get("status") || "active",
+    });
+    return result.ok
+      ? NextResponse.json({ ok: true, data: result.data })
+      : NextResponse.json({ ok: false, error: result.error }, { status: 400 });
+  }
+
+  const result = await listOrganizationSuppliers(access.organizationId);
+  return result.ok
+    ? NextResponse.json({ ok: true, data: result.data })
+    : NextResponse.json({ ok: false, error: result.error }, { status: 400 });
 }
 
 export async function POST(request: NextRequest) {
