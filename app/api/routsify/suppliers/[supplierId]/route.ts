@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonAccessDenied, requireInternalAccess } from "@/lib/api-security";
+import { getRequestUserId } from "@/lib/request-context";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 
 function text(value: unknown, max = 240) {
@@ -7,7 +8,17 @@ function text(value: unknown, max = 240) {
   return result ? result.slice(0, max) : null;
 }
 
-const select = "id,name,category,email,phone,tax_id,country,billing_address,notes,active,holded_contact_id,created_at,updated_at";
+function numberValue(value: unknown, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function stringList(value: unknown, maxItems = 30, maxLength = 80) {
+  const source = Array.isArray(value) ? value : String(value ?? "").split(",");
+  return [...new Set(source.map((item) => String(item ?? "").trim().slice(0, maxLength)).filter(Boolean))].slice(0, maxItems);
+}
+
+const select = "id,name,category,email,phone,tax_id,country,billing_address,notes,active,holded_contact_id,preferred,risk_level,reliability_score,average_rating,payment_terms_days,default_currency,service_regions,cancellation_policy,emergency_contact,profile_updated_at,created_at,updated_at";
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ supplierId: string }> }) {
   const access = await requireInternalAccess(request);
@@ -17,11 +28,12 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (!body || typeof body !== "object") return NextResponse.json({ ok: false, error: "invalid_body" }, { status: 400 });
   const source = body as Record<string, unknown>;
   const db = getSupabaseAdminClient();
-  const { data: existing, error: existingError } = await db.from("suppliers").select("id,name").eq("id", supplierId).eq("organization_id", access.organizationId).maybeSingle();
+  const { data: existing, error: existingError } = await db.from("suppliers").select(select).eq("id", supplierId).eq("organization_id", access.organizationId).maybeSingle();
   if (existingError) return NextResponse.json({ ok: false, error: existingError.message }, { status: 400 });
   if (!existing) return NextResponse.json({ ok: false, error: "supplier_not_found" }, { status: 404 });
 
-  const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  const now = new Date().toISOString();
+  const patch: Record<string, unknown> = { updated_at: now };
   if ("name" in source) {
     const name = text(source.name, 160);
     if (!name || name.length < 2) return NextResponse.json({ ok: false, error: "supplier_name_required" }, { status: 400 });
@@ -35,9 +47,46 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if ("notes" in source) patch.notes = text(source.notes, 2000);
   if ("billing_address" in source) patch.billing_address = source.billing_address && typeof source.billing_address === "object" ? source.billing_address : {};
   if ("active" in source) patch.active = Boolean(source.active);
+  if ("preferred" in source) patch.preferred = Boolean(source.preferred);
+  if ("risk_level" in source) {
+    const risk = String(source.risk_level || "low");
+    if (!["low", "medium", "high"].includes(risk)) return NextResponse.json({ ok: false, error: "invalid_supplier_risk" }, { status: 400 });
+    patch.risk_level = risk;
+  }
+  if ("reliability_score" in source) {
+    const score = Math.round(numberValue(source.reliability_score, 70));
+    if (score < 0 || score > 100) return NextResponse.json({ ok: false, error: "invalid_reliability_score" }, { status: 400 });
+    patch.reliability_score = score;
+  }
+  if ("average_rating" in source) {
+    const raw = source.average_rating;
+    if (raw === null || raw === "") patch.average_rating = null;
+    else {
+      const rating = numberValue(raw, -1);
+      if (rating < 0 || rating > 5) return NextResponse.json({ ok: false, error: "invalid_supplier_rating" }, { status: 400 });
+      patch.average_rating = rating;
+    }
+  }
+  if ("payment_terms_days" in source) {
+    const days = Math.round(numberValue(source.payment_terms_days, 0));
+    if (days < 0 || days > 365) return NextResponse.json({ ok: false, error: "invalid_payment_terms" }, { status: 400 });
+    patch.payment_terms_days = days;
+  }
+  if ("default_currency" in source) {
+    const currency = String(source.default_currency || "EUR").trim().toUpperCase();
+    if (!/^[A-Z]{3}$/.test(currency)) return NextResponse.json({ ok: false, error: "invalid_currency" }, { status: 400 });
+    patch.default_currency = currency;
+  }
+  if ("service_regions" in source) patch.service_regions = stringList(source.service_regions);
+  if ("cancellation_policy" in source) patch.cancellation_policy = text(source.cancellation_policy, 4000);
+  if ("emergency_contact" in source) patch.emergency_contact = source.emergency_contact && typeof source.emergency_contact === "object" && !Array.isArray(source.emergency_contact) ? source.emergency_contact : {};
+  if (["preferred", "risk_level", "reliability_score", "average_rating", "payment_terms_days", "default_currency", "service_regions", "cancellation_policy", "emergency_contact"].some((key) => key in source)) patch.profile_updated_at = now;
 
   const { data, error } = await db.from("suppliers").update(patch).eq("id", supplierId).eq("organization_id", access.organizationId).select(select).single();
   if (error?.code === "23505") return NextResponse.json({ ok: false, error: "supplier_already_exists" }, { status: 409 });
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
+
+  const actorId = await getRequestUserId(request);
+  await db.from("audit_log").insert({ organization_id: access.organizationId, actor_id: actorId, entity_type: "supplier", entity_id: supplierId, action: "supplier.updated", before_data: existing, after_data: data });
   return NextResponse.json({ ok: true, data });
 }
