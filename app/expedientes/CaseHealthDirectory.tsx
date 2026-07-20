@@ -5,14 +5,21 @@ import type { CaseDirectoryPage, CaseDirectoryRow, CaseHealthLevel } from "@/lib
 
 const pageSizes = [25, 50, 100, 150, 200];
 const statusLabels: Record<string, string> = {
-  new_lead: "Nuevo", call_booked: "Llamada reservada", call_done: "Llamada realizada",
-  budget_draft: "Presupuesto en preparación", proposal_sent: "Presupuesto enviado",
-  proposal_accepted: "Presupuesto aceptado", contract_ready: "Contrato preparado",
-  contract_sent: "Contrato enviado", contract_signed: "Contrato firmado",
-  payment_pending: "Pago pendiente", payment_confirmed: "Pago confirmado",
-  confirmed: "Confirmado", suppliers_pending: "Proveedores pendientes", traveling: "En viaje",
-  post_trip: "Postviaje", ready_to_close: "Listo para cierre", closed: "Cerrado", cancelled: "Cancelado",
+  new_lead: "Nuevo",
+  call_booked: "Llamada reservada",
+  call_done: "Llamada realizada",
+  budget_draft: "Presupuesto en preparación",
+  proposal_sent: "Presupuesto enviado",
+  proposal_accepted: "Presupuesto aceptado",
+  documentation_approved: "Documentación aprobada",
+  contract_ready: "Contrato preparado",
+  contract_signed: "Contrato firmado",
+  payment_confirmed: "Pago confirmado",
+  suppliers_pending: "Proveedores pendientes",
+  ready_to_close: "Listo para cierre",
+  closed: "Cerrado",
 };
+const activeStatusOptions = Object.entries(statusLabels).filter(([value]) => value !== "closed");
 
 function money(value: unknown, currency = "EUR") { return new Intl.NumberFormat("es-ES", { style: "currency", currency }).format(Number(value || 0)); }
 function dateLabel(value?: string | null) { return value ? new Intl.DateTimeFormat("es-ES").format(new Date(`${value}T12:00:00`)) : "—"; }
@@ -65,7 +72,7 @@ export function CaseHealthDirectory({ initialPage, initialCaseId = "" }: { initi
       <div className="card clients-main">
         <form className="client-filters client-filters-wide" onSubmit={submit}>
           <input className="input" placeholder="Buscar expediente, destino, acción o bloqueo..." value={queryInput} onChange={(event) => setQueryInput(event.target.value)} />
-          <label>Estado<select value={status} onChange={(event) => { setStatus(event.target.value); void load(1, pageSize, query, event.target.value, health); }} disabled={loading}><option value="active">Activos</option><option value="all">Todos</option><option value="closed">Cerrados</option>{Object.entries(statusLabels).filter(([value]) => !["closed", "cancelled"].includes(value)).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+          <label>Estado<select value={status} onChange={(event) => { setStatus(event.target.value); void load(1, pageSize, query, event.target.value, health); }} disabled={loading}><option value="active">Activos</option><option value="all">Todos</option><option value="closed">Cerrados</option>{activeStatusOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
           <label>Salud<select value={health} onChange={(event) => { const next = event.target.value as "all" | CaseHealthLevel; setHealth(next); void load(1, pageSize, query, status, next); }} disabled={loading}><option value="all">Todas</option><option value="critical">Críticos</option><option value="attention">Atención</option><option value="good">Correctos</option></select></label>
           <button className="btn secondary" type="submit" disabled={loading}>{loading ? "Calculando..." : "Buscar"}</button>
           {query ? <button className="btn secondary" type="button" onClick={() => void clear()} disabled={loading}>Limpiar</button> : null}
