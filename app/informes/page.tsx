@@ -1,157 +1,112 @@
+import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
 import { requireAppPermission } from "@/lib/app-auth";
-import { listOrganizationCases, listOrganizationClients, listOrganizationProposals, listOrganizationPurchases } from "@/lib/organization-repositories";
+import { loadBusinessIntelligence, type CurrencyFinancials, type PerformanceRow, type ReportPeriod } from "@/lib/business-intelligence-server";
 
-function asRows(result: { ok: boolean; data?: unknown[] }) {
-  return result.ok && Array.isArray(result.data) ? result.data as Record<string, unknown>[] : [];
+function money(value: unknown, currency = "EUR") {
+  return new Intl.NumberFormat("es-ES", { style: "currency", currency, maximumFractionDigits: 0 }).format(Number(value || 0));
 }
-
-function numeric(value: unknown) {
-  const parsed = Number(value || 0);
-  return Number.isFinite(parsed) ? parsed : 0;
+function percent(value: unknown) { return `${Number(value || 0).toLocaleString("es-ES", { maximumFractionDigits: 1 })}%`; }
+function hours(value: number | null) {
+  if (value === null) return "Sin datos";
+  if (value < 48) return `${value.toLocaleString("es-ES", { maximumFractionDigits: 1 })} h`;
+  return `${(value / 24).toLocaleString("es-ES", { maximumFractionDigits: 1 })} días`;
 }
+function days(value: number | null) { return value === null ? "Sin datos" : `${value.toLocaleString("es-ES", { maximumFractionDigits: 1 })} días`; }
+function periodValue(value?: string): ReportPeriod { const parsed = Number(value); return parsed === 30 || parsed === 90 || parsed === 0 ? parsed : 365; }
+function barWidth(value: number, maximum: number) { return maximum > 0 ? Math.max(2, Math.min(100, value / maximum * 100)) : 2; }
 
-function relation(value: unknown): Record<string, unknown> | null {
-  if (Array.isArray(value)) return value[0] && typeof value[0] === "object" ? value[0] as Record<string, unknown> : null;
-  return value && typeof value === "object" ? value as Record<string, unknown> : null;
-}
-
-function money(value: number, currency: string) {
-  return new Intl.NumberFormat("es-ES", { style: "currency", currency, maximumFractionDigits: 0 }).format(value);
-}
-
-function addAmount(target: Map<string, number>, currency: string, amount: number) {
-  target.set(currency, (target.get(currency) || 0) + amount);
-}
-
-function formatBreakdown(values: Map<string, number>) {
-  return [...values.entries()]
-    .filter(([, value]) => value !== 0)
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([currency, value]) => money(value, currency))
-    .join(" · ") || money(0, "EUR");
-}
-
-function latestVersion(row: Record<string, unknown>) {
-  const versions = Array.isArray(row.proposal_versions) ? row.proposal_versions as Record<string, unknown>[] : [];
-  return [...versions].sort((a, b) => numeric(b.version_number) - numeric(a.version_number))[0] || null;
-}
-
-function proposalCurrency(row: Record<string, unknown>) {
-  return String(relation(row.cases)?.currency || "EUR");
-}
-
-const caseLabels: Record<string, string> = {
-  new_lead: "Nuevo", call_booked: "Llamada reservada", call_done: "Llamada realizada",
-  budget_draft: "Presupuesto en preparación", proposal_sent: "Presupuesto enviado",
-  proposal_accepted: "Presupuesto aceptado", contract_ready: "Contrato preparado",
-  contract_signed: "Contrato firmado", payment_confirmed: "Pago confirmado",
-  suppliers_pending: "Proveedores pendientes", ready_to_close: "Listo para cierre", closed: "Cerrado",
-};
-
-const purchaseLabels: Record<string, string> = {
-  expected: "Pendiente", requested: "Solicitada", uploaded: "Documento recibido",
-  holded_candidate: "Candidata en Holded", matched: "Conciliada", review_needed: "Revisión necesaria",
-  approved: "Aprobada", not_required: "No necesaria", cancelled: "Cancelada",
-};
-
-export default async function ReportsPage() {
+export default async function ReportsPage({ searchParams }: { searchParams: Promise<{ period?: string }> }) {
   const session = await requireAppPermission("reports.view");
-  const [clientsResult, casesResult, proposalsResult, purchasesResult] = await Promise.all([
-    listOrganizationClients(session.organizationId),
-    listOrganizationCases(session.organizationId),
-    listOrganizationProposals(session.organizationId),
-    listOrganizationPurchases(session.organizationId),
-  ]);
+  const { period: rawPeriod } = await searchParams;
+  const report = await loadBusinessIntelligence(session.organizationId, periodValue(rawPeriod));
+  const primaryFinancial = report.financials.find((item) => item.currency === "EUR") || report.financials[0] || null;
+  const maxMonthly = Math.max(1, ...report.monthly.map((item) => Math.max(item.acceptedSales, item.payments)));
 
-  const clients = asRows(clientsResult);
-  const cases = asRows(casesResult);
-  const proposals = asRows(proposalsResult);
-  const purchases = asRows(purchasesResult);
+  return <AppShell>
+    <PageHeader
+      eyebrow="Informes"
+      title="Dirección y optimización de la agencia"
+      description="Analiza conversión, tiempos, carga de trabajo, cobros, rentabilidad, destinos, fuentes y proveedores usando los datos operativos reales."
+      action={<a className="btn secondary" href={`/api/routsify/reports/export?period=${report.period}`}>Exportar CSV</a>}
+    />
 
-  const activeCases = cases.filter((item) => String(item.status || "") !== "closed").length;
-  const sentProposals = proposals.filter((item) => String(item.status || "") === "sent").length;
-  const acceptedProposals = proposals.filter((item) => String(item.status || "") === "accepted");
-  const openProposals = proposals.filter((item) => !["accepted", "rejected"].includes(String(item.status || "")));
-  const pendingPurchases = purchases.filter((item) => !["approved", "not_required", "cancelled"].includes(String(item.status || "")));
+    <section className="card form-actions">
+      <strong>Periodo:</strong>
+      {([30, 90, 365, 0] as const).map((period) => <Link key={period} className={report.period === period ? "btn" : "btn secondary"} href={`/informes?period=${period}`}>{period === 30 ? "30 días" : period === 90 ? "90 días" : period === 365 ? "12 meses" : "Histórico"}</Link>)}
+      <span>{report.periodLabel}</span>
+    </section>
 
-  const acceptedSale = new Map<string, number>();
-  const acceptedCost = new Map<string, number>();
-  const pipeline = new Map<string, number>();
-  const expectedPurchases = new Map<string, number>();
+    <section className="client-kpis">
+      <Kpi icon="S" label="Solicitudes" value={report.counts.leads} note={`${report.counts.callsBooked} llamadas reservadas`} />
+      <Kpi icon="V" label="Conversión a venta" value={percent(report.conversion.caseToAccepted)} note={`${report.counts.acceptedCases} expedientes aceptados`} />
+      <Kpi icon="€" label="Ventas aceptadas" value={primaryFinancial ? money(primaryFinancial.acceptedSales, primaryFinancial.currency) : money(0)} note={primaryFinancial ? `${money(primaryFinancial.outstanding, primaryFinancial.currency)} por cobrar` : "Sin ventas"} />
+      <Kpi icon="B" label="Beneficio real" value={primaryFinancial ? money(primaryFinancial.realProfit, primaryFinancial.currency) : money(0)} note={primaryFinancial ? `${percent(primaryFinancial.realMargin)} de margen` : "Sin datos"} />
+      <Kpi icon="!" label="Expedientes críticos" value={report.caseHealth.critical} note={`${report.caseHealth.attention} requieren atención`} />
+      <Kpi icon="T" label="Tareas vencidas" value={report.taskHealth.overdue} note={`${percent(report.taskHealth.completionRate)} completadas`} />
+    </section>
 
-  for (const proposal of acceptedProposals) {
-    const currency = proposalCurrency(proposal);
-    const version = latestVersion(proposal);
-    addAmount(acceptedSale, currency, numeric(version?.total_sale));
-    addAmount(acceptedCost, currency, numeric(version?.total_cost_budget ?? version?.total_cost));
-  }
-  for (const proposal of openProposals) addAmount(pipeline, proposalCurrency(proposal), numeric(latestVersion(proposal)?.total_sale));
-  for (const purchase of purchases) addAmount(expectedPurchases, String(purchase.currency || relation(purchase.cases)?.currency || "EUR"), numeric(purchase.expected_amount ?? purchase.amount));
-
-  const estimatedProfit = new Map<string, number>();
-  const margins = new Map<string, number>();
-  for (const [currency, sale] of acceptedSale) {
-    const profit = sale - (acceptedCost.get(currency) || 0);
-    estimatedProfit.set(currency, profit);
-    margins.set(currency, sale > 0 ? (profit / sale) * 100 : 0);
-  }
-  const marginLabel = [...margins.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([currency, value]) => `${currency} ${value.toLocaleString("es-ES", { maximumFractionDigits: 1 })}%`).join(" · ") || "—";
-
-  const cards = [
-    { label: "Clientes", value: clients.length, note: "Registrados", href: "/clientes" },
-    { label: "Expedientes activos", value: activeCases, note: "Abiertos", href: "/expedientes" },
-    { label: "Presupuestos enviados", value: sentProposals, note: "Pendientes de respuesta", href: "/propuestas" },
-    { label: "Ventas aceptadas", value: formatBreakdown(acceptedSale), note: `${acceptedProposals.length} presupuestos`, href: "/propuestas" },
-    { label: "Pipeline abierto", value: formatBreakdown(pipeline), note: "Separado por moneda", href: "/propuestas" },
-    { label: "Compras pendientes", value: pendingPurchases.length, note: formatBreakdown(expectedPurchases), href: "/compras" },
-    { label: "Beneficio previsto", value: formatBreakdown(estimatedProfit), note: "Sin mezclar monedas", href: "/informes" },
-    { label: "Margen previsto", value: marginLabel, note: "Por moneda de expediente", href: "/informes" },
-  ];
-
-  return (
-    <AppShell>
-      <PageHeader
-        eyebrow="Informes"
-        title="Informes operativos"
-        description="Indicadores calculados desde la última versión de cada presupuesto y las compras reales, manteniendo separados los importes de monedas distintas."
-      />
-
-      <section className="client-kpis">
-        {cards.map((card) => (
-          <a className="kpi-card" href={card.href} key={card.label}>
-            <span className="kpi-icon">{card.label.slice(0, 1)}</span>
-            <span className="kpi-copy"><strong>{card.label}</strong><b>{card.value}</b><small>{card.note}</small></span>
-          </a>
-        ))}
-      </section>
-
-      <section className="dashboard-panels">
-        <div className="card dashboard-table-card">
-          <div className="panel-head"><h2>Expedientes recientes</h2><a className="btn secondary" href="/expedientes">Abrir expedientes</a></div>
-          {cases.length === 0 ? <div className="empty-state"><h2>Todavía no hay expedientes</h2><p>Los informes aparecerán cuando empieces a crear expedientes reales.</p></div> : (
-            <div className="table-scroll"><table>
-              <thead><tr><th>Expediente</th><th>Destino</th><th>Moneda</th><th>Estado</th><th>Próxima acción</th></tr></thead>
-              <tbody>{cases.slice(0, 8).map((item) => <tr key={String(item.id || item.case_code)}><td><strong>{String(item.case_code || "—")}</strong></td><td>{String(item.destination || "—")}</td><td>{String(item.currency || "EUR")}</td><td>{caseLabels[String(item.status)] || String(item.status || "—")}</td><td>{String(item.next_action || "—")}</td></tr>)}</tbody>
-            </table></div>
-          )}
+    <section className="dashboard-panels">
+      <div className="card dashboard-table-card">
+        <div className="panel-head"><div><h2>Embudo comercial</h2><p>Conversión entre cada paso del proceso.</p></div><Link className="btn secondary" href="/clientes">Abrir clientes</Link></div>
+        <div className="grid grid-2">
+          <Metric label="Lead → llamada" value={percent(report.conversion.leadToCall)} note={`${report.counts.callsBooked} de ${report.counts.leads}`} />
+          <Metric label="Lead → expediente" value={percent(report.conversion.leadToCase)} note={`${report.counts.cases} expedientes`} />
+          <Metric label="Expediente → venta" value={percent(report.conversion.caseToAccepted)} note={`${report.counts.acceptedCases} aceptados`} />
+          <Metric label="Presupuesto → venta" value={percent(report.conversion.proposalToAccepted)} note={`${report.counts.acceptedProposals} de ${report.counts.proposals}`} />
         </div>
+      </div>
 
-        <div className="card dashboard-table-card">
-          <div className="panel-head"><h2>Compras que requieren atención</h2><a className="btn secondary" href="/compras">Abrir compras</a></div>
-          {pendingPurchases.length === 0 ? <div className="empty-state"><h2>No hay compras pendientes</h2><p>Las compras abiertas aparecerán aquí.</p></div> : (
-            <div className="table-scroll"><table>
-              <thead><tr><th>Expediente</th><th>Proveedor</th><th>Importe</th><th>Estado</th></tr></thead>
-              <tbody>{pendingPurchases.slice(0, 8).map((item) => {
-                const caseRow = relation(item.cases);
-                const currency = String(item.currency || caseRow?.currency || "EUR");
-                return <tr key={String(item.id)}><td>{String(caseRow?.case_code || "—")}</td><td><strong>{String(item.supplier_name || "Proveedor")}</strong><br/><small>{String(item.service || "—")}</small></td><td>{money(numeric(item.expected_amount ?? item.amount), currency)}</td><td>{purchaseLabels[String(item.status)] || String(item.status || "—")}</td></tr>;
-              })}</tbody>
-            </table></div>
-          )}
+      <div className="card dashboard-table-card">
+        <div className="panel-head"><div><h2>Tiempo del proceso</h2><p>Localiza dónde se retrasa la gestión.</p></div><Link className="btn secondary" href="/expedientes">Abrir expedientes</Link></div>
+        <div className="grid grid-2">
+          <Metric label="Solicitud → expediente" value={hours(report.timing.leadToCaseHours)} note="Tiempo medio" />
+          <Metric label="Expediente → presupuesto" value={hours(report.timing.caseToProposalHours)} note="Tiempo medio" />
+          <Metric label="Presupuesto → aceptación" value={hours(report.timing.proposalToAcceptanceHours)} note="Tiempo medio del cliente" />
+          <Metric label="Expediente → cierre" value={days(report.timing.caseToCloseDays)} note="Ciclo completo" />
         </div>
-      </section>
-    </AppShell>
-  );
+      </div>
+    </section>
+
+    <section className="card dashboard-table-card">
+      <div className="panel-head"><div><h2>Salud financiera por moneda</h2><p>No se mezclan divisas en los totales.</p></div><Link className="btn secondary" href="/compras">Revisar compras</Link></div>
+      {report.financials.length === 0 ? <Empty title="Todavía no hay ventas aceptadas" text="Los importes aparecerán cuando existan presupuestos aceptados." /> : <div className="table-scroll"><table><thead><tr><th>Moneda</th><th>Venta</th><th>Cobrado</th><th>Pendiente</th><th>Coste presup.</th><th>Coste real</th><th>Beneficio real</th><th>Margen</th><th>Pipeline</th></tr></thead><tbody>{report.financials.map((item) => <FinancialRow key={item.currency} item={item} />)}</tbody></table></div>}
+    </section>
+
+    <section className="dashboard-panels">
+      <PerformanceTable title="Fuentes de clientes" description="Qué canales generan más solicitudes y ventas." rows={report.sources.slice(0, 10)} kind="source" empty="No hay fuentes registradas." />
+      <PerformanceTable title="Destinos más rentables" description="Ventas, beneficio y margen por destino." rows={report.destinations.slice(0, 10)} kind="destination" empty="No hay destinos con actividad." />
+    </section>
+
+    <section className="card dashboard-table-card">
+      <div className="panel-head"><div><h2>Rendimiento de proveedores</h2><p>Coste presupuestado, coste real, desviaciones y compras pendientes.</p></div><Link className="btn secondary" href="/proveedores">Abrir proveedores</Link></div>
+      {report.suppliers.length === 0 ? <Empty title="Sin compras de proveedores" text="El rendimiento aparecerá cuando se registren compras." /> : <div className="table-scroll"><table><thead><tr><th>Proveedor</th><th>Compras</th><th>Pendientes</th><th>Presupuestado</th><th>Coste real</th><th>Desviación</th></tr></thead><tbody>{report.suppliers.slice(0, 15).map((item) => <tr key={item.key}><td><strong>{item.label}</strong></td><td>{item.purchases || 0}</td><td>{item.pending || 0}</td><td>{money(item.sale)}</td><td>{money(item.cost)}</td><td className={Number(item.deviation || 0) > 0 ? "text-danger" : ""}>{money(item.deviation)}</td></tr>)}</tbody></table></div>}
+    </section>
+
+    <section className="card dashboard-table-card">
+      <div className="panel-head"><div><h2>Evolución de los últimos 12 meses</h2><p>Ventas aceptadas y cobros confirmados.</p></div></div>
+      <div className="monthly-bars">{report.monthly.map((item) => <div className="monthly-bar" key={item.month}><div className="monthly-bar-values"><span title={`Ventas ${money(item.acceptedSales)}`} style={{ height: `${barWidth(item.acceptedSales, maxMonthly)}%` }} /><span title={`Cobros ${money(item.payments)}`} style={{ height: `${barWidth(item.payments, maxMonthly)}%` }} /></div><strong>{item.label}</strong><small>{item.leads} leads · {item.cases} exp.</small></div>)}</div>
+      <p><strong>Leyenda:</strong> primera barra = ventas aceptadas · segunda barra = cobros.</p>
+    </section>
+
+    <section className="dashboard-panels">
+      <div className="card dashboard-table-card"><div className="panel-head"><h2>Carga de trabajo</h2><Link className="btn secondary" href="/hoy">Abrir Hoy</Link></div><div className="grid grid-2"><Metric label="Abiertas" value={report.taskHealth.open} note="Pendientes y en curso" /><Metric label="Vencidas" value={report.taskHealth.overdue} note="Requieren prioridad" /><Metric label="Bloqueadas" value={report.taskHealth.blocked} note="Necesitan desbloqueo" /><Metric label="Completadas" value={report.taskHealth.done} note={percent(report.taskHealth.completionRate)} /></div></div>
+      <div className="card dashboard-table-card"><div className="panel-head"><h2>Riesgo de expedientes</h2><Link className="btn secondary" href="/expedientes">Ver salud</Link></div><div className="grid grid-2"><Metric label="Críticos" value={report.caseHealth.critical} note="Actuación inmediata" /><Metric label="Atención" value={report.caseHealth.attention} note="Revisar esta semana" /><Metric label="Bloqueados" value={report.caseHealth.blocked} note="Con impedimento declarado" /><Metric label="Viajes ≤ 30 días" value={report.caseHealth.upcoming30} note="Próximas salidas" /></div></div>
+    </section>
+  </AppShell>;
+}
+
+function Kpi({ icon, label, value, note }: { icon: string; label: string; value: string | number; note: string }) {
+  return <div className="kpi-card"><span className="kpi-icon">{icon}</span><span className="kpi-copy"><strong>{label}</strong><b>{value}</b><small>{note}</small></span></div>;
+}
+function Metric({ label, value, note }: { label: string; value: string | number; note: string }) {
+  return <div className="metric-card"><span>{label}</span><strong>{value}</strong><small>{note}</small></div>;
+}
+function Empty({ title, text }: { title: string; text: string }) { return <div className="empty-state"><h2>{title}</h2><p>{text}</p></div>; }
+function FinancialRow({ item }: { item: CurrencyFinancials }) {
+  return <tr><td><strong>{item.currency}</strong></td><td>{money(item.acceptedSales, item.currency)}</td><td>{money(item.paid, item.currency)}</td><td>{money(item.outstanding, item.currency)}</td><td>{money(item.budgetCost, item.currency)}</td><td>{money(item.realCost, item.currency)}</td><td>{money(item.realProfit, item.currency)}</td><td>{percent(item.realMargin)}</td><td>{money(item.pipeline, item.currency)}</td></tr>;
+}
+function PerformanceTable({ title, description, rows, kind, empty }: { title: string; description: string; rows: PerformanceRow[]; kind: "source" | "destination"; empty: string }) {
+  return <div className="card dashboard-table-card"><div className="panel-head"><div><h2>{title}</h2><p>{description}</p></div></div>{rows.length === 0 ? <Empty title={empty} text="Se calculará automáticamente con la actividad futura." /> : <div className="table-scroll"><table><thead><tr><th>{kind === "source" ? "Fuente" : "Destino"}</th><th>{kind === "source" ? "Leads" : "Expedientes"}</th><th>Ventas</th><th>Conversión</th><th>{kind === "source" ? "Importe" : "Beneficio"}</th></tr></thead><tbody>{rows.map((item) => <tr key={item.key}><td><strong>{item.label}</strong></td><td>{kind === "source" ? item.leads || 0 : item.cases || 0}</td><td>{item.accepted || 0}</td><td>{percent(item.conversion)}</td><td>{money(kind === "source" ? item.sale : item.profit)}</td></tr>)}</tbody></table></div>}</div>;
 }
