@@ -91,12 +91,17 @@ test.describe("authenticated critical-path smoke", () => {
     await pageSize.selectOption("100");
     await expect(page.getByText(/Mostrando 1-\d+ de \d+ clientes/)).toBeVisible();
 
-    const search = page.getByPlaceholder("Buscar en todos los clientes por nombre, email, teléfono o NIF...");
+    const filters = page.locator("form.client-filters");
+    const search = filters.getByPlaceholder("Buscar en todos los clientes por nombre, email, teléfono o NIF...");
     await search.fill("info@routsify.com");
-    await search.press("Enter");
+    const [searchResponse] = await Promise.all([
+      page.waitForResponse((response) => response.url().includes("/api/routsify/clients?") && response.url().includes("q=info%40routsify.com")),
+      filters.getByRole("button", { name: "Buscar", exact: true }).click(),
+    ]);
+    expect(searchResponse.ok()).toBeTruthy();
     await expect(page.getByText(/Mostrando \d+-\d+ de \d+ coincidencias/)).toBeVisible();
     await expect(page.getByText("info@routsify.com", { exact: true }).first()).toBeVisible();
-    await page.getByRole("button", { name: "Limpiar", exact: true }).click();
+    await filters.getByRole("button", { name: "Limpiar", exact: true }).click();
 
     await expect(page.getByRole("link", { name: "Descargar plantilla", exact: true })).toHaveAttribute("href", "/api/routsify/clients/import/template");
     await page.getByRole("button", { name: "Importar clientes", exact: true }).click();
