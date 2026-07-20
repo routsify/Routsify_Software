@@ -248,7 +248,7 @@ export function buildHoldedContactPayload(input: {
     email: input.email || undefined,
     phone: input.phone || undefined,
     mobile: input.phone || undefined,
-    type: [input.type || "client"],
+    type: input.type || "client",
     bill_address: billAddress,
   };
 }
