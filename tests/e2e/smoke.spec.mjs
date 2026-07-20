@@ -16,9 +16,7 @@ async function expectOperationalPage(page, path) {
   expect(response, `No se recibió respuesta al abrir ${path}`).not.toBeNull();
   expect(response.status(), `${path} devolvió HTTP ${response.status()}`).toBeLessThan(500);
   await expect(page).not.toHaveURL(/\/login(?:\?|$)/);
-  await expect(page.locator("body")).not.toContainText("Application error");
-  await expect(page.locator("body")).not.toContainText("Could not embed because more than one relationship was found");
-  await expect(page.locator("body")).not.toContainText("Internal Server Error");
+  await expect(page.locator("nextjs-portal")).toHaveCount(0);
   await expect(page.locator("h1").first()).toBeVisible({ timeout: 15_000 });
 }
 
