@@ -1,7 +1,11 @@
 import { loadEffectiveSettings } from "@/lib/effective-settings-server";
 import { PROPOSAL_WITH_VERSIONS_SELECT, PURCHASE_WITH_RELATIONS_SELECT } from "@/lib/query-selects";
 import { getSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase-admin";
-import type { GlobalSearchResult, RepositoryResult } from "@/lib/server-repositories";
+import type { GlobalSearchResult as BaseGlobalSearchResult, RepositoryResult } from "@/lib/server-repositories";
+
+type GlobalSearchResult = Omit<BaseGlobalSearchResult, "type"> & {
+  type: BaseGlobalSearchResult["type"] | "proveedor";
+};
 
 function unavailable<T>(): RepositoryResult<T> { return { ok: false, mode: "supabase", error: "supabase_admin_not_configured" }; }
 function oneRecord(value: unknown): Record<string, unknown> | null {
