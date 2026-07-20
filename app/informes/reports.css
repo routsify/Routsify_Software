@@ -1,0 +1,22 @@
+.metric-card {
+  display: grid;
+  gap: 6px;
+  min-height: 112px;
+  align-content: center;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--soft);
+}
+.metric-card span { color: var(--muted); font-size: 12px; font-weight: 850; text-transform: uppercase; letter-spacing: .04em; }
+.metric-card strong { color: var(--ink); font-size: 28px; line-height: 1; letter-spacing: -.04em; }
+.metric-card small { color: var(--muted); }
+.monthly-bars { min-height: 260px; display: grid; grid-template-columns: repeat(12, minmax(54px, 1fr)); align-items: end; gap: 10px; padding: 28px 22px 16px; overflow-x: auto; }
+.monthly-bar { min-width: 54px; display: grid; gap: 7px; text-align: center; }
+.monthly-bar-values { height: 180px; display: flex; align-items: end; justify-content: center; gap: 5px; border-bottom: 1px solid var(--line); }
+.monthly-bar-values span { display: block; width: 14px; min-height: 4px; border-radius: 5px 5px 0 0; background: var(--brand); }
+.monthly-bar-values span + span { background: var(--warning); }
+.monthly-bar strong { font-size: 11px; text-transform: capitalize; }
+.monthly-bar small { font-size: 10px; line-height: 1.25; }
+.text-danger { color: var(--danger); font-weight: 850; }
+@media (max-width: 900px) { .monthly-bars { grid-template-columns: repeat(12, 64px); } }
