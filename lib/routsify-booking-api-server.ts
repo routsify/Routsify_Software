@@ -105,7 +105,7 @@ async function bookingApiRequest(input: BookingApiRequest) {
   }
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000);
+  const timeout = setTimeout(() => controller.abort(), 15_000);
   try {
     const response = await fetch(url, {
       method: input.method || "GET",
@@ -244,9 +244,12 @@ export async function createRemoteBooking(input: {
   endsAt?: string | null;
   timezone?: string;
   notes?: string | null;
+  privacyAccepted: boolean;
 }) {
+  if (!input.privacyAccepted) throw new BookingApiError(400, "booking_privacy_consent_required", null);
   const configuration = await loadThirdPartyIntegrationConfig(input.organizationId);
   const timezone = input.timezone || configuration.booking.defaultTimezone;
+  const privacyAcceptedAt = new Date().toISOString();
   const result = await bookingApiRequest({
     organizationId: input.organizationId,
     path: configuration.booking.bookingsPath,
@@ -265,6 +268,15 @@ export async function createRemoteBooking(input: {
       source: "routsify_software",
       client_id: input.clientId,
       external_reference: `client:${input.clientId}`,
+      privacy: true,
+      privacy_accepted: true,
+      privacy_policy_accepted: true,
+      privacy_consent: true,
+      accept_privacy: true,
+      gdpr_consent: true,
+      consent: true,
+      privacy_accepted_at: privacyAcceptedAt,
+      consent_source: "routsify_software_admin",
     },
   });
   return normalizeRemoteBooking(result.payload);
