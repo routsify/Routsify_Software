@@ -4,6 +4,7 @@ test.describe.configure({ retries: 0 });
 
 const caseId = "b96113c0-00d2-4e3f-ae06-b2a232cb9136";
 const proposalId = "a9bbdcd4-aa0a-40ed-9247-822b20103a0f";
+const contractId = "0592556c-684b-4f57-a6a1-900c689bf341";
 const caseCode = "EXP-2026-8492";
 
 async function login(page) {
@@ -14,7 +15,7 @@ async function login(page) {
   await expect(page).toHaveURL(/\/(hoy|clientes|expedientes|propuestas)/, { timeout: 20000 });
 }
 
-async function api(page, path, method = "GET", body) {
+async function request(page, path, method = "GET", body, tolerate = false) {
   const result = await page.evaluate(async ({ path, method, body }) => {
     const response = await fetch(path, {
       method,
@@ -27,8 +28,15 @@ async function api(page, path, method = "GET", body) {
     try { payload = raw ? JSON.parse(raw) : null; } catch { payload = { raw }; }
     return { status: response.status, payload };
   }, { path, method, body });
-  expect(result.status, `${path}: ${JSON.stringify(result.payload)}`).toBeLessThan(300);
-  expect(result.payload?.ok, `${path}: ${JSON.stringify(result.payload)}`).toBe(true);
+  if (!tolerate) {
+    expect(result.status, `${path}: ${JSON.stringify(result.payload)}`).toBeLessThan(300);
+    expect(result.payload?.ok, `${path}: ${JSON.stringify(result.payload)}`).toBe(true);
+  }
+  return result;
+}
+
+async function api(page, path, method = "GET", body) {
+  const result = await request(page, path, method, body);
   return result.payload;
 }
 
@@ -48,29 +56,44 @@ async function drain(page, label) {
 
 test.skip(!process.env.E2E_EMAIL || !process.env.E2E_PASSWORD, "E2E credentials required");
 
-test("resume purchase payment proforma and final invoice", async ({ page }) => {
+test("sign contract then certify payment proforma and final invoice", async ({ page }) => {
   test.setTimeout(300000);
   await login(page);
   const marker = String(process.env.GITHUB_RUN_ID || Date.now());
   const tag = `[PRUEBA E2E ROUTSIFY RESUME ${marker}]`;
+
+  const signed = await api(page, `/api/routsify/cases/${caseId}/contracts`, "POST", {
+    id: contractId,
+    status: "signed",
+    title: `${tag} Contrato firmado`,
+    notes: `${tag} firma de certificación`,
+  });
+  expect(String(signed.data?.id || "")).toBe(contractId);
+  expect(String(signed.data?.status || "")).toBe("signed");
 
   const purchases = await api(page, "/api/routsify/expected-purchases");
   const purchase = list(purchases).find((row) => String(row.case_id) === caseId);
   expect(purchase, `No se generó compra para ${caseCode}`).toBeTruthy();
   const purchaseId = String(purchase.id);
 
-  await api(page, "/api/routsify/expected-purchases/sync-holded", "POST", { purchaseId });
-  await drain(page, "compra Holded");
-  const syncedPurchase = await api(page, `/api/routsify/expected-purchases/${purchaseId}`);
+  let syncedPurchase = await api(page, `/api/routsify/expected-purchases/${purchaseId}`);
+  if (!String(syncedPurchase.data?.holded_purchase_id || "")) {
+    await api(page, "/api/routsify/expected-purchases/sync-holded", "POST", { purchaseId });
+    await drain(page, "compra Holded");
+    syncedPurchase = await api(page, `/api/routsify/expected-purchases/${purchaseId}`);
+  }
   expect(String(syncedPurchase.data?.holded_purchase_id || "")).not.toBe("");
-  await api(page, `/api/routsify/expected-purchases/${purchaseId}`, "PATCH", {
-    status: "approved",
-    approved_cost: 10,
-    review_notes: `${tag} compra aprobada`,
-  });
 
-  const reference = `E2E-RESUME-${marker}`;
-  await api(page, "/api/payments/manual", "POST", {
+  if (String(syncedPurchase.data?.status || "") !== "approved") {
+    await api(page, `/api/routsify/expected-purchases/${purchaseId}`, "PATCH", {
+      status: "approved",
+      approved_cost: 10,
+      review_notes: `${tag} compra aprobada`,
+    });
+  }
+
+  const reference = `E2E-FINAL-${marker}`;
+  const payment = await api(page, "/api/payments/manual", "POST", {
     caseId,
     amount: 15,
     reference,
@@ -78,6 +101,10 @@ test("resume purchase payment proforma and final invoice", async ({ page }) => {
     method: "manual_e2e",
     notes: `${tag} pago total`,
   });
+  expect(payment.payment_confirmed).toBe(true);
+  expect(String(payment.proforma?.document_id || "")).not.toBe("");
+  expect(String(payment.payment_outbox_id || "")).not.toBe("");
+
   const fiscalBatch = await drain(page, "cobro y proforma Holded");
   expect(Number(fiscalBatch.processed || 0)).toBeGreaterThanOrEqual(2);
 
@@ -85,5 +112,5 @@ test("resume purchase payment proforma and final invoice", async ({ page }) => {
   const invoiceBatch = await drain(page, "factura final Holded");
   expect(Number(invoiceBatch.processed || 0)).toBeGreaterThan(0);
 
-  console.log("HOLDED_RESUME_CERTIFIED", JSON.stringify({ marker, caseId, caseCode, proposalId, purchaseId, reference }));
+  console.log("HOLDED_FINAL_CERTIFIED", JSON.stringify({ marker, caseId, caseCode, proposalId, contractId, purchaseId, reference, fiscalBatch, invoiceBatch }));
 });
