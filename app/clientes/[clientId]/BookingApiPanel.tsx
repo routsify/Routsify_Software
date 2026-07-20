@@ -52,6 +52,7 @@ export function BookingApiPanel({ client, initialBookings }: { client: Row; init
   const [startsAt, setStartsAt] = useState("");
   const [durationMinutes, setDurationMinutes] = useState(30);
   const [notes, setNotes] = useState("");
+  const [privacyAccepted, setPrivacyAccepted] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [slots, setSlots] = useState<Slot[]>([]);
   const [bookingLink, setBookingLink] = useState("");
@@ -109,12 +110,13 @@ export function BookingApiPanel({ client, initialBookings }: { client: Row; init
 
   async function saveBooking() {
     if (!startsAt) return setMessage("Selecciona fecha y hora para la llamada.");
+    if (!editingId && !privacyAccepted) return setMessage("Confirma que el cliente ha aceptado la política de privacidad.");
     setBusy("save"); setMessage(null);
     const url = editingId ? `/api/routsify/clients/booking/reservations/${encodeURIComponent(editingId)}` : "/api/routsify/clients/booking/reservations";
     const response = await fetch(url, {
       method: editingId ? "PATCH" : "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ clientId, startsAt: new Date(startsAt).toISOString(), durationMinutes, timezone: "Europe/Madrid", notes }),
+      body: JSON.stringify({ clientId, startsAt: new Date(startsAt).toISOString(), durationMinutes, timezone: "Europe/Madrid", notes, privacyAccepted: editingId ? undefined : privacyAccepted }),
     });
     const result = await response.json().catch(() => null);
     setBusy(null);
@@ -125,7 +127,7 @@ export function BookingApiPanel({ client, initialBookings }: { client: Row; init
     const saved = result.data?.booking as Row;
     setBookings((current) => normalizedBookings([saved, ...current.filter((item) => text(item.id) !== text(saved.id))]));
     setMessage(editingId ? "Llamada reprogramada en Routsify Booking." : "Llamada reservada en Routsify Booking.");
-    setEditingId(null); setStartsAt(""); setNotes(""); setSlots([]);
+    setEditingId(null); setStartsAt(""); setNotes(""); setPrivacyAccepted(false); setSlots([]);
   }
 
   function startEdit(booking: Row) {
@@ -177,9 +179,10 @@ export function BookingApiPanel({ client, initialBookings }: { client: Row; init
           <label>Fecha y hora<input className="input" type="datetime-local" value={startsAt} onChange={(event) => setStartsAt(event.target.value)} /></label>
           <label>Duración<select value={durationMinutes} onChange={(event) => setDurationMinutes(Number(event.target.value))}><option value={15}>15 minutos</option><option value={30}>30 minutos</option><option value={45}>45 minutos</option><option value={60}>60 minutos</option><option value={90}>90 minutos</option></select></label>
           <label>Notas internas<textarea rows={3} value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Objetivo de la llamada, idioma, contexto..." /></label>
+          {!editingId ? <label className="checkbox-row"><input type="checkbox" checked={privacyAccepted} onChange={(event) => setPrivacyAccepted(event.target.checked)} />El cliente ha aceptado la política de privacidad para gestionar la reserva.</label> : null}
           <div className="form-actions">
             <button className="btn secondary" type="button" disabled={busy !== null} onClick={() => void checkAvailability()}>{busy === "availability" ? "Consultando..." : "Consultar disponibilidad"}</button>
-            <button className="btn" type="button" disabled={busy !== null || !startsAt} onClick={() => void saveBooking()}>{busy === "save" ? "Guardando..." : editingId ? "Guardar reprogramación" : "Reservar llamada"}</button>
+            <button className="btn" type="button" disabled={busy !== null || !startsAt || (!editingId && !privacyAccepted)} onClick={() => void saveBooking()}>{busy === "save" ? "Guardando..." : editingId ? "Guardar reprogramación" : "Reservar llamada"}</button>
             {editingId ? <button className="link-button" type="button" disabled={busy !== null} onClick={() => { setEditingId(null); setStartsAt(""); setNotes(""); }}>Cancelar edición</button> : null}
           </div>
         </div>
