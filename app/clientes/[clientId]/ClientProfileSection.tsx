@@ -8,5 +8,5 @@ type Metrics = { acceptedSale: number; paid: number; acceptedTrips: number; acti
 
 export function ClientProfileSection({ initialClient, communications, metrics }: { initialClient: Row; communications: Row[]; metrics: Metrics }) {
   const [client, setClient] = useState(initialClient);
-  return <ClientProfilePanel client={client} communications={communications} metrics={metrics} onSaved={setClient} />;
+  return <div className="client360-profile"><ClientProfilePanel client={client} communications={communications} metrics={metrics} onSaved={setClient} /></div>;
 }
