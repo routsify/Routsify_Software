@@ -27,7 +27,7 @@ export default async function SuppliersPage({ searchParams }: { searchParams: Pr
       eyebrow="Proveedores"
       title="Directorio de proveedores"
       description="Consulta, busca, importa y administra proveedores mediante un listado paginado. Revisa contacto, fiscalidad, compras, facturas, desviaciones y vinculación con Holded."
-      action={<Link className="btn secondary" href="/compras" prefetch={false}>Ir a compras</Link>}
+      action={<div className="form-actions">{supplierId ? <Link className="btn" href={`/proveedores/${encodeURIComponent(supplierId)}`} prefetch={false}>Abrir ficha 360</Link> : null}<Link className="btn secondary" href="/compras" prefetch={false}>Ir a compras</Link></div>}
     />
     {supplierResult.ok ? null : <section className="card form-warning"><strong>No se pudieron cargar los proveedores.</strong><p>{supplierResult.error}</p></section>}
     <SupplierManager initialPage={initialPage} initialSupplierId={supplierId || ""} />
