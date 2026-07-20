@@ -1,6 +1,4 @@
 import { createHash } from "node:crypto";
-import { ensureProformaForCase } from "@/lib/fiscal-workflow-server";
-import { enqueueOutboxEvent } from "@/lib/outbox-server";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 
 function numeric(value: unknown) { const number = Number(value || 0); return Number.isFinite(number) ? number : 0; }
@@ -88,17 +86,5 @@ export async function confirmManualPaymentLink(input: {
   const now = new Date().toISOString();
   await supabase.from("payment_links").update({ status: "confirmed", confirmed_at: receivedAt, updated_at: now }).eq("id", link.id).eq("organization_id", input.organizationId);
   await supabase.from("payments").update({ payment_link_id: link.id, source: "manual", confirmed_by: input.actorId, updated_at: now }).eq("organization_id", input.organizationId).eq("case_id", link.case_id).eq("payment_reference", reference);
-  await ensureProformaForCase({ organizationId: input.organizationId, caseId: link.case_id, actorId: input.actorId, paymentReference: reference });
-  await enqueueOutboxEvent({
-    organizationId: input.organizationId,
-    channel: "holded",
-    eventType: "payment.sync",
-    relatedCaseId: link.case_id,
-    idempotencyKey: `holded-payment:${input.organizationId}:${reference}`,
-    payload: { case_id: link.case_id, payment_link_id: link.id, reference, amount, currency: link.currency || "EUR", received_at: receivedAt },
-    risk: "low",
-    businessRule: "Sincronizar el pago confirmado con Holded después de crear la proforma por el total del viaje.",
-    nextAction: "Procesar pago en Holded.",
-  });
   return { payment: result, paymentLink: { ...link, status: "confirmed", confirmed_at: receivedAt }, duplicate: false };
 }
