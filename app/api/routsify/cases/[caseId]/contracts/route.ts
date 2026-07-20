@@ -56,13 +56,17 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   const now = new Date().toISOString();
   const contractId = String(body?.id || "").trim();
+  const { data: existingContract } = contractId
+    ? await supabase.from("contracts").select("id,status,signed_at").eq("id", contractId).eq("organization_id", organizationId).eq("case_id", caseId).maybeSingle()
+    : { data: null };
+  const statusChanged = !existingContract || String(existingContract.status || "") !== status;
   const payload = {
     organization_id: organizationId,
     case_id: caseId,
     title: String(body?.title || "Contrato de viaje").trim(),
     status,
     external_url: String(body?.external_url || "").trim() || null,
-    signed_at: status === "signed" ? now : null,
+    signed_at: status === "signed" ? existingContract?.signed_at || now : null,
     notes: String(body?.notes || "").trim() || null,
     updated_at: now,
   };
@@ -93,6 +97,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       .eq("title", "Preparar contrato y solicitar documentación");
   }
 
-  await supabase.from("timeline_events").insert({ organization_id: organizationId, case_id: caseId, event_type: `contract.${status}`, title: status === "signed" ? "Contrato firmado" : `Contrato actualizado: ${status}`, payload: { contract_id: data.id }, created_by: actorId });
+  if (statusChanged) {
+    await supabase.from("timeline_events").insert({ organization_id: organizationId, case_id: caseId, event_type: `contract.${status}`, title: status === "signed" ? "Contrato firmado" : `Contrato actualizado: ${status}`, payload: { contract_id: data.id }, created_by: actorId });
+  }
   return NextResponse.json({ ok: true, data });
 }
