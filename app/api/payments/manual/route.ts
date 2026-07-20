@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonAccessDenied, requireInternalAccess } from "@/lib/api-security";
-import { ensureProformaForCase } from "@/lib/fiscal-workflow-server";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { resolveOrganizationId } from "@/lib/request-context";
 
@@ -51,30 +50,16 @@ export async function POST(request: NextRequest) {
   });
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
 
-  try {
-    const proforma = await ensureProformaForCase({ organizationId, caseId, actorId: access.actorId, paymentReference: reference });
-    return NextResponse.json({ ok: true, data, payment_confirmed: true, fiscal_pending: false, proforma }, { status: 201 });
-  } catch (caught) {
-    const warning = caught instanceof Error ? caught.message : "proforma_queue_failed";
-    const taskKey = `payment_fiscal_followup:${caseId}:${reference}`;
-    await db.from("tasks").upsert({
-      organization_id: organizationId,
-      case_id: caseId,
-      title: "Revisar proforma pendiente tras pago confirmado",
-      status: "pending",
-      priority: "high",
-      due_at: new Date().toISOString(),
-      idempotency_key: taskKey,
-      payload: { action_type: "payment_fiscal_followup", payment_reference: reference, error: warning },
-    }, { onConflict: "organization_id,idempotency_key" });
-    await db.from("timeline_events").insert({
-      organization_id: organizationId,
-      case_id: caseId,
-      event_type: "payment.fiscal_followup_required",
-      title: "Pago confirmado; proforma pendiente de revisión",
-      payload: { payment_reference: reference, error: warning },
-      created_by: access.actorId,
-    });
-    return NextResponse.json({ ok: true, data, payment_confirmed: true, fiscal_pending: true, warning }, { status: 202 });
-  }
+  const operation = data && typeof data === "object" ? data as Record<string, unknown> : {};
+  return NextResponse.json({
+    ok: true,
+    data,
+    payment_confirmed: true,
+    fiscal_pending: false,
+    proforma: {
+      document_id: operation.proforma_document_id || null,
+      outbox_id: operation.outbox_id || null,
+    },
+    payment_outbox_id: operation.payment_outbox_id || null,
+  }, { status: 201 });
 }
