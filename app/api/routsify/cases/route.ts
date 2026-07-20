@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonAccessDenied, requireInternalAccess } from "@/lib/api-security";
+import { listCaseDirectoryPage } from "@/lib/case-directory-server";
 import { createConfiguredCase } from "@/lib/case-creation-server";
 import { listOrganizationCases } from "@/lib/organization-repositories";
 import { resolveOrganizationId } from "@/lib/request-context";
@@ -9,6 +10,21 @@ export async function GET(request: NextRequest) {
   const access = await requireInternalAccess(request);
   if (!access.ok) return jsonAccessDenied(access);
   const organizationId = await resolveOrganizationId(request, access.organizationId);
+  if (request.nextUrl.searchParams.get("paginated") === "1") {
+    try {
+      const params = request.nextUrl.searchParams;
+      const data = await listCaseDirectoryPage(organizationId, {
+        page: Number(params.get("page") || 1),
+        pageSize: Number(params.get("pageSize") || 50),
+        query: params.get("q") || "",
+        status: params.get("status") || "active",
+        health: params.get("health") || "all",
+      });
+      return NextResponse.json({ ok: true, data });
+    } catch (error) {
+      return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "case_directory_failed" }, { status: 400 });
+    }
+  }
   const result = await listOrganizationCases(organizationId);
   return NextResponse.json(result);
 }
