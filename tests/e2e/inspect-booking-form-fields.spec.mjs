@@ -16,6 +16,5 @@ test("inspect public Booking fields without submitting", async ({ page }) => {
     ariaLabel: node.getAttribute("aria-label"),
     required: node.hasAttribute("required"),
   })));
-  console.log("BOOKING_PUBLIC_FIELDS", JSON.stringify(fields));
-  expect(fields.length).toBeGreaterThan(0);
+  throw new Error(`BOOKING_PUBLIC_FIELDS=${JSON.stringify(fields)}`);
 });
