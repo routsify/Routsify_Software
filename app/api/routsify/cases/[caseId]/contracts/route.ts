@@ -5,6 +5,8 @@ import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { resolveOrganizationId, getRequestUserId } from "@/lib/request-context";
 
 const statuses = new Set(["draft", "sent", "signed", "cancelled"]);
+const statusesAfterContractReady = new Set(["contract_signed", "payment_confirmed", "paid", "in_progress", "traveling", "completed", "closed", "cancelled"]);
+const statusesAfterContractSigned = new Set(["payment_confirmed", "paid", "in_progress", "traveling", "completed", "closed", "cancelled"]);
 
 function hasBillingAddress(value: unknown) {
   if (typeof value === "string") return value.trim().length > 0;
@@ -29,7 +31,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const supabase = getSupabaseAdminClient();
   const { data: caseRow } = await supabase
     .from("cases")
-    .select("id,client_id,accepted_value")
+    .select("id,client_id,accepted_value,status,next_action")
     .eq("id", caseId)
     .eq("organization_id", organizationId)
     .maybeSingle();
@@ -52,6 +54,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
   }
 
+  const now = new Date().toISOString();
   const contractId = String(body?.id || "").trim();
   const payload = {
     organization_id: organizationId,
@@ -59,16 +62,37 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     title: String(body?.title || "Contrato de viaje").trim(),
     status,
     external_url: String(body?.external_url || "").trim() || null,
-    signed_at: status === "signed" ? new Date().toISOString() : null,
+    signed_at: status === "signed" ? now : null,
     notes: String(body?.notes || "").trim() || null,
-    updated_at: new Date().toISOString(),
+    updated_at: now,
   };
   const query = contractId ? supabase.from("contracts").update(payload).eq("id", contractId).eq("organization_id", organizationId).eq("case_id", caseId) : supabase.from("contracts").insert(payload);
   const { data, error } = await query.select("*").single();
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
 
-  if (status === "sent") await supabase.from("cases").update({ status: "contract_ready", next_action: "Obtener firma del contrato", updated_at: new Date().toISOString() }).eq("id", caseId).eq("organization_id", organizationId);
-  if (status === "signed") await supabase.from("cases").update({ status: "contract_signed", next_action: "Confirmar pago", updated_at: new Date().toISOString() }).eq("id", caseId).eq("organization_id", organizationId);
+  if (status === "sent" && !statusesAfterContractReady.has(String(caseRow.status || ""))) {
+    await supabase.from("cases").update({ status: "contract_ready", next_action: "Obtener firma del contrato", updated_at: now }).eq("id", caseId).eq("organization_id", organizationId);
+  }
+  if (status === "signed") {
+    if (!statusesAfterContractSigned.has(String(caseRow.status || ""))) {
+      await supabase.from("cases").update({ status: "contract_signed", next_action: "Confirmar pago", updated_at: now }).eq("id", caseId).eq("organization_id", organizationId);
+    }
+    await supabase.from("tasks")
+      .update({ status: "done", updated_at: now })
+      .eq("organization_id", organizationId)
+      .eq("case_id", caseId)
+      .eq("status", "pending")
+      .eq("title", "Preparar contrato y solicitar documentación");
+  }
+  if (status === "cancelled") {
+    await supabase.from("tasks")
+      .update({ status: "cancelled", updated_at: now })
+      .eq("organization_id", organizationId)
+      .eq("case_id", caseId)
+      .eq("status", "pending")
+      .eq("title", "Preparar contrato y solicitar documentación");
+  }
+
   await supabase.from("timeline_events").insert({ organization_id: organizationId, case_id: caseId, event_type: `contract.${status}`, title: status === "signed" ? "Contrato firmado" : `Contrato actualizado: ${status}`, payload: { contract_id: data.id }, created_by: actorId });
   return NextResponse.json({ ok: true, data });
 }
