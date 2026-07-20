@@ -13,11 +13,11 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
 
   return (
     <AppShell>
-      <PageHeader eyebrow="Buscar" title={query ? `Resultados para “${query}”` : "Buscar"} description="Encuentra clientes, expedientes, presupuestos y compras de tu organización." />
+      <PageHeader eyebrow="Buscar" title={query ? `Resultados para “${query}”` : "Buscar"} description="Encuentra clientes, proveedores, expedientes, presupuestos y compras de tu organización." />
 
       <section className="card dashboard-table-card">
         {!query ? (
-          <div className="empty-state"><h2>Escribe una búsqueda</h2><p>Usa la barra superior para buscar por nombre, email, expediente, destino, proveedor o servicio.</p></div>
+          <div className="empty-state"><h2>Escribe una búsqueda</h2><p>Usa la barra superior para buscar por nombre, email, expediente, destino, proveedor, categoría o servicio.</p></div>
         ) : items.length === 0 ? (
           <div className="empty-state"><h2>No hay resultados</h2><p>No se han encontrado coincidencias para esta búsqueda.</p></div>
         ) : (
