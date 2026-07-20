@@ -30,7 +30,6 @@ type BookingApiRequest = {
 class BookingApiError extends Error {
   status: number;
   payload: unknown;
-
   constructor(status: number, message: string, payload: unknown) {
     super(message);
     this.name = "BookingApiError";
@@ -49,12 +48,8 @@ function object(value: unknown): Record<string, unknown> | null {
 
 function validatedBaseUrl(value: string) {
   const url = new URL(value.trim().replace(/\/+$/, ""));
-  if (url.protocol !== "https:" || url.hostname.toLowerCase() !== "call.routsify.com") {
-    throw new BookingApiError(400, "booking_api_host_not_allowed", null);
-  }
-  if (!url.pathname.startsWith("/wp-json/routsify/v1")) {
-    throw new BookingApiError(400, "booking_api_namespace_not_allowed", null);
-  }
+  if (url.protocol !== "https:" || url.hostname.toLowerCase() !== "call.routsify.com") throw new BookingApiError(400, "booking_api_host_not_allowed", null);
+  if (!url.pathname.startsWith("/wp-json/routsify/v1")) throw new BookingApiError(400, "booking_api_namespace_not_allowed", null);
   url.search = "";
   url.hash = "";
   return url;
@@ -64,9 +59,7 @@ function pathUrl(baseUrl: string, path = "") {
   const base = validatedBaseUrl(baseUrl);
   const cleanPath = path.trim();
   if (!cleanPath) return base;
-  if (/^[a-z][a-z0-9+.-]*:/i.test(cleanPath) || cleanPath.startsWith("//")) {
-    throw new BookingApiError(400, "absolute_booking_path_not_allowed", null);
-  }
+  if (/^[a-z][a-z0-9+.-]*:/i.test(cleanPath) || cleanPath.startsWith("//")) throw new BookingApiError(400, "absolute_booking_path_not_allowed", null);
   const basePath = base.pathname.replace(/\/+$/, "");
   const suffix = cleanPath.startsWith("/") ? cleanPath : `/${cleanPath}`;
   base.pathname = `${basePath}${suffix}`;
@@ -84,11 +77,7 @@ function authHeaders(apiKey: string, mode: BookingAuthMode, hasBody: boolean) {
 async function readPayload(response: Response) {
   const raw = await response.text();
   if (!raw) return null;
-  try {
-    return JSON.parse(raw) as unknown;
-  } catch {
-    return { message: raw.slice(0, 2000) };
-  }
+  try { return JSON.parse(raw) as unknown; } catch { return { message: raw.slice(0, 2000) }; }
 }
 
 async function bookingApiRequest(input: BookingApiRequest) {
@@ -98,12 +87,8 @@ async function bookingApiRequest(input: BookingApiRequest) {
   if (!config.baseUrl) throw new BookingApiError(503, "booking_base_url_not_configured", null);
   const apiKey = await getOrganizationSecret(input.organizationId, "booking_api_key");
   if (!apiKey) throw new BookingApiError(503, "booking_api_key_not_configured", null);
-
   const url = pathUrl(config.baseUrl, input.path);
-  for (const [key, value] of Object.entries(input.query || {})) {
-    if (value !== null && value !== undefined && String(value) !== "") url.searchParams.set(key, String(value));
-  }
-
+  for (const [key, value] of Object.entries(input.query || {})) if (value !== null && value !== undefined && String(value) !== "") url.searchParams.set(key, String(value));
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15_000);
   try {
@@ -116,9 +101,8 @@ async function bookingApiRequest(input: BookingApiRequest) {
     });
     const payload = await readPayload(response);
     if (!response.ok) {
-      const payloadObject = object(payload);
-      const message = text(payloadObject?.message || payloadObject?.error || payloadObject?.code) || `booking_http_${response.status}`;
-      throw new BookingApiError(response.status, message, payload);
+      const row = object(payload);
+      throw new BookingApiError(response.status, text(row?.message || row?.error || row?.code) || `booking_http_${response.status}`, payload);
     }
     return { status: response.status, payload, config };
   } catch (error) {
@@ -153,8 +137,8 @@ function findArray(payload: unknown): unknown[] {
     if (Array.isArray(value)) return value;
     const nested = object(value);
     if (nested) {
-      const nestedArray = findArray(nested);
-      if (nestedArray.length) return nestedArray;
+      const found = findArray(nested);
+      if (found.length) return found;
     }
   }
   return [];
@@ -167,11 +151,37 @@ function isoOrNull(value: unknown) {
   return Number.isNaN(date.getTime()) ? raw : date.toISOString();
 }
 
+function zonedParts(value: string, timezone: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) throw new BookingApiError(400, "invalid_booking_start", null);
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value || "";
+  const localDate = `${part("year")}-${part("month")}-${part("day")}`;
+  const localTime = `${part("hour")}:${part("minute")}`;
+  return { localDate, localTime, localDateTime: `${localDate} ${localTime}` };
+}
+
+function durationBetween(startsAt: string, endsAt?: string | null) {
+  if (!endsAt) return 30;
+  const start = new Date(startsAt).getTime();
+  const end = new Date(endsAt).getTime();
+  const minutes = Math.round((end - start) / 60_000);
+  return Number.isFinite(minutes) && minutes > 0 ? minutes : 30;
+}
+
 export function normalizeRemoteBooking(payload: unknown): NormalizedRemoteBooking {
   const row = unwrapRecord(payload);
   return {
     externalBookingId: text(row.external_booking_id || row.booking_id || row.appointment_id || row.id || row.uuid),
-    startsAt: isoOrNull(row.starts_at || row.start_at || row.start || row.start_time || row.datetime),
+    startsAt: isoOrNull(row.starts_at || row.start_at || row.start || row.start_time || row.datetime || row.date),
     endsAt: isoOrNull(row.ends_at || row.end_at || row.end || row.end_time),
     status: text(row.status || row.state) || "scheduled",
     bookingUrl: text(row.booking_url || row.manage_url || row.reschedule_url || row.url) || null,
@@ -190,11 +200,7 @@ export async function testRoutsifyBookingApi(organizationId: string) {
       baseUrl: result.config.baseUrl,
       authMode: result.config.authMode,
       routes,
-      configuredEndpoints: {
-        availability: result.config.availabilityPath,
-        bookings: result.config.bookingsPath,
-        booking: result.config.bookingPathTemplate,
-      },
+      configuredEndpoints: { availability: result.config.availabilityPath, bookings: result.config.bookingsPath, booking: result.config.bookingPathTemplate },
       payload: routes.length ? undefined : result.payload,
     };
   } catch (error) {
@@ -203,33 +209,33 @@ export async function testRoutsifyBookingApi(organizationId: string) {
   }
 }
 
-export async function listRemoteBookingAvailability(input: {
-  organizationId: string;
-  from: string;
-  to: string;
-  timezone?: string;
-  durationMinutes?: number;
-}) {
+export async function listRemoteBookingAvailability(input: { organizationId: string; from: string; to: string; timezone?: string; durationMinutes?: number }) {
   const configuration = await loadThirdPartyIntegrationConfig(input.organizationId);
   const timezone = input.timezone || configuration.booking.defaultTimezone;
   const duration = input.durationMinutes || configuration.booking.defaultDurationMinutes;
+  const fromParts = zonedParts(input.from, timezone);
+  const toParts = zonedParts(input.to, timezone);
   const result = await bookingApiRequest({
     organizationId: input.organizationId,
     path: configuration.booking.availabilityPath,
-    query: { from: input.from, to: input.to, date_from: input.from, date_to: input.to, timezone, duration, duration_minutes: duration },
+    query: {
+      from: input.from,
+      to: input.to,
+      date_from: fromParts.localDate,
+      date_to: toParts.localDate,
+      start_date: fromParts.localDate,
+      end_date: toParts.localDate,
+      timezone,
+      duration,
+      duration_minutes: duration,
+    },
   });
   const slots: BookingApiSlot[] = findArray(result.payload).map((value) => {
     const row = object(value) || { value };
     const startsAt = isoOrNull(row.starts_at || row.start_at || row.start || row.datetime || row.time) || text(value);
     const endsAt = isoOrNull(row.ends_at || row.end_at || row.end);
     const availabilityValue = row.available ?? row.is_available ?? row.enabled ?? true;
-    return {
-      startsAt,
-      endsAt,
-      available: availabilityValue !== false && text(row.status).toLowerCase() !== "unavailable",
-      label: text(row.label || row.title) || startsAt,
-      raw: row,
-    };
+    return { startsAt, endsAt, available: availabilityValue !== false && text(row.status).toLowerCase() !== "unavailable", label: text(row.label || row.title) || startsAt, raw: row };
   }).filter((slot) => Boolean(slot.startsAt));
   return { slots, raw: result.payload };
 }
@@ -249,6 +255,8 @@ export async function createRemoteBooking(input: {
   if (!input.privacyAccepted) throw new BookingApiError(400, "booking_privacy_consent_required", null);
   const configuration = await loadThirdPartyIntegrationConfig(input.organizationId);
   const timezone = input.timezone || configuration.booking.defaultTimezone;
+  const { localDate, localTime, localDateTime } = zonedParts(input.startsAt, timezone);
+  const duration = durationBetween(input.startsAt, input.endsAt);
   const privacyAcceptedAt = new Date().toISOString();
   const result = await bookingApiRequest({
     organizationId: input.organizationId,
@@ -259,10 +267,19 @@ export async function createRemoteBooking(input: {
       full_name: input.name,
       email: input.email || null,
       phone: input.phone || null,
+      date: localDate,
+      booking_date: localDate,
+      start_date: localDate,
+      time: localTime,
+      booking_time: localTime,
+      start_time: localTime,
+      datetime: localDateTime,
       starts_at: input.startsAt,
       start: input.startsAt,
       ends_at: input.endsAt || null,
       end: input.endsAt || null,
+      duration,
+      duration_minutes: duration,
       timezone,
       notes: input.notes || null,
       source: "routsify_software",
@@ -282,23 +299,17 @@ export async function createRemoteBooking(input: {
   return normalizeRemoteBooking(result.payload);
 }
 
-export async function updateRemoteBooking(input: {
-  organizationId: string;
-  externalBookingId: string;
-  startsAt?: string;
-  endsAt?: string | null;
-  timezone?: string;
-  notes?: string | null;
-  status?: string;
-}) {
+export async function updateRemoteBooking(input: { organizationId: string; externalBookingId: string; startsAt?: string; endsAt?: string | null; timezone?: string; notes?: string | null; status?: string }) {
   const configuration = await loadThirdPartyIntegrationConfig(input.organizationId);
   const path = configuration.booking.bookingPathTemplate.replace("{id}", encodeURIComponent(input.externalBookingId));
+  const timezone = input.timezone || configuration.booking.defaultTimezone;
+  const parts = input.startsAt ? zonedParts(input.startsAt, timezone) : null;
   const result = await bookingApiRequest({
     organizationId: input.organizationId,
     path,
     method: "PATCH",
     body: {
-      ...(input.startsAt ? { starts_at: input.startsAt, start: input.startsAt } : {}),
+      ...(input.startsAt ? { date: parts?.localDate, time: parts?.localTime, datetime: parts?.localDateTime, starts_at: input.startsAt, start: input.startsAt } : {}),
       ...(input.endsAt !== undefined ? { ends_at: input.endsAt, end: input.endsAt } : {}),
       ...(input.timezone ? { timezone: input.timezone } : {}),
       ...(input.notes !== undefined ? { notes: input.notes } : {}),
@@ -322,13 +333,7 @@ export async function cancelRemoteBooking(input: { organizationId: string; exter
   }
 }
 
-export async function buildPersonalizedBookingLink(input: {
-  organizationId: string;
-  clientId: string;
-  name: string;
-  email?: string | null;
-  phone?: string | null;
-}) {
+export async function buildPersonalizedBookingLink(input: { organizationId: string; clientId: string; name: string; email?: string | null; phone?: string | null }) {
   const configuration = await loadThirdPartyIntegrationConfig(input.organizationId);
   const url = new URL(configuration.booking.publicBookingUrl);
   if (url.protocol !== "https:" || url.hostname.toLowerCase() !== "call.routsify.com") throw new Error("booking_public_url_not_allowed");
@@ -341,8 +346,6 @@ export async function buildPersonalizedBookingLink(input: {
 }
 
 export function bookingApiErrorResponse(error: unknown) {
-  const failure = error instanceof BookingApiError
-    ? error
-    : new BookingApiError(500, error instanceof Error ? error.message : "booking_api_error", null);
+  const failure = error instanceof BookingApiError ? error : new BookingApiError(500, error instanceof Error ? error.message : "booking_api_error", null);
   return { status: failure.status, error: failure.message, payload: failure.payload };
 }
