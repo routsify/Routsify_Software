@@ -3,6 +3,7 @@ import { test, expect } from "@playwright/test";
 test.describe.configure({ retries: 0 });
 
 const caseId = "b96113c0-00d2-4e3f-ae06-b2a232cb9136";
+const clientId = "d4112107-3f9c-4ff6-a0df-db7a371121fc";
 const proposalId = "a9bbdcd4-aa0a-40ed-9247-822b20103a0f";
 const contractId = "0592556c-684b-4f57-a6a1-900c689bf341";
 const caseCode = "EXP-2026-8492";
@@ -56,11 +57,32 @@ async function drain(page, label) {
 
 test.skip(!process.env.E2E_EMAIL || !process.env.E2E_PASSWORD, "E2E credentials required");
 
-test("sign contract then certify payment proforma and final invoice", async ({ page }) => {
+test("complete fiscal data, sign contract and certify Holded fiscal lifecycle", async ({ page }) => {
   test.setTimeout(300000);
   await login(page);
   const marker = String(process.env.GITHUB_RUN_ID || Date.now());
   const tag = `[PRUEBA E2E ROUTSIFY RESUME ${marker}]`;
+
+  const existingClient = await api(page, `/api/routsify/clients/${clientId}`);
+  const client = existingClient.data;
+  const updatedClient = await api(page, `/api/routsify/clients/${clientId}`, "PATCH", {
+    display_name: client.display_name,
+    email: client.email,
+    phone: client.phone || "+34600000000",
+    client_type: client.client_type || "person",
+    country: "ES",
+    tax_id: "E2E12345678",
+    billing_address: {
+      address: "Calle Prueba Fiscal 1",
+      city: "Madrid",
+      postal_code: "28001",
+      country_code: "ES",
+    },
+    notes: client.notes || `${tag} datos fiscales de certificación`,
+  });
+  expect(String(updatedClient.data?.tax_id || "")).toBe("E2E12345678");
+  expect(String(updatedClient.data?.billing_address?.address || "")).not.toBe("");
+  await drain(page, "actualización fiscal de cliente");
 
   const signed = await api(page, `/api/routsify/cases/${caseId}/contracts`, "POST", {
     id: contractId,
@@ -112,5 +134,5 @@ test("sign contract then certify payment proforma and final invoice", async ({ p
   const invoiceBatch = await drain(page, "factura final Holded");
   expect(Number(invoiceBatch.processed || 0)).toBeGreaterThan(0);
 
-  console.log("HOLDED_FINAL_CERTIFIED", JSON.stringify({ marker, caseId, caseCode, proposalId, contractId, purchaseId, reference, fiscalBatch, invoiceBatch }));
+  console.log("HOLDED_FINAL_CERTIFIED", JSON.stringify({ marker, caseId, clientId, caseCode, proposalId, contractId, purchaseId, reference, fiscalBatch, invoiceBatch }));
 });
