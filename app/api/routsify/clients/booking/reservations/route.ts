@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonAccessDenied, requireInternalAccess } from "@/lib/api-security";
-import { bookingApiErrorResponse, createRemoteBooking } from "@/lib/routsify-booking-api-server";
+import { BookingCreationError, createRemoteBookingWithFormStatus } from "@/lib/routsify-booking-create-server";
 import { loadBookingClient, persistRemoteBooking } from "@/lib/routsify-booking-local-server";
+import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { loadThirdPartyIntegrationConfig } from "@/lib/third-party-integration-config-server";
 
 function text(value: unknown) {
@@ -25,13 +26,16 @@ export async function POST(request: NextRequest) {
   if (startsAt.getTime() < Date.now() - 5 * 60 * 1000) return NextResponse.json({ ok: false, error: "booking_start_must_be_future" }, { status: 400 });
 
   try {
-    const [client, configuration] = await Promise.all([
+    const db = getSupabaseAdminClient();
+    const [client, configuration, formLead] = await Promise.all([
       loadBookingClient(access.organizationId, clientId),
       loadThirdPartyIntegrationConfig(access.organizationId),
+      db.from("leads").select("id").eq("organization_id", access.organizationId).eq("client_id", clientId).ilike("source", "fillout").limit(1).maybeSingle(),
     ]);
+    const initialFormCompleted = Boolean(formLead.data?.id);
     const durationMinutes = Math.min(240, Math.max(5, duration || configuration.booking.defaultDurationMinutes));
     const endsAt = new Date(startsAt.getTime() + durationMinutes * 60 * 1000).toISOString();
-    const remote = await createRemoteBooking({
+    const remote = await createRemoteBookingWithFormStatus({
       organizationId: access.organizationId,
       clientId,
       name: client.displayName,
@@ -42,6 +46,7 @@ export async function POST(request: NextRequest) {
       timezone,
       notes,
       privacyAccepted,
+      initialFormCompleted,
     });
     const privacyAcceptedAt = new Date().toISOString();
     const local = await persistRemoteBooking({
@@ -57,11 +62,15 @@ export async function POST(request: NextRequest) {
         privacy_accepted: true,
         privacy_accepted_at: privacyAcceptedAt,
         privacy_acceptance_source: "routsify_software_admin",
+        initial_form_completed: initialFormCompleted,
+        initial_form_status_source: initialFormCompleted ? "fillout_lead" : "no_fillout_lead",
       },
     });
-    return NextResponse.json({ ok: true, data: { booking: local, remote } }, { status: 201 });
+    return NextResponse.json({ ok: true, data: { booking: local, remote, initialFormCompleted } }, { status: 201 });
   } catch (error) {
-    const failure = bookingApiErrorResponse(error);
-    return NextResponse.json({ ok: false, error: failure.error, provider: failure.payload }, { status: failure.status });
+    if (error instanceof BookingCreationError) {
+      return NextResponse.json({ ok: false, error: error.message, provider: error.payload }, { status: error.status });
+    }
+    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "booking_api_error" }, { status: 500 });
   }
 }
