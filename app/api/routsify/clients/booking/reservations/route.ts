@@ -17,7 +17,9 @@ export async function POST(request: NextRequest) {
   const timezone = text(body?.timezone) || undefined;
   const notes = text(body?.notes) || null;
   const duration = Number(body?.durationMinutes || 0);
+  const privacyAccepted = body?.privacyAccepted === true;
   if (!clientId || !startsAtRaw) return NextResponse.json({ ok: false, error: "client_id_and_start_required" }, { status: 400 });
+  if (!privacyAccepted) return NextResponse.json({ ok: false, error: "booking_privacy_consent_required" }, { status: 400 });
   const startsAt = new Date(startsAtRaw);
   if (Number.isNaN(startsAt.getTime())) return NextResponse.json({ ok: false, error: "invalid_booking_start" }, { status: 400 });
   if (startsAt.getTime() < Date.now() - 5 * 60 * 1000) return NextResponse.json({ ok: false, error: "booking_start_must_be_future" }, { status: 400 });
@@ -39,14 +41,23 @@ export async function POST(request: NextRequest) {
       endsAt,
       timezone,
       notes,
+      privacyAccepted,
     });
+    const privacyAcceptedAt = new Date().toISOString();
     const local = await persistRemoteBooking({
       organizationId: access.organizationId,
       clientId,
       actorId: access.actorId,
       remote,
       eventType: "booking.created",
-      requestedPayload: { timezone: timezone || configuration.booking.defaultTimezone, duration_minutes: durationMinutes, notes },
+      requestedPayload: {
+        timezone: timezone || configuration.booking.defaultTimezone,
+        duration_minutes: durationMinutes,
+        notes,
+        privacy_accepted: true,
+        privacy_accepted_at: privacyAcceptedAt,
+        privacy_acceptance_source: "routsify_software_admin",
+      },
     });
     return NextResponse.json({ ok: true, data: { booking: local, remote } }, { status: 201 });
   } catch (error) {
