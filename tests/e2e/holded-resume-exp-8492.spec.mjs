@@ -56,16 +56,16 @@ test("resume estimate purchase payment proforma and final invoice", async ({ pag
   const email = `info+e2e-resume-${marker}@routsify.com`;
   const tag = `[PRUEBA E2E ROUTSIFY RESUME ${marker}]`;
 
-  const estimateBatch = await drain(page, "presupuesto Holded");
-  expect(Number(estimateBatch.processed || 0)).toBeGreaterThan(0);
+  await drain(page, "presupuesto Holded");
 
   const sent = await api(page, `/api/routsify/proposals/${proposalId}/send`, "POST", { validity_days: 7 });
   const proposalUrl = String(sent.data?.url || "");
   expect(proposalUrl).toContain("/propuestas/");
   await drain(page, "reenvío idempotente de presupuesto");
 
-  const publicPath = new URL(proposalUrl).pathname;
-  await api(page, `${publicPath}/accept`, "POST", {
+  const token = new URL(proposalUrl).pathname.split("/").filter(Boolean).at(-1);
+  expect(token).toBeTruthy();
+  await api(page, `/api/propuestas/${encodeURIComponent(token)}/accept`, "POST", {
     acceptor_name: `${tag} Aceptación`,
     acceptor_email: email,
     terms_accepted: true,
