@@ -75,15 +75,47 @@ create index if not exists supplier_incidents_supplier_idx on public.supplier_in
 alter table public.supplier_services enable row level security;
 alter table public.supplier_incidents enable row level security;
 
-drop policy if exists supplier_services_select on public.supplier_services;
-create policy supplier_services_select on public.supplier_services for select using (public.has_org_access(organization_id));
-drop policy if exists supplier_services_write on public.supplier_services;
-create policy supplier_services_write on public.supplier_services for all using (public.has_org_access(organization_id) and public.has_role(array['admin','direction','operations','billing'])) with check (public.has_org_access(organization_id));
+drop policy if exists supplier_services_select_scoped on public.supplier_services;
+create policy supplier_services_select_scoped on public.supplier_services for select using (
+  organization_id = (select public.current_org_id())
+  and (select public.current_app_role()) = any (array['admin','direction','sales','operations','billing','viewer']::public.app_role[])
+);
+drop policy if exists supplier_services_insert_scoped on public.supplier_services;
+create policy supplier_services_insert_scoped on public.supplier_services for insert with check (
+  organization_id = (select public.current_org_id())
+  and (select public.current_app_role()) = any (array['admin','direction','operations','billing']::public.app_role[])
+);
+drop policy if exists supplier_services_update_scoped on public.supplier_services;
+create policy supplier_services_update_scoped on public.supplier_services for update using (
+  organization_id = (select public.current_org_id())
+  and (select public.current_app_role()) = any (array['admin','direction','operations','billing']::public.app_role[])
+) with check (organization_id = (select public.current_org_id()));
+drop policy if exists supplier_services_delete_scoped on public.supplier_services;
+create policy supplier_services_delete_scoped on public.supplier_services for delete using (
+  organization_id = (select public.current_org_id())
+  and (select public.current_app_role()) = any (array['admin','direction']::public.app_role[])
+);
 
-drop policy if exists supplier_incidents_select on public.supplier_incidents;
-create policy supplier_incidents_select on public.supplier_incidents for select using (public.has_org_access(organization_id));
-drop policy if exists supplier_incidents_write on public.supplier_incidents;
-create policy supplier_incidents_write on public.supplier_incidents for all using (public.has_org_access(organization_id) and public.has_role(array['admin','direction','operations','billing'])) with check (public.has_org_access(organization_id));
+drop policy if exists supplier_incidents_select_scoped on public.supplier_incidents;
+create policy supplier_incidents_select_scoped on public.supplier_incidents for select using (
+  organization_id = (select public.current_org_id())
+  and (select public.current_app_role()) = any (array['admin','direction','sales','operations','billing','viewer']::public.app_role[])
+);
+drop policy if exists supplier_incidents_insert_scoped on public.supplier_incidents;
+create policy supplier_incidents_insert_scoped on public.supplier_incidents for insert with check (
+  organization_id = (select public.current_org_id())
+  and (select public.current_app_role()) = any (array['admin','direction','operations','billing']::public.app_role[])
+);
+drop policy if exists supplier_incidents_update_scoped on public.supplier_incidents;
+create policy supplier_incidents_update_scoped on public.supplier_incidents for update using (
+  organization_id = (select public.current_org_id())
+  and (select public.current_app_role()) = any (array['admin','direction','operations','billing']::public.app_role[])
+) with check (organization_id = (select public.current_org_id()));
+drop policy if exists supplier_incidents_delete_scoped on public.supplier_incidents;
+create policy supplier_incidents_delete_scoped on public.supplier_incidents for delete using (
+  organization_id = (select public.current_org_id())
+  and (select public.current_app_role()) = any (array['admin','direction']::public.app_role[])
+);
 
 drop trigger if exists supplier_services_audit on public.supplier_services;
 create trigger supplier_services_audit after insert or update or delete on public.supplier_services for each row execute function public.audit_row_change();
