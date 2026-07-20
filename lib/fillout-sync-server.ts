@@ -204,7 +204,7 @@ export async function syncFilloutSubmissionsV2(organizationId: string, options: 
   let processingRounds = 0;
   let remaining = await pendingFilloutCount(organizationId);
   while (remaining > 0 && processingRounds < MAX_PROCESSING_ROUNDS) {
-    await processOutboxBatch(Math.min(100, remaining));
+    await processOutboxBatch(Math.min(100, remaining), organizationId);
     processingRounds += 1;
     remaining = await pendingFilloutCount(organizationId);
   }

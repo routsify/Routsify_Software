@@ -1,9 +1,10 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { handleHoldedOutbox, syncHoldedPurchaseCandidates, type WorkerOutcome, type WorkerRow } from "@/lib/holded-outbox-handlers";
+import { recordIntegrationRun } from "@/lib/integration-health-server";
 import { getSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase-admin";
 
 export { syncHoldedPurchaseCandidates };
-export type OutboxWorkerResult = { ok: true; mode: "supabase"; processed: number; failed: number; manualReview: number; runId?: string; details: unknown[] } | { ok: false; mode: "supabase"; error: string };
+export type OutboxWorkerResult = { ok: true; mode: "supabase"; processed: number; failed: number; manualReview: number; runId?: string; runIds?: string[]; details: unknown[] } | { ok: false; mode: "supabase"; error: string };
 
 const text = (value: unknown) => String(value || "").trim();
 const emailOf = (payload: Record<string, unknown>) => text(payload.email || payload.email_address || payload.customer_email || payload.invitee_email).toLowerCase();
@@ -276,30 +277,57 @@ async function dispatch(row: WorkerRow) {
   return { status: "manual_review", message: "Evento sin automatización aprobada." } as WorkerOutcome;
 }
 
-export async function processOutboxBatch(limit = 20): Promise<OutboxWorkerResult> {
+export async function processOutboxBatch(limit = 20, organizationId?: string): Promise<OutboxWorkerResult> {
   if (!hasSupabaseAdminEnv()) return { ok: false, mode: "supabase", error: "supabase_admin_not_configured" };
   const db = getSupabaseAdminClient();
-  const { data: run, error: runError } = await db.from("integration_runs").insert({ integration: "outbox", status: "processing", started_at: new Date().toISOString(), metadata: { limit } }).select("id").single();
-  if (runError) return { ok: false, mode: "supabase", error: runError.message };
-  const { data: rows, error } = await db.rpc("claim_integration_outbox", { worker_name: `next:${run.id}`, batch_size: Math.max(1, Math.min(limit, 100)) });
+  const startedAt = new Date().toISOString();
+  const workerName = `next:${randomUUID()}`;
+  const batchSize = Math.max(1, Math.min(limit, 100));
+  const claim = organizationId
+    ? db.rpc("claim_integration_outbox_for_org", { worker_name: workerName, batch_size: batchSize, target_org: organizationId })
+    : db.rpc("claim_integration_outbox", { worker_name: workerName, batch_size: batchSize });
+  const { data: rows, error } = await claim;
   if (error) return { ok: false, mode: "supabase", error: error.message };
+
+  type OrganizationStats = { processed: number; failed: number; manualReview: number };
+  const statsByOrganization = new Map<string, OrganizationStats>();
+  for (const row of (rows || []) as WorkerRow[]) statsByOrganization.set(row.organization_id, { processed: 0, failed: 0, manualReview: 0 });
 
   let processed = 0; let failed = 0; let manualReview = 0; const details: unknown[] = [];
   for (const row of (rows || []) as WorkerRow[]) {
+    const organizationStats = statsByOrganization.get(row.organization_id)!;
     try {
       const outcome = await dispatch(row); const now = new Date().toISOString();
-      await db.from("integration_outbox").update({ status: outcome.status, sync_status: outcome.status === "done" ? "synced" : "sync_error", processed_at: outcome.status === "done" ? now : null, last_synced_at: outcome.status === "done" ? now : null, locked_at: null, locked_by: null, last_error: outcome.status === "done" ? null : outcome.message, next_action: outcome.message, next_attempt_at: null }).eq("id", row.id);
-      if (outcome.status === "done") processed += 1; else manualReview += 1;
+      const { error: updateError } = await db.from("integration_outbox").update({ status: outcome.status, sync_status: outcome.status === "done" ? "synced" : "sync_error", processed_at: outcome.status === "done" ? now : null, last_synced_at: outcome.status === "done" ? now : null, locked_at: null, locked_by: null, last_error: outcome.status === "done" ? null : outcome.message, next_action: outcome.message, next_attempt_at: null }).eq("id", row.id).eq("organization_id", row.organization_id);
+      if (updateError) throw new Error(updateError.message);
+      if (outcome.status === "done") { processed += 1; organizationStats.processed += 1; }
+      else { manualReview += 1; organizationStats.manualReview += 1; }
       details.push({ id: row.id, status: outcome.status, message: outcome.message, ...outcome.metadata });
     } catch (caught) {
-      failed += 1;
       const message = caught instanceof Error ? caught.message : "worker_error";
       const exhausted = (row.attempts || 0) >= (row.max_attempts || 3);
       const delay = Math.min(60, 2 ** Math.max(1, row.attempts || 1));
-      await db.from("integration_outbox").update({ status: exhausted ? "manual_review" : "failed", sync_status: "sync_error", locked_at: null, locked_by: null, last_error: message, next_action: exhausted ? "Revisar manualmente." : "Reintento automático con backoff.", next_attempt_at: exhausted ? null : new Date(Date.now() + delay * 60000).toISOString() }).eq("id", row.id);
+      const finalStatus = exhausted ? "manual_review" : "failed";
+      await db.from("integration_outbox").update({ status: finalStatus, sync_status: "sync_error", locked_at: null, locked_by: null, last_error: message, next_action: exhausted ? "Revisar manualmente." : "Reintento automático con backoff.", next_attempt_at: exhausted ? null : new Date(Date.now() + delay * 60000).toISOString() }).eq("id", row.id).eq("organization_id", row.organization_id);
+      if (exhausted) { manualReview += 1; organizationStats.manualReview += 1; }
+      else { failed += 1; organizationStats.failed += 1; }
       details.push({ id: row.id, status: exhausted ? "manual_review" : "failed", error: message });
     }
   }
-  await db.from("integration_runs").update({ status: failed ? "failed" : "done", finished_at: new Date().toISOString(), attempts: 1, metadata: { processed, failed, manualReview, details } }).eq("id", run.id);
-  return { ok: true, mode: "supabase", processed, failed, manualReview, runId: run.id, details };
+
+  const finishedAt = new Date().toISOString();
+  const runResults = await Promise.allSettled([...statsByOrganization.entries()].map(([targetOrganizationId, stats]) => recordIntegrationRun({
+    organizationId: targetOrganizationId,
+    integration: "outbox",
+    kind: "worker",
+    status: stats.failed || stats.manualReview ? "failed" : "done",
+    startedAt,
+    finishedAt,
+    triggerSource: organizationId ? "organization_request" : "global_worker",
+    summary: `${stats.processed} procesados, ${stats.failed} fallidos y ${stats.manualReview} en revisión manual.`,
+    lastError: stats.failed || stats.manualReview ? "El lote conserva eventos pendientes de resolución." : null,
+    metadata: { limit: batchSize, processed: stats.processed, failed: stats.failed, manual_review: stats.manualReview },
+  })));
+  const runIds = runResults.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
+  return { ok: true, mode: "supabase", processed, failed, manualReview, runId: runIds[0], runIds, details };
 }

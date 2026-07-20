@@ -28,6 +28,6 @@ export async function POST(request: NextRequest) {
   if (!payload) return NextResponse.json({ ok: false, error: "invalid_payload" }, { status: 400 });
   const result = await enqueueOutboxEvent({ organizationId, channel: "booking", eventType: "booking.requested", payload: { ...payload, verificationMode: verification.mode }, risk: "medium", businessRule: "Booking API entra como solicitud hasta validar encaje comercial y disponibilidad.", nextAction: "Revisar disponibilidad, presupuesto y contacto antes de convertir.", idempotencyKey: providerIdempotencyKey({ channel: "booking", eventType: "booking.requested", payload, fallbackRawBody: rawBody, eventId: verification.eventId }) });
   if (!result.ok) return NextResponse.json(result, { status: 400 });
-  const processing = await processOutboxBatch(25);
+  const processing = await processOutboxBatch(25, organizationId);
   return NextResponse.json({ ...result, processing }, { status: 200 });
 }

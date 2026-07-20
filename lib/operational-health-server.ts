@@ -16,7 +16,7 @@ export async function loadOperationalHealth(organizationId: string) {
     db.from("documents").select("case_id,status,required,purged_at").eq("organization_id", organizationId).is("purged_at", null),
     db.from("tasks").select("id,case_id,client_id,title,status,priority,due_at").eq("organization_id", organizationId).in("status", ["pending", "in_progress"]),
     db.from("integration_outbox").select("id,channel,event_type,status,last_error,created_at").eq("organization_id", organizationId).in("status", ["pending", "retry", "failed", "manual_review"]).limit(100),
-    db.from("integration_runs").select("id,integration,status,started_at,finished_at").order("started_at", { ascending: false }).limit(10),
+    db.from("integration_runs").select("id,integration,status,started_at,finished_at").eq("organization_id", organizationId).order("started_at", { ascending: false }).limit(10),
   ]);
   if (error) throw new Error(error.message);
 

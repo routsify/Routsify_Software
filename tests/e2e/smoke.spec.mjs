@@ -106,4 +106,23 @@ test.describe("authenticated critical-path smoke", () => {
     await expect(page.getByRole("heading", { name: "Plantilla CSV compatible con Excel", exact: true })).toBeVisible();
     await expect(page.getByLabel("Archivo CSV")).toBeVisible();
   });
+
+  test("integration health center reports operational state", async ({ page }) => {
+    await signIn(page);
+    await page.goto("/ajustes");
+
+    const [healthResponse] = await Promise.all([
+      page.waitForResponse((response) => response.url().includes("/api/routsify/settings/integrations/health") && response.request().method() === "GET"),
+      page.getByRole("button", { name: "Integraciones", exact: true }).click(),
+    ]);
+    expect(healthResponse.ok()).toBeTruthy();
+    const body = await healthResponse.json();
+    expect(body.ok).toBe(true);
+    expect(body.data.integrations).toHaveLength(6);
+    expect(body.data.integrations.every((integration) => integration.id && integration.state)).toBe(true);
+
+    await expect(page.getByRole("heading", { name: "Herramientas conectadas", exact: true })).toBeVisible();
+    await expect(page.getByText("Salud operativa", { exact: true })).toHaveCount(6);
+    await expect(page.getByText("Proceso diario", { exact: true })).toBeVisible();
+  });
 });

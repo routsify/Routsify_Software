@@ -45,6 +45,7 @@ function requiredPermission(request: NextRequest): AppPermission {
   const method = request.method.toUpperCase();
   const isRead = method === "GET" || method === "HEAD";
 
+  if (path === "/api/routsify/settings/integrations/health" && isRead) return "settings.view";
   if (path.startsWith("/api/routsify/settings/secrets") || path.startsWith("/api/routsify/settings/integrations")) return "settings.secrets.manage";
   if (path.startsWith("/api/routsify/settings")) return isRead ? "settings.view" : "settings.manage";
   if (path.startsWith("/api/routsify/system") || path.startsWith("/api/routsify/outbox")) return "system.manage";
