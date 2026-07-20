@@ -67,7 +67,7 @@ export type CaseDirectoryPage = {
 
 type Row = Record<string, unknown>;
 const PAGE_SIZES = new Set([25, 50, 100, 150, 200]);
-const CLOSED_STATUSES = new Set(["closed", "cancelled"]);
+const CLOSED_STATUSES = new Set(["closed"]);
 const APPROVED_PURCHASE_STATUSES = new Set(["approved", "not_required", "cancelled"]);
 const PAID_STATUSES = new Set(["confirmed", "paid", "received"]);
 const VALID_DOCUMENT_STATUSES = new Set(["uploaded", "verified", "approved", "valid"]);
@@ -158,8 +158,8 @@ export async function listCaseDirectoryPage(
   const health = normalizeHealth(options.health);
 
   let baseQuery = db.from("cases").select("id,client_id,case_code,title,status,destination,trip_start,trip_end,next_action,next_action_at,blocker,accepted_value,currency,priority,updated_at,clients(display_name,email,phone)").eq("organization_id", organizationId);
-  if (status === "active") baseQuery = baseQuery.not("status", "in", '("closed","cancelled")');
-  else if (status === "closed") baseQuery = baseQuery.in("status", ["closed", "cancelled"]);
+  if (status === "active") baseQuery = baseQuery.neq("status", "closed");
+  else if (status === "closed") baseQuery = baseQuery.eq("status", "closed");
   else if (status !== "all") baseQuery = baseQuery.eq("status", status);
   if (query) {
     const like = `%${query}%`;
