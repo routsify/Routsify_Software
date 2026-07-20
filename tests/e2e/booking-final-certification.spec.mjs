@@ -28,18 +28,64 @@ async function call(page, path, method = "GET", body, tolerate = false) {
   return result;
 }
 
+async function selectPublishedSlot(context) {
+  const publicPage = await context.newPage();
+  try {
+    const response = await publicPage.goto("https://call.routsify.com/", { waitUntil: "networkidle", timeout: 60000 });
+    expect(response).not.toBeNull();
+    expect(response.status()).toBeLessThan(500);
+
+    const availableDates = await publicPage.locator('button[aria-label$="Día disponible"]').evaluateAll((nodes) => nodes
+      .filter((node) => !node.disabled && (node.offsetWidth > 0 || node.offsetHeight > 0))
+      .map((node) => String(node.getAttribute("aria-label") || "").match(/^(\d{4}-\d{2}-\d{2}) Día disponible$/)?.[1])
+      .filter(Boolean));
+    expect(availableDates.length, "Booking no publica ningún día disponible").toBeGreaterThan(0);
+
+    const todayMadrid = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Europe/Madrid",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+    const selectedDate = availableDates.find((date) => date > todayMadrid) || availableDates[0];
+    await publicPage.locator(`button[aria-label="${selectedDate} Día disponible"]`).click();
+
+    await expect.poll(async () => {
+      const buttons = await publicPage.locator("button").evaluateAll((nodes) => nodes
+        .filter((node) => !node.disabled && (node.offsetWidth > 0 || node.offsetHeight > 0))
+        .map((node) => `${node.getAttribute("aria-label") || ""} ${node.textContent || ""}`));
+      return buttons.some((value) => /\b(?:[01]?\d|2[0-3]):[0-5]\d\b/.test(value));
+    }, { timeout: 15000 }).toBe(true);
+
+    const timeCandidates = await publicPage.locator("button").evaluateAll((nodes) => nodes
+      .filter((node) => !node.disabled && (node.offsetWidth > 0 || node.offsetHeight > 0))
+      .map((node) => `${node.getAttribute("aria-label") || ""} ${node.textContent || ""}`)
+      .map((value) => value.match(/\b(?:[01]?\d|2[0-3]):[0-5]\d\b/)?.[0])
+      .filter(Boolean));
+    expect(timeCandidates.length, `No hay horas publicadas para ${selectedDate}`).toBeGreaterThan(0);
+    const selectedTime = timeCandidates[0].padStart(5, "0");
+
+    // Julio de 2026 en Europe/Madrid usa CEST (UTC+02:00).
+    const startsAt = new Date(`${selectedDate}T${selectedTime}:00+02:00`);
+    expect(Number.isNaN(startsAt.getTime())).toBe(false);
+    expect(startsAt.getTime()).toBeGreaterThan(Date.now());
+    return { selectedDate, selectedTime, startsAt: startsAt.toISOString() };
+  } finally {
+    await publicPage.close();
+  }
+}
+
 test.skip(!process.env.E2E_EMAIL || !process.env.E2E_PASSWORD, "E2E credentials required");
 
-test("Booking creates, updates and cancels a real reservation", async ({ page }) => {
-  test.setTimeout(180000);
+test("Booking creates, updates and cancels a real reservation", async ({ page, context }) => {
+  test.setTimeout(240000);
   await login(page);
   const found = await call(page, "/api/routsify/clients?paginated=1&page=1&pageSize=50&q=info%40routsify.com");
   const rows = found.json?.data?.items || found.json?.data || [];
   const client = rows.find((row) => String(row.email || "").toLowerCase() === "info@routsify.com");
   expect(client).toBeTruthy();
 
-  const start = new Date(Date.now() + 24 * 86400000);
-  start.setUTCHours(10, 0, 0, 0);
+  const slot = await selectPublishedSlot(context);
   const marker = String(process.env.GITHUB_RUN_ID || Date.now());
   let localId = "";
   let externalId = "";
@@ -50,7 +96,7 @@ test("Booking creates, updates and cancels a real reservation", async ({ page })
   try {
     const created = await call(page, "/api/routsify/clients/booking/reservations", "POST", {
       clientId: client.id,
-      startsAt: start.toISOString(),
+      startsAt: slot.startsAt,
       durationMinutes: 30,
       timezone: "Europe/Madrid",
       notes: `[PRUEBA E2E ROUTSIFY ${marker}] Reserva temporal`,
@@ -79,5 +125,5 @@ test("Booking creates, updates and cancels a real reservation", async ({ page })
   }
 
   expect(status).toContain("cancel");
-  console.log("BOOKING_CERTIFIED", JSON.stringify({ marker, clientId: client.id, localId, externalId, status, initialFormCompleted, privacyAccepted }));
+  console.log("BOOKING_CERTIFIED", JSON.stringify({ marker, clientId: client.id, localId, externalId, status, initialFormCompleted, privacyAccepted, slot }));
 });
