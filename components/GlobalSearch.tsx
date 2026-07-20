@@ -20,7 +20,7 @@ export function GlobalSearch() {
         aria-label="Buscar"
         value={query}
         onChange={(event) => setQuery(event.target.value)}
-        placeholder="Buscar clientes, expedientes o compras..."
+        placeholder="Buscar clientes, proveedores, expedientes o compras..."
       />
       <button type="submit">Buscar</button>
     </form>
