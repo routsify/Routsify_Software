@@ -108,7 +108,7 @@ export async function createRemoteBookingWithFormStatus(input: {
         consent_source: "routsify_software_admin",
         initial_form: formAnswer,
         initial_form_answer: formAnswer,
-        initial_form_completed: input.initialFormCompleted,
+        initial_form_completed: formAnswer,
         has_completed_initial_form: input.initialFormCompleted,
         form_completed: input.initialFormCompleted,
       }),
