@@ -28,20 +28,27 @@ function failure(result: { error?: string; detail?: string | null; status?: numb
   return new Error(result.detail || result.error || `holded_http_${result.status || 500}`);
 }
 
-async function ensureClientContact(organizationId: string, clientId: string) {
+async function ensureClientContact(organizationId: string, clientId: string, updateExisting = false) {
   const db = getSupabaseAdminClient();
   const { data: client, error } = await db.from("clients")
     .select("id,client_type,display_name,email,phone,tax_id,billing_address,country,holded_contact_id")
     .eq("organization_id", organizationId).eq("id", clientId).maybeSingle();
   if (error || !client) throw new Error(error?.message || "client_not_found");
-  if (client.holded_contact_id) return String(client.holded_contact_id);
+  const existingId = text(client.holded_contact_id);
+  if (existingId && !updateExisting) return existingId;
   const { endpoints } = await holdedConfiguration(organizationId);
-  const result = await holdedRequest({ organizationId, method: "POST", path: endpoints.contacts, body: buildHoldedContactPayload({
+  const body = buildHoldedContactPayload({
     name: String(client.display_name), email: client.email, phone: client.phone, taxId: client.tax_id,
     billingAddress: client.billing_address, countryCode: client.country, type: "client", isPerson: client.client_type !== "company",
-  }) });
+  });
+  const result = await holdedRequest({
+    organizationId,
+    method: existingId ? "PUT" : "POST",
+    path: existingId ? `${endpoints.contacts}/${encodeURIComponent(existingId)}` : endpoints.contacts,
+    body,
+  });
   if (!result.ok) throw failure(result);
-  const remoteId = idOf(result.payload);
+  const remoteId = existingId || idOf(result.payload);
   if (!remoteId) throw new Error("holded_contact_id_missing");
   await db.from("clients").update({ holded_contact_id: remoteId, holded_sync_status: "synced", holded_sync_error: null, holded_last_synced_at: new Date().toISOString() })
     .eq("id", client.id).eq("organization_id", organizationId);
@@ -167,7 +174,7 @@ async function payment(row: WorkerRow): Promise<WorkerOutcome> {
 }
 
 export async function handleHoldedOutbox(row: WorkerRow): Promise<WorkerOutcome> {
-  if (row.event_type === "contact.sync") return { status: "done", message: "Contacto sincronizado con Holded v2.", metadata: { holded_contact_id: await ensureClientContact(row.organization_id, text(row.payload.client_id)) } };
+  if (row.event_type === "contact.sync") return { status: "done", message: "Contacto creado o actualizado en Holded v2.", metadata: { holded_contact_id: await ensureClientContact(row.organization_id, text(row.payload.client_id), true) } };
   if (["estimate.sync", "estimate.create"].includes(row.event_type)) return estimate(row);
   if (row.event_type === "proforma.create") return billing(row, "proformas");
   if (row.event_type === "invoice.final.create") return billing(row, "invoices");
