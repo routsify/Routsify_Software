@@ -7,6 +7,7 @@ import { BookingApiPanel } from "./BookingApiPanel";
 import { Client360Workspace } from "./Client360Workspace";
 import { ClientProfileSection } from "./ClientProfileSection";
 import "./client-360.css";
+import "./client-profile.css";
 
 type Row = Record<string, unknown>;
 
