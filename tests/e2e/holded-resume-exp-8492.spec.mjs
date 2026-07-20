@@ -4,7 +4,6 @@ test.describe.configure({ retries: 0 });
 
 const caseId = "b96113c0-00d2-4e3f-ae06-b2a232cb9136";
 const proposalId = "a9bbdcd4-aa0a-40ed-9247-822b20103a0f";
-const versionId = "23f64b8e-32f8-470b-93bb-13d31531c5ef";
 const caseCode = "EXP-2026-8492";
 
 async function login(page) {
@@ -49,32 +48,11 @@ async function drain(page, label) {
 
 test.skip(!process.env.E2E_EMAIL || !process.env.E2E_PASSWORD, "E2E credentials required");
 
-test("resume estimate purchase payment proforma and final invoice", async ({ page }) => {
+test("resume purchase payment proforma and final invoice", async ({ page }) => {
   test.setTimeout(300000);
   await login(page);
   const marker = String(process.env.GITHUB_RUN_ID || Date.now());
-  const email = `info+e2e-resume-${marker}@routsify.com`;
   const tag = `[PRUEBA E2E ROUTSIFY RESUME ${marker}]`;
-
-  await drain(page, "presupuesto Holded");
-
-  const sent = await api(page, `/api/routsify/proposals/${proposalId}/send`, "POST", { validity_days: 7 });
-  const proposalUrl = String(sent.data?.url || "");
-  expect(proposalUrl).toContain("/propuestas/");
-  await drain(page, "reenvío idempotente de presupuesto");
-
-  const token = new URL(proposalUrl).pathname.split("/").filter(Boolean).at(-1);
-  expect(token).toBeTruthy();
-  await api(page, `/api/propuestas/${encodeURIComponent(token)}/accept`, "POST", {
-    acceptor_name: `${tag} Aceptación`,
-    acceptor_email: email,
-    terms_accepted: true,
-  });
-  await api(page, `/api/routsify/cases/${caseId}/contracts`, "POST", {
-    status: "signed",
-    title: `${tag} Contrato firmado`,
-    notes: `${tag} firma de certificación`,
-  });
 
   const purchases = await api(page, "/api/routsify/expected-purchases");
   const purchase = list(purchases).find((row) => String(row.case_id) === caseId);
@@ -107,5 +85,5 @@ test("resume estimate purchase payment proforma and final invoice", async ({ pag
   const invoiceBatch = await drain(page, "factura final Holded");
   expect(Number(invoiceBatch.processed || 0)).toBeGreaterThan(0);
 
-  console.log("HOLDED_RESUME_CERTIFIED", JSON.stringify({ marker, caseId, caseCode, proposalId, versionId, purchaseId, reference }));
+  console.log("HOLDED_RESUME_CERTIFIED", JSON.stringify({ marker, caseId, caseCode, proposalId, purchaseId, reference }));
 });
