@@ -1,35 +1,26 @@
+import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
 import { requireAppPermission } from "@/lib/app-auth";
-import { listOrganizationCases, listOrganizationClients } from "@/lib/organization-repositories";
+import { listCaseDirectoryPage } from "@/lib/case-directory-server";
 import { hasPermission } from "@/lib/rbac";
-import { CasesManager } from "./CasesManager";
-import { CasesReadOnlyTable } from "./CasesReadOnlyTable";
+import { CaseHealthDirectory } from "./CaseHealthDirectory";
 
-export default async function CasesPage({ searchParams }: { searchParams: Promise<{ clientId?: string; caseId?: string }> }) {
+export default async function CasesPage({ searchParams }: { searchParams: Promise<{ caseId?: string }> }) {
   const session = await requireAppPermission("cases.view");
   const canManage = hasPermission(session.role, "cases.manage");
-  const [{ clientId, caseId }, caseResult, clientResult] = await Promise.all([
+  const [{ caseId }, initialPage] = await Promise.all([
     searchParams,
-    listOrganizationCases(session.organizationId),
-    canManage ? listOrganizationClients(session.organizationId) : Promise.resolve({ ok: true as const, mode: "supabase" as const, data: [] }),
+    listCaseDirectoryPage(session.organizationId, { page: 1, pageSize: 50, status: "active", health: "all" }),
   ]);
-  const rawCases = caseResult.ok ? caseResult.data : [];
-  const cases = caseId
-    ? [...rawCases].sort((left, right) => Number(String((right as { id?: unknown }).id || "") === caseId) - Number(String((left as { id?: unknown }).id || "") === caseId))
-    : rawCases;
-  const clients = clientResult.ok ? clientResult.data : [];
 
-  return (
-    <AppShell>
-      <PageHeader
-        eyebrow="Expedientes"
-        title="Centro operativo de expedientes"
-        description={canManage ? "Gestiona cliente, destino, fechas, estado y próxima acción de cada viaje." : "Consulta el estado, fechas, valor y próxima acción de cada viaje."}
-      />
-      {canManage
-        ? <CasesManager initialCases={cases} initialClients={clients} initialClientId={clientId || ""} />
-        : <CasesReadOnlyTable initialCases={cases} />}
-    </AppShell>
-  );
+  return <AppShell>
+    <PageHeader
+      eyebrow="Expedientes"
+      title="Salud operativa de los viajes"
+      description="Prioriza cada expediente según contrato, cobros, compras, tareas, viajeros, documentos, fechas y margen real."
+      action={canManage ? <Link className="btn" href={caseId ? `/expedientes/gestionar?caseId=${encodeURIComponent(caseId)}` : "/expedientes/gestionar"}>Crear o editar expediente</Link> : undefined}
+    />
+    <CaseHealthDirectory initialPage={initialPage} initialCaseId={caseId || ""} />
+  </AppShell>;
 }
