@@ -1,0 +1,98 @@
+.supplier360 {
+  display: grid;
+  gap: 18px;
+}
+
+.supplier360-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 24px;
+}
+
+.supplier360-identity,
+.supplier360-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.supplier360-identity h2 {
+  margin: 4px 0 5px;
+}
+
+.supplier360-identity p {
+  margin: 0;
+}
+
+.supplier360-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.supplier360-card {
+  padding: 22px;
+  min-width: 0;
+}
+
+.supplier360-full {
+  grid-column: 1 / -1;
+}
+
+.supplier360-form {
+  margin: 0 0 18px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--soft);
+}
+
+.supplier360-list {
+  display: grid;
+  gap: 0;
+  margin-top: 12px;
+}
+
+.supplier360-list article {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.supplier360-list article:last-child {
+  border-bottom: 0;
+}
+
+.supplier360-list strong,
+.supplier360-list small {
+  display: block;
+}
+
+.supplier360-list small {
+  margin-top: 4px;
+  color: var(--muted);
+}
+
+@media (max-width: 1180px) {
+  .supplier360-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .supplier360-full {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 760px) {
+  .supplier360-hero,
+  .supplier360-list article {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
