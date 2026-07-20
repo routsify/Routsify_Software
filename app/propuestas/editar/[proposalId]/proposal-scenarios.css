@@ -1,0 +1,86 @@
+.proposal-scenarios {
+  margin-bottom: 18px;
+  padding: 22px;
+}
+
+.scenario-form {
+  margin: 14px 0 20px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--soft);
+}
+
+.scenario-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.scenario-card {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #fff;
+}
+
+.scenario-card.scenario-selected {
+  border: 2px solid var(--brand);
+  background: var(--soft);
+}
+
+.scenario-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.scenario-head h3 {
+  margin: 9px 0 0;
+}
+
+.scenario-card > p {
+  min-height: 44px;
+  margin: 0;
+}
+
+.scenario-card dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.scenario-card dl div {
+  padding: 10px;
+  border-radius: 10px;
+  background: var(--soft);
+}
+
+.scenario-card dt {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.scenario-card dd {
+  margin: 5px 0 0;
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.scenario-economical { border-top: 4px solid #56895a; }
+.scenario-recommended { border-top: 4px solid var(--brand); }
+.scenario-premium { border-top: 4px solid #ab7a21; }
+.scenario-custom { border-top: 4px solid #6f7f73; }
+
+@media (max-width: 1180px) {
+  .scenario-grid { grid-template-columns: 1fr; }
+  .scenario-card > p { min-height: auto; }
+}
