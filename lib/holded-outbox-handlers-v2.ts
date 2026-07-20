@@ -73,7 +73,7 @@ async function estimate(row: WorkerRow): Promise<WorkerOutcome> {
   if (!versionId) throw new Error("proposal_version_id_required");
   const db = getSupabaseAdminClient();
   const { data: version, error } = await db.from("proposal_versions")
-    .select("id,total_sale,expires_at,proposals(id,holded_estimate_id,case_id,cases(case_code,client_id,currency))")
+    .select("id,total_sale,expires_at,proposals!proposal_versions_proposal_id_fkey(id,holded_estimate_id,case_id,cases(case_code,client_id,currency))")
     .eq("organization_id", row.organization_id).eq("id", versionId).maybeSingle();
   if (error || !version) throw new Error(error?.message || "proposal_version_not_found");
   const proposal = one(version.proposals);
