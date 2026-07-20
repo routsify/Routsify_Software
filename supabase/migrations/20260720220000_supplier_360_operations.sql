@@ -116,8 +116,3 @@ create policy supplier_incidents_delete_scoped on public.supplier_incidents for 
   organization_id = (select public.current_org_id())
   and (select public.current_app_role()) = any (array['admin','direction']::public.app_role[])
 );
-
-drop trigger if exists supplier_services_audit on public.supplier_services;
-create trigger supplier_services_audit after insert or update or delete on public.supplier_services for each row execute function public.audit_row_change();
-drop trigger if exists supplier_incidents_audit on public.supplier_incidents;
-create trigger supplier_incidents_audit after insert or update or delete on public.supplier_incidents for each row execute function public.audit_row_change();
