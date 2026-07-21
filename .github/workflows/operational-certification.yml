@@ -2,6 +2,12 @@ name: Production Operational Certification
 
 on:
   deployment_status:
+  push:
+    branches:
+      - main
+    paths:
+      - "tests/e2e/operational-certification.spec.mjs"
+      - ".github/workflows/operational-certification.yml"
   workflow_dispatch:
     inputs:
       base_url:
@@ -15,7 +21,7 @@ permissions:
 
 jobs:
   certify:
-    if: github.event_name == 'workflow_dispatch' || (github.event.deployment_status.state == 'success' && (contains(github.event.deployment_status.environment_url, 'vercel.app') || contains(github.event.deployment_status.target_url, 'vercel.app')))
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push' || (github.event.deployment_status.state == 'success' && (contains(github.event.deployment_status.environment_url, 'vercel.app') || contains(github.event.deployment_status.target_url, 'vercel.app')))
     runs-on: ubuntu-latest
     timeout-minutes: 35
     env:
