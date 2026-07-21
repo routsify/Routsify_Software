@@ -6,6 +6,7 @@ export type BookingApiSlot = {
   endsAt: string | null;
   available: boolean;
   label: string;
+  durationMinutes: number;
   raw: Record<string, unknown>;
 };
 
@@ -144,11 +145,47 @@ function findArray(payload: unknown): unknown[] {
   return [];
 }
 
+function findNamedArray(payload: unknown, key: string, depth = 0): unknown[] {
+  if (depth > 4) return [];
+  const root = object(payload);
+  if (!root) return [];
+  if (Array.isArray(root[key])) return root[key] as unknown[];
+  for (const value of Object.values(root)) {
+    if (!object(value)) continue;
+    const found = findNamedArray(value, key, depth + 1);
+    if (found.length) return found;
+  }
+  return [];
+}
+
+function providerDurationMinutes(payload: unknown, fallback: number, depth = 0): number {
+  if (depth > 4) return fallback;
+  const root = object(payload);
+  if (!root) return fallback;
+  const duration = Number(root.duration_minutes || root.duration || 0);
+  if (Number.isFinite(duration) && duration >= 5 && duration <= 240) return duration;
+  for (const value of Object.values(root)) {
+    if (!object(value)) continue;
+    const nested = providerDurationMinutes(value, 0, depth + 1);
+    if (nested >= 5 && nested <= 240) return nested;
+  }
+  return fallback;
+}
+
 function isoOrNull(value: unknown) {
   const raw = text(value);
   if (!raw) return null;
   const date = new Date(raw);
-  return Number.isNaN(date.getTime()) ? raw : date.toISOString();
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function providerUtcIsoOrNull(value: unknown) {
+  const raw = text(value);
+  if (!raw) return null;
+  const normalized = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(?::\d{2})?$/.test(raw)
+    ? `${raw.replace(" ", "T")}Z`
+    : raw;
+  return isoOrNull(normalized);
 }
 
 function zonedParts(value: string, timezone: string) {
@@ -181,8 +218,8 @@ export function normalizeRemoteBooking(payload: unknown): NormalizedRemoteBookin
   const row = unwrapRecord(payload);
   return {
     externalBookingId: text(row.external_booking_id || row.booking_id || row.appointment_id || row.id || row.uuid),
-    startsAt: isoOrNull(row.starts_at || row.start_at || row.start || row.start_time || row.datetime || row.date),
-    endsAt: isoOrNull(row.ends_at || row.end_at || row.end || row.end_time),
+    startsAt: providerUtcIsoOrNull(row.start_utc) || isoOrNull(row.starts_at || row.start_at || row.start || row.start_time || row.datetime || row.date),
+    endsAt: providerUtcIsoOrNull(row.end_utc) || isoOrNull(row.ends_at || row.end_at || row.end || row.end_time),
     status: text(row.status || row.state) || "scheduled",
     bookingUrl: text(row.booking_url || row.manage_url || row.reschedule_url || row.url) || null,
     meetingUrl: text(row.meeting_url || row.video_url || row.join_url || row.location_url) || null,
@@ -230,14 +267,45 @@ export async function listRemoteBookingAvailability(input: { organizationId: str
       duration_minutes: duration,
     },
   });
-  const slots: BookingApiSlot[] = findArray(result.payload).map((value) => {
+  let slotValues = findNamedArray(result.payload, "slots");
+  const dateValues = findNamedArray(result.payload, "dates");
+  let providerDuration = providerDurationMinutes(result.payload, duration);
+
+  if (!slotValues.length && dateValues.length) {
+    const availableDates = dateValues.map((value) => object(value) || { value }).filter((row) => {
+      const date = text(row.date || row.value);
+      const available = row.available ?? row.is_available ?? true;
+      const slotsCount = Number(row.slots_count ?? 1);
+      return /^\d{4}-\d{2}-\d{2}$/.test(date)
+        && date >= fromParts.localDate
+        && date <= toParts.localDate
+        && available !== false
+        && (!Number.isFinite(slotsCount) || slotsCount > 0);
+    }).slice(0, 8);
+    const daily = await Promise.all(availableDates.map((row) => bookingApiRequest({
+      organizationId: input.organizationId,
+      path: configuration.booking.availabilityPath,
+      query: {
+        date: text(row.date || row.value),
+        timezone,
+        duration,
+        duration_minutes: duration,
+      },
+    })));
+    slotValues = daily.flatMap((item) => findNamedArray(item.payload, "slots"));
+    providerDuration = daily.reduce((current, item) => providerDurationMinutes(item.payload, current), providerDuration);
+  }
+
+  if (!slotValues.length && !dateValues.length) slotValues = findArray(result.payload);
+  const slots: BookingApiSlot[] = slotValues.map((value) => {
     const row = object(value) || { value };
-    const startsAt = isoOrNull(row.starts_at || row.start_at || row.start || row.datetime || row.time) || text(value);
-    const endsAt = isoOrNull(row.ends_at || row.end_at || row.end);
+    const startsAt = providerUtcIsoOrNull(row.start_utc) || isoOrNull(row.starts_at || row.start_at || row.start || row.datetime);
+    const endsAt = providerUtcIsoOrNull(row.end_utc) || isoOrNull(row.ends_at || row.end_at || row.end);
     const availabilityValue = row.available ?? row.is_available ?? row.enabled ?? true;
-    return { startsAt, endsAt, available: availabilityValue !== false && text(row.status).toLowerCase() !== "unavailable", label: text(row.label || row.title) || startsAt, raw: row };
-  }).filter((slot) => Boolean(slot.startsAt));
-  return { slots, raw: result.payload };
+    const slotDuration = providerDurationMinutes(row, providerDuration);
+    return startsAt ? { startsAt, endsAt, available: availabilityValue !== false && text(row.status).toLowerCase() !== "unavailable", label: text(row.label || row.title) || startsAt, durationMinutes: slotDuration, raw: row } : null;
+  }).filter((slot): slot is BookingApiSlot => Boolean(slot));
+  return { slots, raw: result.payload, durationMinutes: providerDuration };
 }
 
 export async function createRemoteBooking(input: {
@@ -329,7 +397,14 @@ export async function cancelRemoteBooking(input: { organizationId: string; exter
     return { ...normalized, externalBookingId: normalized.externalBookingId || input.externalBookingId, status: normalized.status || "cancelled" };
   } catch (error) {
     if (!(error instanceof BookingApiError) || ![404, 405].includes(error.status)) throw error;
-    return updateRemoteBooking({ organizationId: input.organizationId, externalBookingId: input.externalBookingId, status: "cancelled" });
+    try {
+      const result = await bookingApiRequest({ organizationId: input.organizationId, path: `${path.replace(/\/+$/, "")}/cancel`, method: "POST", body: { source: "routsify_software" } });
+      const normalized = normalizeRemoteBooking(result.payload);
+      return { ...normalized, externalBookingId: normalized.externalBookingId || input.externalBookingId, status: "cancelled" };
+    } catch (cancelError) {
+      if (!(cancelError instanceof BookingApiError) || ![404, 405].includes(cancelError.status)) throw cancelError;
+      return updateRemoteBooking({ organizationId: input.organizationId, externalBookingId: input.externalBookingId, status: "cancelled" });
+    }
   }
 }
 

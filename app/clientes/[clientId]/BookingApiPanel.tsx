@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 
 type Row = Record<string, unknown>;
-type Slot = { startsAt: string; endsAt: string | null; available: boolean; label: string };
+type Slot = { startsAt: string; endsAt: string | null; available: boolean; label: string; durationMinutes?: number };
 
 function text(value: unknown) {
   return String(value ?? "").trim();
@@ -50,7 +50,7 @@ export function BookingApiPanel({ client, initialBookings }: { client: Row; init
   const clientId = text(client.id);
   const [bookings, setBookings] = useState<Row[]>(() => normalizedBookings(initialBookings));
   const [startsAt, setStartsAt] = useState("");
-  const [durationMinutes, setDurationMinutes] = useState(30);
+  const [durationMinutes, setDurationMinutes] = useState(10);
   const [notes, setNotes] = useState("");
   const [privacyAccepted, setPrivacyAccepted] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -104,6 +104,8 @@ export function BookingApiPanel({ client, initialBookings }: { client: Row; init
       return;
     }
     const nextSlots = Array.isArray(result.data?.slots) ? result.data.slots as Slot[] : [];
+    const providerDuration = Number(result.data?.durationMinutes || 0);
+    if (providerDuration >= 5 && providerDuration <= 240) setDurationMinutes(providerDuration);
     setSlots(nextSlots.filter((slot) => slot.available).slice(0, 40));
     setMessage(nextSlots.length ? "Disponibilidad actualizada." : "La API no devolvió huecos en los próximos 14 días.");
   }
@@ -134,11 +136,16 @@ export function BookingApiPanel({ client, initialBookings }: { client: Row; init
     setEditingId(text(booking.id));
     setStartsAt(localInput(booking.starts_at));
     const payload = payloadOf(booking);
-    const storedDuration = Number(payload.duration_minutes || 30);
-    setDurationMinutes(Number.isFinite(storedDuration) ? storedDuration : 30);
+    const storedDuration = Number(payload.duration_minutes || 10);
+    setDurationMinutes(Number.isFinite(storedDuration) ? storedDuration : 10);
     setNotes(text(payload.notes));
     setMessage("Modifica la fecha o las notas y guarda los cambios.");
     window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function chooseSlot(slot: Slot) {
+    setStartsAt(localInput(slot.startsAt));
+    if (slot.durationMinutes && slot.durationMinutes >= 5 && slot.durationMinutes <= 240) setDurationMinutes(slot.durationMinutes);
   }
 
   async function cancelBooking(booking: Row) {
@@ -177,7 +184,7 @@ export function BookingApiPanel({ client, initialBookings }: { client: Row; init
         <div className="section-heading"><div><h3>{editingId ? "Reprogramar llamada" : "Reservar llamada"}</h3><p>La acción se guarda tanto en call.routsify.com como en el historial del cliente.</p></div></div>
         <div className="form">
           <label>Fecha y hora<input className="input" type="datetime-local" value={startsAt} onChange={(event) => setStartsAt(event.target.value)} /></label>
-          <label>Duración<select value={durationMinutes} onChange={(event) => setDurationMinutes(Number(event.target.value))}><option value={15}>15 minutos</option><option value={30}>30 minutos</option><option value={45}>45 minutos</option><option value={60}>60 minutos</option><option value={90}>90 minutos</option></select></label>
+          <label>Duración<select value={durationMinutes} onChange={(event) => setDurationMinutes(Number(event.target.value))}><option value={10}>10 minutos</option><option value={15}>15 minutos</option><option value={30}>30 minutos</option><option value={45}>45 minutos</option><option value={60}>60 minutos</option><option value={90}>90 minutos</option></select></label>
           <label>Notas internas<textarea rows={3} value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Objetivo de la llamada, idioma, contexto..." /></label>
           {!editingId ? <label className="checkbox-row"><input type="checkbox" checked={privacyAccepted} onChange={(event) => setPrivacyAccepted(event.target.checked)} />El cliente ha aceptado la política de privacidad para gestionar la reserva.</label> : null}
           <div className="form-actions">
@@ -189,7 +196,7 @@ export function BookingApiPanel({ client, initialBookings }: { client: Row; init
       </div>
     </div>
 
-    {slots.length ? <div className="card"><div className="section-heading"><div><h3>Huecos disponibles</h3><p>Selecciona uno para completar automáticamente la fecha y hora.</p></div><span className="badge">{slots.length}</span></div><div className="form-actions">{slots.map((slot) => <button className="btn secondary" type="button" key={`${slot.startsAt}-${slot.endsAt || ""}`} onClick={() => setStartsAt(localInput(slot.startsAt))}>{dateTime(slot.startsAt)}</button>)}</div></div> : null}
+    {slots.length ? <div className="card"><div className="section-heading"><div><h3>Huecos disponibles</h3><p>Selecciona uno para completar automáticamente la fecha y hora.</p></div><span className="badge">{slots.length}</span></div><div className="form-actions">{slots.map((slot) => <button className="btn secondary" type="button" key={`${slot.startsAt}-${slot.endsAt || ""}`} onClick={() => chooseSlot(slot)}>{dateTime(slot.startsAt)}</button>)}</div></div> : null}
 
     <div className="section-heading"><div><h3>Llamadas registradas</h3><p>Las reservas recibidas por webhook y las gestionadas por API aparecen en una única lista.</p></div><span className="badge">{bookings.length}</span></div>
     {bookings.length === 0 ? <div className="empty-state"><h3>Sin llamadas</h3><p>Envía el enlace al cliente o crea la primera reserva desde esta pantalla.</p></div> : <div className="client360-list">{bookings.map((booking) => {

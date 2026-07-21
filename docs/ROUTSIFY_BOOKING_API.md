@@ -44,7 +44,7 @@ En **Ajustes → Integraciones → Routsify Booking API**:
 - Ruta reservas: `/bookings`.
 - Ruta reserva individual: `/bookings/{id}`.
 - Zona horaria: `Europe/Madrid`.
-- Duración predeterminada: 30 minutos.
+- Duración predeterminada: 10 minutos (la API puede devolver otra y prevalece para cada hueco).
 
 Después, en la tarjeta **Routsify Booking · API Key**:
 

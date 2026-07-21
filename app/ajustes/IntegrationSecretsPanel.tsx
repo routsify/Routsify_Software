@@ -61,7 +61,7 @@ const emptyConfig: IntegrationConfig = {
     bookingsPath: "/bookings",
     bookingPathTemplate: "/bookings/{id}",
     defaultTimezone: "Europe/Madrid",
-    defaultDurationMinutes: 30,
+    defaultDurationMinutes: 10,
   },
 };
 
