@@ -4,6 +4,8 @@ import { bookingApiErrorResponse, cancelRemoteBooking, updateRemoteBooking } fro
 import { loadManagedBooking, persistRemoteBooking } from "@/lib/routsify-booking-local-server";
 import { loadThirdPartyIntegrationConfig } from "@/lib/third-party-integration-config-server";
 
+export const maxDuration = 90;
+
 function text(value: unknown) {
   return String(value ?? "").trim();
 }
