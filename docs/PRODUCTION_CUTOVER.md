@@ -10,6 +10,8 @@ La versión final debe funcionar sin datos demo, con Supabase Auth, base de dato
 - La rama `main` publica producción mediante la integración GitHub → Vercel.
 - Cada cambio debe superar CI, CodeQL, Knip, build y smoke E2E antes de considerarse operativo.
 - La certificación completa de venta solo se ejecuta de forma explícita con el marcador `[certify-production]` o mediante `workflow_dispatch`.
+- El workflow escucha únicamente `deployment_status` de Production para no duplicar pruebas por cada `push`.
+- Si Vercel devuelve `build-rate-limit`, espera a que expire su ventana móvil y realiza un solo nuevo disparo Git; no encadenes commits ni deploys manuales.
 
 ## Pasos obligatorios antes de publicar
 
