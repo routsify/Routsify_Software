@@ -81,8 +81,8 @@ export async function persistRemoteBooking(input: {
     external_booking_id: input.remote.externalBookingId,
     external_id: input.remote.externalBookingId,
     event_type: input.eventType,
-    starts_at: input.remote.startsAt || input.requestedStartsAt || existing?.starts_at || null,
-    ends_at: input.remote.endsAt || input.requestedEndsAt || existing?.ends_at || null,
+    starts_at: input.requestedStartsAt || input.remote.startsAt || existing?.starts_at || null,
+    ends_at: input.requestedEndsAt || input.remote.endsAt || existing?.ends_at || null,
     status: input.eventType === "booking.cancelled" ? "cancelled" : input.remote.status || "scheduled",
     source: "routsify_booking_api",
     event_timestamp: now,
@@ -102,9 +102,9 @@ export async function persistRemoteBooking(input: {
     const { data: task } = await db.from("tasks").select("id,status").eq("organization_id", input.organizationId).eq("idempotency_key", taskKey).maybeSingle();
     const taskPayload = { action_type: "booking_call", booking_id: result.data.id, external_booking_id: input.remote.externalBookingId, meeting_url: input.remote.meetingUrl };
     if (task?.id) {
-      await db.from("tasks").update({ client_id: input.clientId, title: "Preparar y realizar llamada comercial", due_at: input.remote.startsAt, payload: taskPayload, updated_at: now }).eq("organization_id", input.organizationId).eq("id", task.id);
+      await db.from("tasks").update({ client_id: input.clientId, title: "Preparar y realizar llamada comercial", due_at: row.starts_at, payload: taskPayload, updated_at: now }).eq("organization_id", input.organizationId).eq("id", task.id);
     } else {
-      await db.from("tasks").insert({ organization_id: input.organizationId, client_id: input.clientId, title: "Preparar y realizar llamada comercial", status: "pending", priority: "normal", due_at: input.remote.startsAt, idempotency_key: taskKey, payload: taskPayload });
+      await db.from("tasks").insert({ organization_id: input.organizationId, client_id: input.clientId, title: "Preparar y realizar llamada comercial", status: "pending", priority: "normal", due_at: row.starts_at, idempotency_key: taskKey, payload: taskPayload });
     }
   }
 
@@ -117,8 +117,8 @@ export async function persistRemoteBooking(input: {
     payload: {
       booking_id: result.data.id,
       external_booking_id: input.remote.externalBookingId,
-      starts_at: input.remote.startsAt,
-      ends_at: input.remote.endsAt,
+      starts_at: row.starts_at,
+      ends_at: row.ends_at,
       status: row.status,
       booking_url: input.remote.bookingUrl,
       meeting_url: input.remote.meetingUrl,
