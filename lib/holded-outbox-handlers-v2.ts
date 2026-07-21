@@ -174,7 +174,18 @@ async function payment(row: WorkerRow): Promise<WorkerOutcome> {
 }
 
 export async function handleHoldedOutbox(row: WorkerRow): Promise<WorkerOutcome> {
-  if (row.event_type === "contact.sync") return { status: "done", message: "Contacto creado o actualizado en Holded v2.", metadata: { holded_contact_id: await ensureClientContact(row.organization_id, text(row.payload.client_id), true) } };
+  if (row.event_type === "contact.sync") {
+    const clientId = text(row.payload.client_id);
+    if (!clientId) throw new Error("client_id_required");
+    try {
+      return { status: "done", message: "Contacto creado o actualizado en Holded v2.", metadata: { holded_contact_id: await ensureClientContact(row.organization_id, clientId, true) } };
+    } catch (caught) {
+      if (caught instanceof Error && caught.message === "client_not_found") {
+        return { status: "done", message: "Sincronización cancelada: el cliente ya no existe.", metadata: { cancelled: true, client_id: clientId } };
+      }
+      throw caught;
+    }
+  }
   if (["estimate.sync", "estimate.create"].includes(row.event_type)) return estimate(row);
   if (row.event_type === "proforma.create") return billing(row, "proformas");
   if (row.event_type === "invoice.final.create") return billing(row, "invoices");

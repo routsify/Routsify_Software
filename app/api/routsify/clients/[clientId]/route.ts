@@ -129,6 +129,26 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     .eq("organization_id", organizationId);
   if (deleteError) return NextResponse.json({ ok: false, error: deleteError.message }, { status: 400 });
 
+  const deletedAt = new Date().toISOString();
+  const { data: cancelledOutbox, error: cancelOutboxError } = await supabase
+    .from("integration_outbox")
+    .update({
+      status: "done",
+      sync_status: "synced",
+      processed_at: deletedAt,
+      last_synced_at: deletedAt,
+      last_error: null,
+      next_action: "Sincronización cancelada: el cliente se eliminó antes de procesar el evento.",
+      next_attempt_at: null,
+      locked_at: null,
+      locked_by: null,
+    })
+    .eq("organization_id", organizationId)
+    .eq("event_type", "contact.sync")
+    .in("status", ["pending", "queued", "failed"])
+    .contains("payload", { client_id: clientId })
+    .select("id");
+
   await supabase.from("audit_log").insert({
     organization_id: organizationId,
     actor_id: await getRequestUserId(request),
@@ -136,8 +156,16 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     entity_type: "client",
     entity_id: clientId,
     before_data: client,
-    after_data: { deleted: true },
+    after_data: {
+      deleted: true,
+      cancelled_contact_sync_events: cancelledOutbox?.length || 0,
+      contact_sync_cleanup_error: cancelOutboxError?.message || null,
+    },
   });
 
-  return NextResponse.json({ ok: true, deleted: { id: clientId, display_name: client.display_name } });
+  return NextResponse.json({
+    ok: true,
+    deleted: { id: clientId, display_name: client.display_name },
+    cancelled_contact_sync_events: cancelledOutbox?.length || 0,
+  });
 }
