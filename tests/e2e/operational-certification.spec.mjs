@@ -389,6 +389,7 @@ test.describe("certificación operativa de producción", () => {
         const response = await page.goto(path, { waitUntil: "domcontentloaded" });
         expect(response?.status(), `${path} no abrió correctamente`).toBeLessThan(500);
         await expect(page).not.toHaveURL(/\/login(?:\?|$)/);
+        await expect(page.getByRole("heading", { name: "Algo ha fallado", exact: true })).toHaveCount(0);
         await expect(page.locator("h1").first()).toBeVisible();
         await expect(page.locator("nextjs-portal")).toHaveCount(0);
       }

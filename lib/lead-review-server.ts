@@ -74,7 +74,7 @@ export async function listLeadReviewPage(
   let rowsQuery = db
     .from("leads")
     .select(
-      "id,client_id,client_name,email,phone,destination,travel_start,travel_end,travelers,budget_hint,source,status,review_status,outcome,review_note,reviewed_at,archived_at,created_at,updated_at,clients(id,display_name,email,phone)",
+      "id,client_id,client_name,email,phone,destination,travel_start,travel_end,travelers,budget_hint,source,status,review_status,outcome,review_note,reviewed_at,archived_at,created_at,updated_at,clients:clients!leads_client_id_fkey(id,display_name,email,phone)",
       { count: "exact" },
     )
     .eq("organization_id", organizationId)
