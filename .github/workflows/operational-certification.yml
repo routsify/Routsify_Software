@@ -19,9 +19,13 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: production-operational-certification
+  cancel-in-progress: false
+
 jobs:
   certify:
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push' || (github.event.deployment_status.state == 'success' && (contains(github.event.deployment_status.environment_url, 'vercel.app') || contains(github.event.deployment_status.target_url, 'vercel.app')))
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push' || (github.event_name == 'deployment_status' && github.event.deployment_status.state == 'success' && github.event.deployment.environment == 'Production' && (contains(github.event.deployment_status.environment_url, 'vercel.app') || contains(github.event.deployment_status.target_url, 'vercel.app')))
     runs-on: ubuntu-latest
     timeout-minutes: 35
     env:

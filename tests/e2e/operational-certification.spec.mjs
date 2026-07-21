@@ -38,6 +38,12 @@ async function api(request, method, path, data, options = {}) {
   const raw = await response.text();
   let body = null;
   try { body = raw ? JSON.parse(raw) : null; } catch { body = { raw: raw.slice(0, 1000) }; }
+  if (!response.ok() && (options.acceptedStatuses || []).includes(response.status())) {
+    return {
+      ...(body && typeof body === "object" && !Array.isArray(body) ? body : { data: body }),
+      _responseStatus: response.status(),
+    };
+  }
   expect(response.ok(), `${method} ${path} devolvió ${response.status()}: ${JSON.stringify(redacted(body))}`).toBeTruthy();
   if (body && typeof body === "object" && "ok" in body) {
     expect(body.ok, `${method} ${path} respondió ok=false: ${JSON.stringify(redacted(body))}`).toBe(true);
@@ -349,18 +355,36 @@ test.describe("certificación operativa de producción", () => {
       const from = new Date(Date.now() + 24 * 60 * 60_000).toISOString();
       const to = new Date(Date.now() + 45 * 24 * 60 * 60_000).toISOString();
       const availability = await api(request, "GET", `/api/routsify/clients/booking/availability?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&timezone=Europe%2FMadrid`);
-      const slot = availability.data.slots.find((item) => item.available !== false && new Date(item.startsAt).getTime() > Date.now() + 60 * 60_000);
-      expect(slot, "Booking no devolvió ningún hueco futuro disponible").toBeTruthy();
-      const bookingDuration = Number(slot.durationMinutes || availability.data.durationMinutes || 0);
-      expect(bookingDuration).toBeGreaterThanOrEqual(5);
-      const created = await api(request, "POST", "/api/routsify/clients/booking/reservations", {
-        clientId: certification.clientId,
-        startsAt: slot.startsAt,
-        timezone: "Europe/Madrid",
-        durationMinutes: bookingDuration,
-        notes: `[PRUEBA E2E ${runTag}] Crear-modificar-cancelar`,
-        privacyAccepted: true,
-      });
+      const candidates = availability.data.slots
+        .filter((item) => item.available !== false && new Date(item.startsAt).getTime() > Date.now() + 60 * 60_000)
+        .slice(0, 10);
+      expect(candidates.length, "Booking no devolvió ningún hueco futuro disponible").toBeGreaterThan(0);
+
+      let slot = null;
+      let bookingDuration = 0;
+      let created = null;
+      let conflicts = 0;
+      for (const candidate of candidates) {
+        const candidateDuration = Number(candidate.durationMinutes || availability.data.durationMinutes || 0);
+        expect(candidateDuration).toBeGreaterThanOrEqual(5);
+        const result = await api(request, "POST", "/api/routsify/clients/booking/reservations", {
+          clientId: certification.clientId,
+          startsAt: candidate.startsAt,
+          timezone: "Europe/Madrid",
+          durationMinutes: candidateDuration,
+          notes: `[PRUEBA E2E ${runTag}] Crear-modificar-cancelar`,
+          privacyAccepted: true,
+        }, { acceptedStatuses: [409] });
+        if (result._responseStatus === 409) {
+          conflicts += 1;
+          continue;
+        }
+        slot = candidate;
+        bookingDuration = candidateDuration;
+        created = result;
+        break;
+      }
+      expect(created, `Booking rechazó por conflicto los ${conflicts} huecos comprobados`).toBeTruthy();
       certification.bookingId = text(created.data.booking.id);
       expect(certification.bookingId).toBeTruthy();
       const expectedEndsAt = new Date(new Date(slot.startsAt).getTime() + bookingDuration * 60_000).toISOString();

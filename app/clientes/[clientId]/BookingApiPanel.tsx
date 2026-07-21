@@ -46,7 +46,27 @@ function payloadOf(row: Row) {
   return row.payload && typeof row.payload === "object" && !Array.isArray(row.payload) ? row.payload as Row : {};
 }
 
-export function BookingApiPanel({ client, initialBookings }: { client: Row; initialBookings: Row[] }) {
+function bookingError(result: Row | null, status: number, fallback: string) {
+  const code = text(result?.error);
+  if (status === 409) return "No se pudo reservar: ese hueco acaba de ocuparse. Consulta la disponibilidad y elige otro.";
+  if (status === 504 || code === "booking_api_timeout") return "No se pudo completar la operación: Booking tardó demasiado en responder. Inténtalo de nuevo.";
+  if (code === "booking_privacy_consent_required") return "Confirma la aceptación de privacidad antes de reservar.";
+  if (code === "booking_start_must_be_future") return "Selecciona una fecha futura para la llamada.";
+  if (["booking_integration_disabled", "booking_api_key_not_configured", "booking_base_url_not_configured"].includes(code)) return "Booking aún no está configurado. Revísalo en Ajustes → Integraciones.";
+  return code && !code.includes("_") ? code : fallback;
+}
+
+export function BookingApiPanel({
+  client,
+  initialBookings,
+  emailEnabled,
+  whatsappEnabled,
+}: {
+  client: Row;
+  initialBookings: Row[];
+  emailEnabled: boolean;
+  whatsappEnabled: boolean;
+}) {
   const clientId = text(client.id);
   const [bookings, setBookings] = useState<Row[]>(() => normalizedBookings(initialBookings));
   const [startsAt, setStartsAt] = useState("");
@@ -70,7 +90,7 @@ export function BookingApiPanel({ client, initialBookings }: { client: Row; init
     const result = await response.json().catch(() => null);
     setBusy(null);
     if (!response.ok || !result?.ok) {
-      setMessage(String(result?.error || "No se pudo preparar el enlace de reserva."));
+      setMessage(bookingError(result, response.status, "No se pudo preparar el enlace de reserva."));
       return;
     }
     const url = text(result.data?.url);
@@ -100,7 +120,7 @@ export function BookingApiPanel({ client, initialBookings }: { client: Row; init
     const result = await response.json().catch(() => null);
     setBusy(null);
     if (!response.ok || !result?.ok) {
-      setMessage(String(result?.error || "No se pudo consultar la disponibilidad."));
+      setMessage(bookingError(result, response.status, "No se pudo consultar la disponibilidad."));
       return;
     }
     const nextSlots = Array.isArray(result.data?.slots) ? result.data.slots as Slot[] : [];
@@ -123,7 +143,12 @@ export function BookingApiPanel({ client, initialBookings }: { client: Row; init
     const result = await response.json().catch(() => null);
     setBusy(null);
     if (!response.ok || !result?.ok) {
-      setMessage(String(result?.error || "No se pudo guardar la reserva."));
+      if (response.status === 409) {
+        const rejectedStart = new Date(startsAt).toISOString();
+        setSlots((current) => current.filter((slot) => new Date(slot.startsAt).toISOString() !== rejectedStart));
+        setStartsAt("");
+      }
+      setMessage(bookingError(result, response.status, "No se pudo guardar la reserva."));
       return;
     }
     const saved = result.data?.booking as Row;
@@ -156,7 +181,7 @@ export function BookingApiPanel({ client, initialBookings }: { client: Row; init
     const result = await response.json().catch(() => null);
     setBusy(null);
     if (!response.ok || !result?.ok) {
-      setMessage(String(result?.error || "No se pudo cancelar la reserva."));
+      setMessage(bookingError(result, response.status, "No se pudo cancelar la reserva."));
       return;
     }
     const saved = result.data?.booking as Row;
@@ -174,8 +199,8 @@ export function BookingApiPanel({ client, initialBookings }: { client: Row; init
         <div className="section-heading"><div><h3>Enviar enlace de reserva</h3><p>El enlace incluye los datos disponibles del cliente para simplificar la reserva.</p></div></div>
         <div className="form-actions">
           <button className="btn secondary" type="button" disabled={busy !== null} onClick={() => void bookingLinkAction("copy")}>{busy === "link:copy" ? "Preparando..." : "Copiar enlace"}</button>
-          <button className="btn secondary" type="button" disabled={busy !== null || !text(client.email)} onClick={() => void bookingLinkAction("email")}>{busy === "link:email" ? "Enviando..." : "Enviar por email"}</button>
-          <button className="btn" type="button" disabled={busy !== null || !text(client.phone)} onClick={() => void bookingLinkAction("whatsapp")}>{busy === "link:whatsapp" ? "Enviando..." : "Enviar por WhatsApp"}</button>
+          {emailEnabled ? <button className="btn secondary" type="button" disabled={busy !== null || !text(client.email)} onClick={() => void bookingLinkAction("email")}>{busy === "link:email" ? "Enviando..." : "Enviar por email"}</button> : null}
+          {whatsappEnabled ? <button className="btn" type="button" disabled={busy !== null || !text(client.phone)} onClick={() => void bookingLinkAction("whatsapp")}>{busy === "link:whatsapp" ? "Enviando..." : "Enviar por WhatsApp"}</button> : null}
         </div>
         {bookingLink ? <label>Enlace preparado<input className="input" readOnly value={bookingLink} onFocus={(event) => event.currentTarget.select()} /></label> : null}
       </div>
