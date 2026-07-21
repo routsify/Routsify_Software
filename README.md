@@ -53,8 +53,9 @@ npm run build
 npm run test:e2e
 ```
 
-`validate:platform` comprueba los contratos funcionales, la seguridad, Holded v2, Booking, los controles de UI y las 108 migraciones ordenadas. El validador de UI rechaza botones sin tipo o acción, formularios desconectados y elementos no semánticos clicables. Knip bloquea archivos o dependencias sin uso.
+`validate:platform` comprueba los contratos funcionales, la seguridad, Holded v2, Booking, los controles de UI y las 109 migraciones ordenadas. El validador de UI rechaza botones sin tipo o acción, formularios desconectados y elementos no semánticos clicables. Knip bloquea archivos o dependencias sin uso.
 La documentación legal se adjunta desde `Ajustes → Documentación legal`. Los PDFs se almacenan en el bucket privado `legal-documents`, se versionan sin sobrescrituras y solo se abren mediante URLs firmadas temporales. Al enviar un contrato, Routsify bloquea la versión del PDF principal y la relación de documentos complementarios vigentes dentro de la evidencia contractual; tras firma y pago, el paquete legal se entrega como adjuntos PDF y queda auditado sin depender de URLs externas.
+Las solicitudes históricas de Fillout se conservan revisadas y archivadas cuando no hay evidencia suficiente. Si posteriormente existe un presupuesto aceptado o un cobro confirmado, un trigger auditado reclasifica la solicitud como `won` sin depender de una sincronización manual.
 
 Las pruebas E2E ejecutan Chromium de escritorio y móvil contra un despliegue de Vercel. Las credenciales y el bypass de automatización se configuran como secretos de GitHub, nunca en el repositorio.
 
