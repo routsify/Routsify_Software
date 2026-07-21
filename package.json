@@ -24,10 +24,10 @@
     "db:types": "npx --yes supabase@2 gen types typescript --project-id wphiurjzkxbkakiozgvf --schema public > lib/database.types.ts"
   },
   "dependencies": {
-    "@supabase/ssr": "0.7.0",
-    "@supabase/supabase-js": "2.110.2",
+    "@supabase/ssr": "0.12.3",
+    "@supabase/supabase-js": "2.110.7",
     "echarts": "6.1.0",
-    "lucide-react": "0.468.0",
+    "lucide-react": "0.577.0",
     "next": "16.2.10",
     "react": "19.2.7",
     "react-dom": "19.2.7"
@@ -37,10 +37,10 @@
     "@types/node": "24.13.3",
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
-    "eslint": "9.17.0",
+    "eslint": "9.39.5",
     "eslint-config-next": "16.2.10",
     "knip": "5.88.1",
-    "typescript": "5.7.3"
+    "typescript": "5.9.3"
   },
   "overrides": {
     "postcss": "8.5.17"
