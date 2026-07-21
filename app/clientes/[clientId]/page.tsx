@@ -3,6 +3,7 @@ import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
 import { requireAppPermission } from "@/lib/app-auth";
 import { getOrganizationClient360 } from "@/lib/client-360-server";
+import { loadThirdPartyIntegrationConfig } from "@/lib/third-party-integration-config-server";
 import { BookingApiPanel } from "./BookingApiPanel";
 import { Client360Workspace } from "./Client360Workspace";
 import { ClientProfileSection } from "./ClientProfileSection";
@@ -38,7 +39,10 @@ function clientMetrics(data: { cases: Row[]; proposals: Row[]; payments: Row[] }
 export default async function Client360Page({ params }: { params: Promise<{ clientId: string }> }) {
   const session = await requireAppPermission("clients.view");
   const { clientId } = await params;
-  const result = await getOrganizationClient360(session.organizationId, clientId);
+  const [result, integrations] = await Promise.all([
+    getOrganizationClient360(session.organizationId, clientId),
+    loadThirdPartyIntegrationConfig(session.organizationId),
+  ]);
   if (!result.ok) {
     if (result.error === "client_not_found") notFound();
     throw new Error(result.error);
@@ -56,6 +60,11 @@ export default async function Client360Page({ params }: { params: Promise<{ clie
     />
     <Client360Workspace data={result.data} />
     <ClientProfileSection initialClient={result.data.client} communications={result.data.communications} metrics={metrics} />
-    <BookingApiPanel client={result.data.client} initialBookings={result.data.bookings} />
+    <BookingApiPanel
+      client={result.data.client}
+      initialBookings={result.data.bookings}
+      emailEnabled={integrations.email.enabled}
+      whatsappEnabled={integrations.whatsapp.enabled}
+    />
   </AppShell>;
 }
