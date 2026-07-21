@@ -7,6 +7,22 @@ export type OcrFieldName = (typeof fieldNames)[number];
 type OcrField = { name: OcrFieldName; value: string | null; confidence: number };
 type OcrPayload = { document_type: string | null; overall_confidence: number; fields: OcrField[] };
 
+function providerDiagnostic(payload: Record<string, unknown>, response: Response, model: string) {
+  const error = payload.error && typeof payload.error === "object"
+    ? payload.error as Record<string, unknown>
+    : {};
+  const safe = (value: unknown) => String(value ?? "").trim().slice(0, 120) || null;
+  return {
+    provider: "openai",
+    model,
+    http_status: response.status,
+    request_id: safe(response.headers.get("x-request-id")),
+    error_type: safe(error.type),
+    error_code: safe(error.code),
+    error_param: safe(error.param),
+  };
+}
+
 function cleanConfidence(value: unknown) {
   const number = Number(value || 0);
   return Math.max(0, Math.min(Number.isFinite(number) ? number : 0, 1));
@@ -23,13 +39,14 @@ async function getOcrModel(organizationId: string) {
 export async function testOpenAIConnection(organizationId: string) {
   const apiKey = await getOrganizationSecret(organizationId, "openai_api_key");
   if (!apiKey) return { ok: false as const, status: 503, error: "openai_api_key_not_configured" };
+  const model = await getOcrModel(organizationId);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 10_000);
   try {
-    const response = await fetch("https://api.openai.com/v1/models", { headers: { Authorization: `Bearer ${apiKey}` }, signal: controller.signal, cache: "no-store" });
+    const response = await fetch(`https://api.openai.com/v1/models/${encodeURIComponent(model)}`, { headers: { Authorization: `Bearer ${apiKey}` }, signal: controller.signal, cache: "no-store" });
     clearTimeout(timer);
     if (!response.ok) return { ok: false as const, status: response.status, error: `openai_http_${response.status}` };
-    return { ok: true as const, status: response.status, model: await getOcrModel(organizationId) };
+    return { ok: true as const, status: response.status, model };
   } catch (error) {
     clearTimeout(timer);
     return { ok: false as const, status: 504, error: error instanceof Error && error.name === "AbortError" ? "openai_timeout" : "openai_network_error" };
@@ -79,40 +96,47 @@ export async function runDocumentOcr(input: { organizationId: string; documentId
   if (runError) throw new Error(runError.message);
   await supabase.from("documents").update({ ocr_status: "processing", updated_at: new Date().toISOString() }).eq("id", document.id);
 
+  let diagnostic: Record<string, unknown> = { provider: "openai", model };
   try {
     const base64 = Buffer.from(await file.arrayBuffer()).toString("base64");
     const mimeType = String(document.mime_type || file.type || "application/octet-stream");
     const filePart = mimeType === "application/pdf"
-      ? { type: "input_file", filename: String(document.file_name || "document.pdf"), file_data: `data:${mimeType};base64,${base64}` }
+      ? { type: "input_file", filename: String(document.file_name || "document.pdf"), file_data: `data:${mimeType};base64,${base64}`, detail: "high" }
       : { type: "input_image", image_url: `data:${mimeType};base64,${base64}`, detail: "high" };
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 60_000);
-    const response = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model,
-        store: false,
-        temperature: 0,
-        input: [{ role: "user", content: [
-          { type: "input_text", text: "Extrae únicamente los datos visibles del DNI o pasaporte. No inventes valores. Usa fechas ISO YYYY-MM-DD. Para cada campo devuelve una confianza entre 0 y 1. Si no es legible, usa null y confianza 0." },
-          filePart,
-        ] }],
-        text: { format: { type: "json_schema", name: "travel_document_ocr", strict: true, schema: {
-          type: "object", additionalProperties: false,
-          properties: {
-            document_type: { type: ["string", "null"] },
-            overall_confidence: { type: "number", minimum: 0, maximum: 1 },
-            fields: { type: "array", items: { type: "object", additionalProperties: false, properties: { name: { type: "string", enum: [...fieldNames] }, value: { type: ["string", "null"] }, confidence: { type: "number", minimum: 0, maximum: 1 } }, required: ["name", "value", "confidence"] } },
-          }, required: ["document_type", "overall_confidence", "fields"],
-        } } },
-      }),
-      signal: controller.signal,
-      cache: "no-store",
-    });
-    clearTimeout(timer);
+    let response: Response;
+    try {
+      response = await fetch("https://api.openai.com/v1/responses", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model,
+          store: false,
+          input: [{ role: "user", content: [
+            { type: "input_text", text: "Extrae únicamente los datos visibles del DNI o pasaporte. No inventes valores. Usa fechas ISO YYYY-MM-DD. Para cada campo devuelve una confianza entre 0 y 1. Si no es legible, usa null y confianza 0." },
+            filePart,
+          ] }],
+          text: { format: { type: "json_schema", name: "travel_document_ocr", strict: true, schema: {
+            type: "object", additionalProperties: false,
+            properties: {
+              document_type: { type: ["string", "null"] },
+              overall_confidence: { type: "number", minimum: 0, maximum: 1 },
+              fields: { type: "array", items: { type: "object", additionalProperties: false, properties: { name: { type: "string", enum: [...fieldNames] }, value: { type: ["string", "null"] }, confidence: { type: "number", minimum: 0, maximum: 1 } }, required: ["name", "value", "confidence"] } },
+            }, required: ["document_type", "overall_confidence", "fields"],
+          } } },
+        }),
+        signal: controller.signal,
+        cache: "no-store",
+      });
+    } finally {
+      clearTimeout(timer);
+    }
     const responsePayload = await response.json().catch(() => ({})) as Record<string, unknown>;
-    if (!response.ok) throw new Error(`openai_http_${response.status}`);
+    if (!response.ok) {
+      diagnostic = providerDiagnostic(responsePayload, response, model);
+      throw new Error(`openai_http_${response.status}`);
+    }
     const text = outputText(responsePayload);
     if (!text) throw new Error("openai_empty_output");
     const parsed = normalizePayload(JSON.parse(text));
@@ -125,9 +149,12 @@ export async function runDocumentOcr(input: { organizationId: string; documentId
     await supabase.from("timeline_events").insert({ organization_id: input.organizationId, case_id: document.case_id, event_type: "document.ocr_completed", title: "OCR completado; revisión humana pendiente", payload: { document_id: document.id, ocr_run_id: run.id, confidence: parsed.overall_confidence }, created_by: input.actorId });
     return { runId: run.id, status, confidence: parsed.overall_confidence, fields: parsed.fields };
   } catch (caught) {
-    const message = caught instanceof Error ? caught.message : "ocr_failed";
-    await supabase.from("ocr_runs").update({ status: "failed", error: message, completed_at: new Date().toISOString() }).eq("id", run.id);
+    const message = caught instanceof Error && caught.name === "AbortError"
+      ? "openai_timeout"
+      : caught instanceof Error ? caught.message : "ocr_failed";
+    await supabase.from("ocr_runs").update({ status: "failed", error: message, raw_payload_redacted: diagnostic, completed_at: new Date().toISOString() }).eq("id", run.id);
     await supabase.from("documents").update({ ocr_status: "failed", updated_at: new Date().toISOString() }).eq("id", document.id);
+    await supabase.from("timeline_events").insert({ organization_id: input.organizationId, case_id: document.case_id, event_type: "document.ocr_failed", title: "OCR no completado", payload: { document_id: document.id, ocr_run_id: run.id, error: message, provider_code: diagnostic.error_code || null }, created_by: input.actorId });
     throw new Error(message);
   }
 }

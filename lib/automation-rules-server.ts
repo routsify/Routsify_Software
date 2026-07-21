@@ -58,7 +58,7 @@ export async function listAutomationWorkspace(organizationId: string) {
   const [rulesResult, executionsResult, usersResult] = await Promise.all([
     db.from("automation_rules").select("id,name,enabled,trigger_type,trigger_config,action_type,action_config,created_at,updated_at").eq("organization_id", organizationId).order("enabled", { ascending: false }).order("created_at", { ascending: true }),
     db.from("automation_executions").select("id,rule_id,case_id,occurrence_key,status,result,error,executed_at,automation_rules(name),cases(case_code,title,destination)").eq("organization_id", organizationId).order("executed_at", { ascending: false }).limit(100),
-    db.from("profiles").select("user_id,full_name,email,role").eq("organization_id", organizationId).order("full_name", { ascending: true }),
+    db.from("profiles").select("user_id,full_name,role").eq("organization_id", organizationId).order("full_name", { ascending: true }),
   ]);
   const error = rulesResult.error || executionsResult.error || usersResult.error;
   if (error) throw new Error(error.message);
