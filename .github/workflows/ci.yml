@@ -15,8 +15,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
       - run: npm ci --ignore-scripts --silent
@@ -31,7 +31,7 @@ jobs:
           exit $code
       - name: Upload typecheck diagnostics
         if: failure() && steps.typecheck.outcome == 'failure'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: typecheck-diagnostics
           path: typecheck.log
@@ -48,7 +48,7 @@ jobs:
           exit $code
       - name: Upload lint diagnostics
         if: failure() && steps.lint.outcome == 'failure'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lint-diagnostics
           path: lint.log
