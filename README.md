@@ -57,6 +57,8 @@ npm run test:e2e
 
 Las pruebas E2E ejecutan Chromium de escritorio y móvil contra un despliegue de Vercel. Las credenciales y el bypass de automatización se configuran como secretos de GitHub, nunca en el repositorio.
 
+La certificación operativa exhaustiva se ejecuta de forma serializada únicamente después de un despliegue de Production autorizado y utiliza datos marcados como sintéticos.
+
 ## Despliegue
 
 Vercel es el único destino de despliegue. GitHub Actions usa Node.js 24 y ejecuta instalación reproducible con `npm ci`, validaciones, TypeScript y build. Antes de promover a producción:
