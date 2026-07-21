@@ -86,6 +86,10 @@ async function filloutRequest<T>(apiKey: string, path: string): Promise<{ data: 
     lastError = parsed && typeof parsed === "object" && "message" in parsed
       ? text((parsed as JsonRow).message)
       : `fillout_http_${response.status}`;
+    const shouldUseEuOrigin = response.status === 400
+      && !origin.includes("eu-api.fillout.com")
+      && lastError.toLowerCase().includes("eu-api.fillout.com");
+    if (shouldUseEuOrigin) continue;
     if (![401, 403, 404].includes(response.status)) break;
   }
   throw new Error(lastError);

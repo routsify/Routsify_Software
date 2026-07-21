@@ -95,7 +95,7 @@ La versión actual envía texto libre. Los mensajes iniciados por la empresa fue
    - ID del formulario Fillout.
    - URL pública del formulario.
    - Nombre del origen.
-2. En la tarjeta `Fillout · token del webhook`, crea y guarda un secreto aleatorio largo.
+2. En la tarjeta `API Key de Fillout`, pega y guarda la clave REST de la cuenta que puede consultar el formulario.
 3. Copia la URL mostrada:
 
 `https://routsify-software.vercel.app/api/webhooks/forms`
@@ -109,8 +109,10 @@ En el formulario:
 3. Activa la vista avanzada.
 4. Añade el header:
    - Nombre: `Authorization`
-   - Valor: `Bearer TU_SECRETO`
+   - Valor: `Bearer TU_API_KEY_DE_FILLOUT`
 5. Ejecuta el test de Fillout y termina la configuración.
+
+Routsify prueba primero el endpoint global y cambia automáticamente a `eu-api.fillout.com` cuando Fillout indica que el formulario está alojado en la región europea.
 
 ### Campos recomendados
 
