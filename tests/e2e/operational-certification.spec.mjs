@@ -363,12 +363,16 @@ test.describe("certificación operativa de producción", () => {
       });
       certification.bookingId = text(created.data.booking.id);
       expect(certification.bookingId).toBeTruthy();
+      const expectedEndsAt = new Date(new Date(slot.startsAt).getTime() + bookingDuration * 60_000).toISOString();
+      expect(new Date(created.data.booking.ends_at).toISOString()).toBe(expectedEndsAt);
       const updated = await api(request, "PATCH", `/api/routsify/clients/booking/reservations/${certification.bookingId}`, {
         notes: `[PRUEBA E2E ${runTag}] Reserva verificada; cancelar a continuación`,
       });
       expect(text(updated.data.booking.id)).toBe(certification.bookingId);
+      expect(new Date(updated.data.booking.ends_at).toISOString()).toBe(expectedEndsAt);
       const cancelled = await api(request, "DELETE", `/api/routsify/clients/booking/reservations/${certification.bookingId}`);
       expect(cancelled.data.booking.status).toBe("cancelled");
+      expect(new Date(cancelled.data.booking.ends_at).toISOString()).toBe(expectedEndsAt);
     });
 
     await test.step("emitir factura final y cerrar el expediente", async () => {

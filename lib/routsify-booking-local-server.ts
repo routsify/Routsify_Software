@@ -48,6 +48,8 @@ export async function persistRemoteBooking(input: {
   actorId: string;
   remote: NormalizedRemoteBooking;
   eventType: "booking.created" | "booking.updated" | "booking.cancelled";
+  requestedStartsAt?: string | null;
+  requestedEndsAt?: string | null;
   requestedPayload?: Record<string, unknown>;
 }) {
   if (!input.remote.externalBookingId) throw new Error("booking_external_id_missing");
@@ -55,7 +57,7 @@ export async function persistRemoteBooking(input: {
   const now = new Date().toISOString();
   const { data: existing, error: lookupError } = await db
     .from("bookings")
-    .select("id,payload")
+    .select("id,starts_at,ends_at,payload")
     .eq("organization_id", input.organizationId)
     .eq("external_booking_id", input.remote.externalBookingId)
     .order("updated_at", { ascending: false })
@@ -79,8 +81,8 @@ export async function persistRemoteBooking(input: {
     external_booking_id: input.remote.externalBookingId,
     external_id: input.remote.externalBookingId,
     event_type: input.eventType,
-    starts_at: input.remote.startsAt,
-    ends_at: input.remote.endsAt,
+    starts_at: input.remote.startsAt || input.requestedStartsAt || existing?.starts_at || null,
+    ends_at: input.remote.endsAt || input.requestedEndsAt || existing?.ends_at || null,
     status: input.eventType === "booking.cancelled" ? "cancelled" : input.remote.status || "scheduled",
     source: "routsify_booking_api",
     event_timestamp: now,

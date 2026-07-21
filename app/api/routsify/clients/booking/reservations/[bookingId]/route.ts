@@ -44,6 +44,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       actorId: access.actorId,
       remote: { ...remote, externalBookingId: remote.externalBookingId || externalBookingId },
       eventType: "booking.updated",
+      requestedStartsAt: startsAt,
+      requestedEndsAt: endsAt,
       requestedPayload: { timezone: timezone || configuration.booking.defaultTimezone, ...(durationMinutes ? { duration_minutes: durationMinutes } : {}), ...(notes !== undefined ? { notes } : {}) },
     });
     return NextResponse.json({ ok: true, data: { booking: saved, remote } });
