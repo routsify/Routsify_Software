@@ -385,6 +385,7 @@ test.describe("certificación operativa de producción", () => {
       expect(preflight.data.ready, JSON.stringify(preflight.data.blockers || [])).toBe(true);
       const closed = await api(request, "PATCH", `/api/routsify/cases/${certification.caseId}`, { status: "closed" });
       expect(closed.data.status).toBe("closed");
+      expect(closed.data.purchase_status, "El expediente cerrado debe reflejar todas las compras resueltas").toBe("resolved");
       const workspace = await api(request, "GET", `/api/routsify/cases/${certification.caseId}/workspace?section=contract`);
       expect(workspace.data.fiscal_documents.some((row) => row.document_type === "final_invoice" && row.status === "issued")).toBe(true);
     });
