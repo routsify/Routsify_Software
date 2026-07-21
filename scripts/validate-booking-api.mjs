@@ -28,7 +28,7 @@ for (const token of ["https://call.routsify.com/wp-json/routsify/v1", "X-Routsif
 }
 
 const client = read("lib/routsify-booking-api-server.ts");
-for (const token of ["X-Routsify-API-Key", "Authorization", "createRemoteBooking", "updateRemoteBooking", "cancelRemoteBooking", "listRemoteBookingAvailability", "buildPersonalizedBookingLink", "booking_api_timeout"]) assert(client.includes(token), `Missing Booking API client token: ${token}`);
+for (const token of ["X-Routsify-API-Key", "Authorization", "createRemoteBooking", "updateRemoteBooking", "cancelRemoteBooking", "listRemoteBookingAvailability", "buildPersonalizedBookingLink", "booking_api_timeout", "findNamedArray", '"dates"', "start_utc", "/cancel", "durationMinutes"]) assert(client.includes(token), `Missing Booking API client token: ${token}`);
 assert(!client.includes("console.log(apiKey"), "Booking API key must never be logged");
 
 const panel = read("app/clientes/[clientId]/BookingApiPanel.tsx");
