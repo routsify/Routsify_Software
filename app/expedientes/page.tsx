@@ -21,6 +21,6 @@ export default async function CasesPage({ searchParams }: { searchParams: Promis
       description="Prioriza cada expediente según contrato, cobros, compras, tareas, viajeros, documentos, fechas y margen real."
       action={canManage ? <Link className="btn" href={caseId ? `/expedientes/gestionar?caseId=${encodeURIComponent(caseId)}` : "/expedientes/gestionar"}>Crear o editar expediente</Link> : undefined}
     />
-    <CaseHealthDirectory initialPage={initialPage} initialCaseId={caseId || ""} />
+    <CaseHealthDirectory initialPage={initialPage} initialCaseId={caseId || ""} canManage={canManage} />
   </AppShell>;
 }

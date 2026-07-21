@@ -27,7 +27,7 @@ function dateLabel(value?: string | null) { return value ? new Intl.DateTimeForm
 function healthLabel(level: CaseHealthLevel) { return level === "critical" ? "Crítico" : level === "attention" ? "Atención" : "Correcto"; }
 function healthClass(level: CaseHealthLevel) { return level === "critical" ? "status-danger" : level === "attention" ? "status-pending" : "status-done"; }
 
-export function CaseHealthDirectory({ initialPage, initialCaseId = "" }: { initialPage: CaseDirectoryPage; initialCaseId?: string }) {
+export function CaseHealthDirectory({ initialPage, initialCaseId = "", canManage = false }: { initialPage: CaseDirectoryPage; initialCaseId?: string; canManage?: boolean }) {
   const [items, setItems] = useState(initialPage.items);
   const [selectedId, setSelectedId] = useState<string | null>(() => items.some((item) => item.id === initialCaseId) ? initialCaseId : items[0]?.id || null);
   const [page, setPage] = useState(initialPage.page);
@@ -40,6 +40,7 @@ export function CaseHealthDirectory({ initialPage, initialCaseId = "" }: { initi
   const [status, setStatus] = useState(initialPage.status);
   const [health, setHealth] = useState<"all" | CaseHealthLevel>(initialPage.health);
   const [loading, setLoading] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const selected = items.find((item) => item.id === selectedId) || items[0] || null;
   const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1;
@@ -60,6 +61,17 @@ export function CaseHealthDirectory({ initialPage, initialCaseId = "" }: { initi
 
   async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const next = queryInput.trim(); setQuery(next); await load(1, pageSize, next, status, health); }
   async function clear() { setQueryInput(""); setQuery(""); await load(1, pageSize, "", status, health); }
+  async function deleteCase(item: CaseDirectoryRow) {
+    if (!canManage || deletingId) return;
+    if (!window.confirm(`¿Eliminar definitivamente el expediente “${item.case_code}”?\n\nSolo se permitirá si no tiene presupuesto, contrato, cobros, compras, documentos ni historial operativo. Esta acción no se puede deshacer.`)) return;
+    setDeletingId(item.id); setMessage(null);
+    const response = await fetch(`/api/routsify/cases/${encodeURIComponent(item.id)}`, { method: "DELETE" });
+    const result = await response.json().catch(() => null);
+    setDeletingId(null);
+    if (!response.ok || !result?.ok) return setMessage(result?.error === "case_has_protected_history" ? "No se puede eliminar porque el expediente ya conserva historial operativo o financiero." : String(result?.error || "No se pudo eliminar el expediente."));
+    await load(page, pageSize, query, status, health);
+    setMessage(`Expediente “${item.case_code}” eliminado correctamente.`);
+  }
 
   return <div className="clients-page">
     <section className="client-kpis">
@@ -81,7 +93,7 @@ export function CaseHealthDirectory({ initialPage, initialCaseId = "" }: { initi
         <div className="form-actions"><label>Mostrar <select value={pageSize} onChange={(event) => void load(1, Number(event.target.value))} disabled={loading}>{pageSizes.map((size) => <option key={size} value={size}>{size}</option>)}</select> expedientes</label><a className="btn" href="/clientes">Crear desde un cliente</a></div>
         {message ? <p className="client-message" role="status">{message}</p> : null}
         {loading ? <p className="client-message">Recalculando salud operativa...</p> : null}
-        {items.length === 0 ? <div className="empty-state"><h2>No hay expedientes con estos filtros</h2><p>Cambia el estado, la salud o la búsqueda.</p></div> : <CaseTable items={items} selectedId={selected?.id || null} onSelect={setSelectedId} />}
+        {items.length === 0 ? <div className="empty-state"><h2>No hay expedientes con estos filtros</h2><p>Cambia el estado, la salud o la búsqueda.</p></div> : <CaseTable items={items} selectedId={selected?.id || null} onSelect={setSelectedId} canManage={canManage} deletingId={deletingId} onDelete={deleteCase} />}
         <div className="form-actions"><span>Mostrando {rangeStart}-{rangeEnd} de {total}</span><button className="btn secondary" type="button" onClick={() => void load(1)} disabled={loading || page <= 1}>Primera</button><button className="btn secondary" type="button" onClick={() => void load(page - 1)} disabled={loading || page <= 1}>Anterior</button><strong>Página {page} de {totalPages}</strong><button className="btn secondary" type="button" onClick={() => void load(page + 1)} disabled={loading || page >= totalPages}>Siguiente</button><button className="btn secondary" type="button" onClick={() => void load(totalPages)} disabled={loading || page >= totalPages}>Última</button></div>
       </div>
       <CaseHealthPanel item={selected} />
@@ -89,8 +101,8 @@ export function CaseHealthDirectory({ initialPage, initialCaseId = "" }: { initi
   </div>;
 }
 
-function CaseTable({ items, selectedId, onSelect }: { items: CaseDirectoryRow[]; selectedId: string | null; onSelect: (id: string) => void }) {
-  return <div className="table-scroll"><table><thead><tr><th>Salud</th><th>Expediente</th><th>Viaje</th><th>Siguiente acción</th><th>Operativa</th><th>Finanzas</th></tr></thead><tbody>{items.map((item) => <tr key={item.id} className={item.id === selectedId ? "selected-row" : ""}><td><button className="table-link" type="button" onClick={() => onSelect(item.id)}><span className={`status-pill ${healthClass(item.health_level)}`}>{healthLabel(item.health_level)} · {item.health_score}</span></button></td><td><button className="table-link" type="button" onClick={() => onSelect(item.id)}><strong>{item.case_code}</strong><br /><small>{item.clients?.display_name || item.title || "Sin cliente"}</small></button></td><td>{item.destination || "—"}<br /><small>{dateLabel(item.trip_start)} → {dateLabel(item.trip_end)}{item.days_to_trip !== null ? ` · ${item.days_to_trip >= 0 ? `faltan ${item.days_to_trip} días` : `hace ${Math.abs(item.days_to_trip)} días`}` : ""}</small></td><td>{item.next_action || "Sin acción"}<br /><small>{statusLabels[item.status] || item.status}</small></td><td>{item.pending_purchases} compras · {item.overdue_tasks} tareas vencidas<br /><small>{item.travelers_pending} viajeros · {item.documents_pending} documentos</small></td><td>{money(item.real_profit, item.currency)} beneficio<br /><small>{item.margin_pct.toFixed(1)} % margen · {money(item.payment_pending, item.currency)} por cobrar</small></td></tr>)}</tbody></table></div>;
+function CaseTable({ items, selectedId, onSelect, canManage, deletingId, onDelete }: { items: CaseDirectoryRow[]; selectedId: string | null; onSelect: (id: string) => void; canManage: boolean; deletingId: string | null; onDelete: (item: CaseDirectoryRow) => void }) {
+  return <div className="table-scroll"><table><thead><tr><th>Salud</th><th>Expediente</th><th>Viaje</th><th>Siguiente acción</th><th>Operativa</th><th>Finanzas</th><th><span className="sr-only">Acciones</span></th></tr></thead><tbody>{items.map((item) => <tr key={item.id} className={item.id === selectedId ? "selected-row" : ""}><td><button className="table-link" type="button" onClick={() => onSelect(item.id)}><span className={`status-pill ${healthClass(item.health_level)}`}>{healthLabel(item.health_level)} · {item.health_score}</span></button></td><td><button className="table-link" type="button" onClick={() => onSelect(item.id)}><strong>{item.case_code}</strong><br /><small>{item.clients?.display_name || item.title || "Sin cliente"}</small></button></td><td>{item.destination || "—"}<br /><small>{dateLabel(item.trip_start)} → {dateLabel(item.trip_end)}{item.days_to_trip !== null ? ` · ${item.days_to_trip >= 0 ? `faltan ${item.days_to_trip} días` : `hace ${Math.abs(item.days_to_trip)} días`}` : ""}</small></td><td>{item.next_action || "Sin acción"}<br /><small>{statusLabels[item.status] || item.status}</small></td><td>{item.pending_purchases} compras · {item.overdue_tasks} tareas vencidas<br /><small>{item.travelers_pending} viajeros · {item.documents_pending} documentos</small></td><td>{money(item.real_profit, item.currency)} beneficio<br /><small>{item.margin_pct.toFixed(1)} % margen · {money(item.payment_pending, item.currency)} por cobrar</small></td><td><details className="row-action-menu"><summary aria-label={`Acciones para ${item.case_code}`}>•••</summary><div><a href={`/expedientes/${encodeURIComponent(item.case_code)}`}>Abrir expediente</a>{canManage ? <a href={`/expedientes/gestionar?caseId=${encodeURIComponent(item.id)}`}>Editar</a> : null}{canManage ? <button className="danger-text" type="button" disabled={deletingId === item.id} onClick={() => void onDelete(item)}>{deletingId === item.id ? "Eliminando…" : "Eliminar"}</button> : null}</div></details></td></tr>)}</tbody></table></div>;
 }
 
 function CaseHealthPanel({ item }: { item: CaseDirectoryRow | null }) {

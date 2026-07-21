@@ -101,3 +101,49 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   await db.from("audit_log").insert({ organization_id: access.organizationId, actor_id: actorId, entity_type: "supplier", entity_id: supplierId, action: "supplier.updated", before_data: existing, after_data: enriched });
   return NextResponse.json({ ok: true, data: enriched });
 }
+
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ supplierId: string }> }) {
+  const access = await requireInternalAccess(request);
+  if (!access.ok) return jsonAccessDenied(access);
+
+  const { supplierId } = await params;
+  const organizationId = access.organizationId;
+  const db = getSupabaseAdminClient();
+  const { data: supplier, error: supplierError } = await db.from("suppliers")
+    .select("id,name,holded_contact_id,created_at")
+    .eq("id", supplierId)
+    .eq("organization_id", organizationId)
+    .maybeSingle();
+  if (supplierError) return NextResponse.json({ ok: false, error: supplierError.message }, { status: 400 });
+  if (!supplier) return NextResponse.json({ ok: false, error: "supplier_not_found" }, { status: 404 });
+  if (supplier.holded_contact_id) return NextResponse.json({ ok: false, error: "supplier_has_protected_history", blockers: { holded: 1 } }, { status: 409 });
+
+  const [purchases, budgetLines, invoices, communications, services, incidents, outbox] = await Promise.all([
+    db.from("expected_purchases").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("supplier_id", supplierId),
+    db.from("budget_lines").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("supplier_id", supplierId),
+    db.from("supplier_invoices").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("supplier_id", supplierId),
+    db.from("communication_followups").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("supplier_id", supplierId),
+    db.from("supplier_services").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("supplier_id", supplierId),
+    db.from("supplier_incidents").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("supplier_id", supplierId),
+    db.from("integration_outbox").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("entity_id", supplierId),
+  ]);
+  const dependencyError = [purchases, budgetLines, invoices, communications, services, incidents, outbox].find((result) => result.error)?.error;
+  if (dependencyError) return NextResponse.json({ ok: false, error: dependencyError.message }, { status: 400 });
+  const blockers = {
+    purchases: purchases.count || 0,
+    budget_lines: budgetLines.count || 0,
+    invoices: invoices.count || 0,
+    communications: communications.count || 0,
+    services: services.count || 0,
+    incidents: incidents.count || 0,
+    outbox: outbox.count || 0,
+  };
+  if (Object.values(blockers).some((value) => value > 0)) {
+    return NextResponse.json({ ok: false, error: "supplier_has_protected_history", blockers }, { status: 409 });
+  }
+
+  const { error: deleteError } = await db.from("suppliers").delete().eq("id", supplierId).eq("organization_id", organizationId);
+  if (deleteError) return NextResponse.json({ ok: false, error: deleteError.code === "23503" ? "supplier_has_protected_history" : deleteError.message }, { status: deleteError.code === "23503" ? 409 : 400 });
+  await db.from("audit_log").insert({ organization_id: organizationId, actor_id: access.actorId, entity_type: "supplier", entity_id: supplierId, action: "supplier.deleted", before_data: supplier });
+  return NextResponse.json({ ok: true, data: { id: supplierId } });
+}

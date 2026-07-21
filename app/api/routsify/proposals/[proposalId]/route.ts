@@ -123,3 +123,78 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
   return NextResponse.json({ ok: true, mode: "supabase", data });
 }
+
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ proposalId: string }> }) {
+  const access = await requireInternalAccess(request);
+  if (!access.ok) return jsonAccessDenied(access);
+
+  const { proposalId } = await params;
+  const organizationId = access.organizationId;
+  const db = getSupabaseAdminClient();
+  const { data: proposal, error: proposalError } = await db.from("proposals")
+    .select("id,case_id,status,current_version_id,created_at")
+    .eq("id", proposalId)
+    .eq("organization_id", organizationId)
+    .maybeSingle();
+  if (proposalError) return NextResponse.json({ ok: false, error: proposalError.message }, { status: 400 });
+  if (!proposal) return NextResponse.json({ ok: false, error: "proposal_not_found" }, { status: 404 });
+  if (!["draft", "internal_review"].includes(String(proposal.status))) {
+    return NextResponse.json({ ok: false, error: "proposal_has_protected_history", blockers: { status: 1 } }, { status: 409 });
+  }
+
+  const { data: versions, error: versionsError } = await db.from("proposal_versions")
+    .select("id")
+    .eq("organization_id", organizationId)
+    .eq("proposal_id", proposalId);
+  if (versionsError) return NextResponse.json({ ok: false, error: versionsError.message }, { status: 400 });
+  const versionIds = (versions || []).map((version) => version.id);
+
+  const [acceptances, communications, outbox] = await Promise.all([
+    db.from("proposal_acceptances").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("proposal_id", proposalId),
+    db.from("communication_followups").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("proposal_id", proposalId),
+    db.from("integration_outbox").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("entity_id", proposalId),
+  ]);
+  const directError = [acceptances, communications, outbox].find((result) => result.error)?.error;
+  if (directError) return NextResponse.json({ ok: false, error: directError.message }, { status: 400 });
+
+  let contractsCount = 0;
+  let contractVersionsCount = 0;
+  let purchasesCount = 0;
+  let paymentLinksCount = 0;
+  if (versionIds.length) {
+    const [contracts, contractVersions, purchases, paymentLinks] = await Promise.all([
+      db.from("contracts").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).in("proposal_version_id", versionIds),
+      db.from("contract_versions").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).in("proposal_version_id", versionIds),
+      db.from("expected_purchases").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).in("proposal_version_id", versionIds),
+      db.from("payment_links").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).in("proposal_version_id", versionIds),
+    ]);
+    const versionError = [contracts, contractVersions, purchases, paymentLinks].find((result) => result.error)?.error;
+    if (versionError) return NextResponse.json({ ok: false, error: versionError.message }, { status: 400 });
+    contractsCount = contracts.count || 0;
+    contractVersionsCount = contractVersions.count || 0;
+    purchasesCount = purchases.count || 0;
+    paymentLinksCount = paymentLinks.count || 0;
+  }
+
+  const blockers = {
+    acceptances: acceptances.count || 0,
+    contracts: contractsCount + contractVersionsCount,
+    purchases: purchasesCount,
+    payment_links: paymentLinksCount,
+    communications: communications.count || 0,
+    outbox: outbox.count || 0,
+  };
+  if (Object.values(blockers).some((value) => value > 0)) {
+    return NextResponse.json({ ok: false, error: "proposal_has_protected_history", blockers }, { status: 409 });
+  }
+
+  const { error: deleteError } = await db.from("proposals").delete().eq("id", proposalId).eq("organization_id", organizationId);
+  if (deleteError) return NextResponse.json({ ok: false, error: deleteError.code === "23503" ? "proposal_has_protected_history" : deleteError.message }, { status: deleteError.code === "23503" ? 409 : 400 });
+
+  await db.from("cases").update({ status: "call_done", next_action: "Preparar nuevo presupuesto", updated_at: new Date().toISOString() })
+    .eq("id", proposal.case_id)
+    .eq("organization_id", organizationId)
+    .eq("status", "budget_draft");
+  await db.from("audit_log").insert({ organization_id: organizationId, actor_id: access.actorId, entity_type: "proposal", entity_id: proposalId, action: "proposal.deleted", before_data: proposal });
+  return NextResponse.json({ ok: true, data: { id: proposalId } });
+}
