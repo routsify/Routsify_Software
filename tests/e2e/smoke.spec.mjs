@@ -80,7 +80,7 @@ test.describe("authenticated critical-path smoke", () => {
     await expect(page.getByRole("link", { name: /Solo llamada/ }).first()).toBeVisible();
     await expect(page.getByRole("link", { name: /Solo formulario/ }).first()).toBeVisible();
     await expect(page.getByRole("button", { name: "Actualizar ahora", exact: true })).toBeVisible();
-    await expect(page.getByRole("link", { name: /Archivadas/ }).first()).toBeVisible();
+    await expect(page.getByLabel("Estado")).toHaveValue("archived");
     await expect(page.getByText("Solicitud seleccionada", { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Compró", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "No compró", exact: true })).toBeVisible();
