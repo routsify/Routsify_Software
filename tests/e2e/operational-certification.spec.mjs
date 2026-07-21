@@ -347,7 +347,7 @@ test.describe("certificación operativa de producción", () => {
     await test.step("crear, modificar y cancelar una reserva real de prueba", async () => {
       const from = new Date(Date.now() + 24 * 60 * 60_000).toISOString();
       const to = new Date(Date.now() + 45 * 24 * 60 * 60_000).toISOString();
-      const availability = await api(request, "GET", `/api/routsify/clients/booking/availability?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&timezone=Europe%2FMadrid&duration=30`);
+      const availability = await api(request, "GET", `/api/routsify/clients/booking/availability?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&timezone=Europe%2FMadrid`);
       const slot = availability.data.slots.find((item) => item.available !== false && new Date(item.startsAt).getTime() > Date.now() + 60 * 60_000);
       expect(slot, "Booking no devolvió ningún hueco futuro disponible").toBeTruthy();
       const bookingDuration = Number(slot.durationMinutes || availability.data.durationMinutes || 0);
