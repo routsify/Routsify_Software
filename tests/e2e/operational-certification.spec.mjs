@@ -110,6 +110,7 @@ test.describe("certificación operativa de producción", () => {
     await signIn(page);
     const request = page.request;
     const runTag = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+    const clientPhone = `+34000${String(Math.floor(Math.random() * 1_000_000)).padStart(6, "0")}`;
     const clientEmail = taggedEmail(process.env.E2E_EMAIL, runTag);
     const tripStart = dateOffset(10);
     const tripEnd = dateOffset(13);
@@ -131,7 +132,7 @@ test.describe("certificación operativa de producción", () => {
       const client = await api(request, "POST", "/api/routsify/clients", {
         display_name: `[PRUEBA E2E ${runTag}] Ana Prueba`,
         email: clientEmail,
-        phone: "+34000000000",
+        phone: clientPhone,
         client_type: "person",
         tax_id: `TEST-${runTag}`,
         billing_address: { address: "Calle Prueba 1", city: "Madrid", postal_code: "28001", country: "ES" },
@@ -389,8 +390,8 @@ test.describe("certificación operativa de producción", () => {
     });
 
     await test.step("validar páginas, informes y estado final", async () => {
-      await api(request, "GET", "/api/routsify/reports/summary");
-      await api(request, "GET", "/api/routsify/reports/profitability");
+      const reportExport = await api(request, "GET", "/api/routsify/reports/export?period=30");
+      expect(reportExport.raw).toContain("Informe de dirección Routsify");
       await processOutbox(request);
       const health = await api(request, "GET", "/api/routsify/settings/integrations/health");
       expect(health.data.integrations.find((item) => item.id === "holded")?.state).toBe("healthy");
