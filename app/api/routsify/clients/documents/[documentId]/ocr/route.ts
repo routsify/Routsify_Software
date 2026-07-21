@@ -14,6 +14,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ ok: true, data }, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "ocr_failed";
-    return NextResponse.json({ ok: false, error: message }, { status: message === "document_not_found" ? 404 : 400 });
+    const status = message === "document_not_found" ? 404
+      : message === "openai_timeout" ? 504
+        : message === "openai_api_key_not_configured" ? 503
+          : 400;
+    return NextResponse.json({ ok: false, error: message }, { status });
   }
 }
