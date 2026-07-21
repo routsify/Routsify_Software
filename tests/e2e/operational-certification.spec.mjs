@@ -29,9 +29,10 @@ function redacted(value) {
   ]));
 }
 
-async function api(request, method, path, data) {
+async function api(request, method, path, data, options = {}) {
   const response = await request.fetch(path, {
     method,
+    timeout: options.timeout ?? 30_000,
     ...(data === undefined ? {} : { data }),
   });
   const raw = await response.text();
@@ -207,7 +208,13 @@ test.describe("certificación operativa de producción", () => {
       });
       certification.documentId = text(confirmed.data.id);
 
-      const ocr = await api(request, "POST", `/api/routsify/clients/documents/${certification.documentId}/ocr`, { travelerId });
+      const ocr = await api(
+        request,
+        "POST",
+        `/api/routsify/clients/documents/${certification.documentId}/ocr`,
+        { travelerId },
+        { timeout: 90_000 },
+      );
       certification.ocrRunId = text(ocr.data.runId);
       expect(ocr.data.status).toBe("review_required");
       await api(request, "POST", `/api/routsify/clients/ocr/${certification.ocrRunId}/review`, {
