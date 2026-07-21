@@ -491,6 +491,12 @@ test.describe("certificación operativa de producción", () => {
       }
     });
 
+    await test.step("verificar la retención técnica y de privacidad", async () => {
+      const retention = await api(request, "POST", "/api/routsify/jobs/run", { job: "privacy_retention_review" });
+      expect(retention.data.failed, JSON.stringify(retention.data.results || [])).toBe(0);
+      expect(retention.data.technical_logs.failedOrganizations).toBe(0);
+    });
+
     console.log(`ROUTSIFY_OPERATIONAL_CERTIFICATION=${JSON.stringify(certification)}`);
   });
 });
