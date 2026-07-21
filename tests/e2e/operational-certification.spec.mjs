@@ -131,6 +131,7 @@ test.describe("certificación operativa de producción", () => {
       const client = await api(request, "POST", "/api/routsify/clients", {
         display_name: `[PRUEBA E2E ${runTag}] Ana Prueba`,
         email: clientEmail,
+        phone: "+34000000000",
         client_type: "person",
         tax_id: `TEST-${runTag}`,
         billing_address: { address: "Calle Prueba 1", city: "Madrid", postal_code: "28001", country: "ES" },
@@ -349,11 +350,13 @@ test.describe("certificación operativa de producción", () => {
       const availability = await api(request, "GET", `/api/routsify/clients/booking/availability?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&timezone=Europe%2FMadrid&duration=30`);
       const slot = availability.data.slots.find((item) => item.available !== false && new Date(item.startsAt).getTime() > Date.now() + 60 * 60_000);
       expect(slot, "Booking no devolvió ningún hueco futuro disponible").toBeTruthy();
+      const bookingDuration = Number(slot.durationMinutes || availability.data.durationMinutes || 0);
+      expect(bookingDuration).toBeGreaterThanOrEqual(5);
       const created = await api(request, "POST", "/api/routsify/clients/booking/reservations", {
         clientId: certification.clientId,
         startsAt: slot.startsAt,
         timezone: "Europe/Madrid",
-        durationMinutes: 30,
+        durationMinutes: bookingDuration,
         notes: `[PRUEBA E2E ${runTag}] Crear-modificar-cancelar`,
         privacyAccepted: true,
       });
