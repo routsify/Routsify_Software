@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { IntegrationHealthCard, IntegrationHealthState, IntegrationHealthWorkspace } from "@/lib/integration-health-server";
 import styles from "./IntegrationSecretsPanel.module.css";
 
 const secretDefinitions = {
@@ -121,6 +122,19 @@ function resultText(result: TestResult) {
   return `No se pudo validar: ${result.error || "revisa la credencial y los permisos"}.`;
 }
 
+const healthLabels: Record<IntegrationHealthState, string> = {
+  healthy: "Operativa",
+  attention: "Atención",
+  error: "Incidencia",
+  setup_required: "Configurar",
+  inactive: "Inactiva",
+};
+
+function displayDate(value: string | null) {
+  if (!value) return "Sin actividad registrada";
+  return new Intl.DateTimeFormat("es-ES", { dateStyle: "short", timeStyle: "short" }).format(new Date(value));
+}
+
 export function IntegrationSecretsPanel({ initialStatuses, initialValues, canManage, onSettingsSaved }: {
   initialStatuses: IntegrationSecretStatus[];
   initialValues: Record<string, IntegrationSettingValue>;
@@ -158,24 +172,44 @@ export function IntegrationSecretsPanel({ initialStatuses, initialValues, canMan
   const [tests, setTests] = useState<Record<string, TestResult>>({});
   const [origin, setOrigin] = useState("");
   const [loading, setLoading] = useState(true);
+  const [healthLoading, setHealthLoading] = useState(true);
+  const [health, setHealth] = useState<IntegrationHealthWorkspace | null>(null);
 
   const statusMap = useMemo(() => new Map(statuses.map((item) => [item.key, item])), [statuses]);
+  const healthMap = useMemo(() => new Map((health?.integrations || []).map((item) => [item.id, item])), [health]);
   const effectiveFilloutFormId = useMemo(
     () => simple.filloutFormId.trim() || extractFilloutFormId(simple.filloutPublicUrl),
     [simple.filloutFormId, simple.filloutPublicUrl],
   );
 
+  const refreshHealth = useCallback(async () => {
+    setHealthLoading(true);
+    try {
+      const response = await fetch("/api/routsify/settings/integrations/health", { cache: "no-store" });
+      const result = await response.json().catch(() => null);
+      if (!response.ok || !result?.ok || !result.data) throw new Error(String(result?.error || "No se pudo cargar el estado operativo."));
+      setHealth(result.data as IntegrationHealthWorkspace);
+      setMessages((current) => ({ ...current, health: null }));
+    } catch (error) {
+      setMessages((current) => ({ ...current, health: error instanceof Error ? error.message : "No se pudo cargar el estado operativo." }));
+    } finally {
+      setHealthLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     setOrigin(window.location.origin);
-    void fetch("/api/routsify/settings/integrations/config")
-      .then((response) => response.json())
-      .then((result) => {
-        if (result?.ok && result.data) setConfig(result.data as IntegrationConfig);
-        else setMessages((current) => ({ ...current, global: String(result?.error || "No se pudo cargar la configuración de integraciones.") }));
-      })
-      .catch(() => setMessages((current) => ({ ...current, global: "No se pudo cargar la configuración de integraciones." })))
-      .finally(() => setLoading(false));
-  }, []);
+    const configurationRequest = canManage
+      ? fetch("/api/routsify/settings/integrations/config")
+        .then((response) => response.json())
+        .then((result) => {
+          if (result?.ok && result.data) setConfig(result.data as IntegrationConfig);
+          else setMessages((current) => ({ ...current, global: String(result?.error || "No se pudo cargar la configuración de integraciones.") }));
+        })
+        .catch(() => setMessages((current) => ({ ...current, global: "No se pudo cargar la configuración de integraciones." })))
+      : Promise.resolve();
+    void Promise.allSettled([configurationRequest, refreshHealth()]).finally(() => setLoading(false));
+  }, [canManage, refreshHealth]);
 
   function hasSavedSecret(key: SecretKey) {
     return Boolean(statusMap.get(key)?.configured);
@@ -186,6 +220,7 @@ export function IntegrationSecretsPanel({ initialStatuses, initialValues, canMan
   }
 
   function isActive(tool: ToolId) {
+    if (!canManage && healthMap.has(tool)) return Boolean(healthMap.get(tool)?.enabled);
     if (tool === "holded") return credentialEnabled.holded;
     if (tool === "openai") return credentialEnabled.openai;
     if (tool === "email") return config.email.enabled;
@@ -195,6 +230,7 @@ export function IntegrationSecretsPanel({ initialStatuses, initialValues, canMan
   }
 
   function isReady(tool: ToolId) {
+    if (!canManage && healthMap.has(tool)) return Boolean(healthMap.get(tool)?.configured);
     if (!isActive(tool)) return false;
     if (tool === "holded") return hasSavedSecret("holded_api_key");
     if (tool === "openai") return hasSavedSecret("openai_api_key");
@@ -319,6 +355,7 @@ export function IntegrationSecretsPanel({ initialStatuses, initialValues, canMan
         await saveSimpleSettings(updates);
         setSimple((current) => ({ ...current, filloutFormId: effectiveFilloutFormId }));
       }
+      await refreshHealth();
       setMessages((current) => ({ ...current, [tool]: isActive(tool) ? "Configuración guardada." : "Integración desactivada." }));
     } catch (error) {
       setMessages((current) => ({ ...current, [tool]: error instanceof Error ? error.message : "No se pudo guardar la integración." }));
@@ -331,10 +368,46 @@ export function IntegrationSecretsPanel({ initialStatuses, initialValues, canMan
     if (!canManage || !isReady(tool)) return;
     setBusy(`test:${tool}`);
     setTests((current) => ({ ...current, [tool]: null }));
-    const response = await fetch(`/api/routsify/settings/integrations/${tool}/test`, { method: "POST" });
-    const result = await response.json().catch(() => null);
-    setBusy(null);
-    setTests((current) => ({ ...current, [tool]: result || { ok: false, error: "Respuesta inválida" } }));
+    try {
+      const response = await fetch(`/api/routsify/settings/integrations/${tool}/test`, { method: "POST" });
+      const result = await response.json().catch(() => null);
+      setTests((current) => ({ ...current, [tool]: result || { ok: false, error: "Respuesta inválida" } }));
+      await refreshHealth();
+    } catch {
+      setTests((current) => ({ ...current, [tool]: { ok: false, error: "No se pudo completar la prueba" } }));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function retryFailed(tool: ToolId) {
+    if (!canManage) return;
+    setBusy(`retry:${tool}`);
+    setMessages((current) => ({ ...current, [tool]: null }));
+    try {
+      const response = await fetch("/api/routsify/settings/integrations/health", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ integration: tool }),
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok || !result?.ok) throw new Error(String(result?.error || "No se pudo programar el reintento."));
+      const scheduled = Number(result.data?.scheduled || 0);
+      const manualReview = Number(result.data?.manualReview || 0);
+      setMessages((current) => ({
+        ...current,
+        [tool]: scheduled
+          ? `${scheduled} evento${scheduled === 1 ? "" : "s"} programado${scheduled === 1 ? "" : "s"} para reintento.${manualReview ? ` ${manualReview} requiere revisión manual.` : ""}`
+          : manualReview
+            ? `${manualReview} evento${manualReview === 1 ? " requiere" : "s requieren"} revisión manual; no se ha reintentado automáticamente.`
+            : "No hay eventos fallidos que se puedan reintentar.",
+      }));
+      await refreshHealth();
+    } catch (error) {
+      setMessages((current) => ({ ...current, [tool]: error instanceof Error ? error.message : "No se pudo programar el reintento." }));
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function copyWebhook(path: string, tool: ToolId) {
@@ -364,6 +437,40 @@ export function IntegrationSecretsPanel({ initialStatuses, initialValues, canMan
       <code>{origin ? `${origin}${path}` : path}</code>
       <button className="btn secondary" type="button" onClick={() => void copyWebhook(path, tool)}>Copiar URL</button>
     </div>;
+  }
+
+  function healthDetails(tool: ToolId, card: IntegrationHealthCard | undefined) {
+    if (!card) return healthLoading ? <div className={styles.healthLoading}>Comprobando actividad reciente…</div> : null;
+    const toneClass = card.state === "healthy"
+      ? styles.healthHealthy
+      : card.state === "error"
+        ? styles.healthError
+        : card.state === "inactive"
+          ? styles.healthInactive
+          : styles.healthAttention;
+    return <section className={`${styles.healthPanel} ${toneClass}`} aria-label={`Estado operativo de ${card.label}`}>
+      <div className={styles.healthHeader}>
+        <div><span>Salud operativa</span><strong>{healthLabels[card.state]}</strong></div>
+        <small>Actualizado {displayDate(health?.generatedAt || null)}</small>
+      </div>
+      <p>{card.detail}</p>
+      <div className={styles.healthMetrics}>
+        <span><strong>{card.pending}</strong> en cola</span>
+        <span><strong>{card.failed + card.manualReview}</strong> incidencias</span>
+        <span><strong>{card.processed}</strong> procesados</span>
+      </div>
+      <dl className={styles.healthDates}>
+        <div><dt>Última actividad</dt><dd>{displayDate(card.lastActivityAt)}</dd></div>
+        <div><dt>Última prueba</dt><dd>{displayDate(card.lastTestAt)}</dd></div>
+      </dl>
+      {card.lastError ? <p className={styles.healthErrorText}>{card.lastError}</p> : null}
+      {card.recentRuns.length ? <details className={styles.history}>
+        <summary>Historial de pruebas ({card.recentRuns.length})</summary>
+        <ul>{card.recentRuns.map((run) => <li key={run.id}><span className={run.status === "done" ? styles.runOk : styles.runError}>{run.status === "done" ? "Correcta" : "Fallida"}</span><time dateTime={run.startedAt || undefined}>{displayDate(run.startedAt)}</time><small>{run.summary || run.error || "Sin detalle adicional"}</small></li>)}</ul>
+      </details> : null}
+      {canManage && card.failed > 0 ? <button className="btn secondary" type="button" onClick={() => void retryFailed(tool)} disabled={busy !== null}>{busy === `retry:${tool}` ? "Programando…" : `Reintentar fallidos (${card.failed})`}</button> : null}
+      {card.manualReview > 0 ? <small className={styles.manualReview}>{card.manualReview} evento{card.manualReview === 1 ? "" : "s"} bloqueado{card.manualReview === 1 ? "" : "s"} para revisión manual.</small> : null}
+    </section>;
   }
 
   function mainFields(tool: ToolId) {
@@ -426,15 +533,23 @@ export function IntegrationSecretsPanel({ initialStatuses, initialValues, canMan
   const readyCount = tools.filter((tool) => isReady(tool.id)).length;
 
   return <section className={styles.wrapper}>
-    <div className={styles.intro}><div><span className="eyebrow">Conexiones</span><h2>Herramientas conectadas</h2><p>Activa cada herramienta, completa únicamente los datos esenciales y prueba la conexión.</p></div><div className={styles.summary}><strong>{readyCount}/{tools.length}</strong><span>listas</span><small>{activeCount} activas</small></div></div>
+    <div className={styles.intro}><div><span className="eyebrow">Conexiones</span><h2>Herramientas conectadas</h2><p>Activa cada herramienta, completa únicamente los datos esenciales y prueba la conexión.</p></div><div className={styles.summary}><strong>{health ? `${health.summary.healthy}/${health.summary.active}` : `${readyCount}/${tools.length}`}</strong><span>{health ? "operativas" : "listas"}</span><small>{activeCount} activas</small></div></div>
     {!canManage ? <p className="form-warning">Puedes consultar el estado, pero solo un administrador puede cambiar credenciales o conexiones.</p> : null}
     {messages.global ? <p className="form-warning">{messages.global}</p> : null}
+    {messages.health ? <p className="form-warning">{messages.health}</p> : null}
+    {health ? <div className={styles.healthOverview}>
+      <div><span>Operativas</span><strong>{health.summary.healthy}</strong></div>
+      <div><span>Requieren atención</span><strong>{health.summary.attention}</strong></div>
+      <div><span>Con incidencias</span><strong>{health.summary.errors}</strong></div>
+      <div className={styles.cronState}><span>Proceso diario</span><strong>{health.cron.state === "healthy" ? "Correcto" : health.cron.state === "error" ? "Con errores" : "Sin registro"}</strong><small>{displayDate(health.cron.lastRunAt)}</small></div>
+    </div> : null}
 
     <div className={styles.grid} aria-busy={loading}>
       {tools.map((tool) => {
         const active = isActive(tool.id);
         const ready = isReady(tool.id);
         const result = tests[tool.id];
+        const cardHealth = healthMap.get(tool.id);
         const message = messages[tool.id];
         const advanced = advancedFields(tool.id);
         const credentialWillBeRemoved = (tool.id === "holded" || tool.id === "openai") && !active && toolSecrets[tool.id].some(hasSavedSecret);
@@ -443,6 +558,7 @@ export function IntegrationSecretsPanel({ initialStatuses, initialValues, canMan
           <div className={styles.cardHeader}><div className={styles.identity}><span className={styles.logo}>{tool.short}</span><div><h3>{tool.name}</h3><p>{tool.description}</p></div></div><div className={styles.stateBlock}><label className={styles.toggle}><input type="checkbox" checked={active} onChange={(event) => setToolActive(tool.id, event.target.checked)} disabled={!canManage || busy !== null || loading} /><span>{active ? "Activada" : "Desactivada"}</span></label><span className={`${styles.status} ${ready ? styles.statusReady : active ? styles.statusPending : styles.statusOff}`}>{ready ? "✓ Activa" : active ? "Falta configurar" : "Desactivada"}</span></div></div>
           <div className={styles.mainFields}>{mainFields(tool.id)}</div>
           <p className={styles.secretHelp}>Las claves guardadas permanecen cifradas y nunca vuelven a mostrarse.</p>
+          {healthDetails(tool.id, cardHealth)}
           {credentialWillBeRemoved ? <p className={styles.warning}>Al guardar desactivada se eliminará la API Key almacenada.</p> : null}
           {advanced ? <details className={styles.advanced}><summary>Configuración avanzada</summary>{advanced}</details> : null}
           <div className={styles.actions}>

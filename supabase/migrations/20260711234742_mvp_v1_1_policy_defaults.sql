@@ -1,0 +1,23 @@
+alter table public.organizations add column if not exists close_margin_days integer not null default 5;
+alter table public.organizations add column if not exists fiscal_mode_validated_at timestamptz;
+alter table public.organizations add column if not exists fiscal_mode_validated_by uuid;
+alter table public.organizations add column if not exists privacy_retention_days integer not null default 1825;
+alter table public.organizations add column if not exists supplier_invoice_retention_days integer not null default 1825;
+update public.organizations set fiscal_mode='proforma_on_payment_final_after_trip', close_margin_days=5, privacy_retention_days=1825, supplier_invoice_retention_days=1825;
+alter table public.proposals add column if not exists holded_estimate_id text;
+alter table public.billing_documents add column if not exists client_id uuid references public.clients(id) on delete set null;
+alter table public.billing_documents add column if not exists type text;
+alter table public.billing_documents add column if not exists trigger_name text;
+alter table public.billing_documents add column if not exists tax_amount numeric(14,2) not null default 0;
+alter table public.billing_documents add column if not exists issued_at timestamptz;
+alter table public.billing_documents add column if not exists external_document_id text;
+alter table public.billing_documents add column if not exists notes text;
+alter table public.billing_documents add column if not exists idempotency_key text;
+alter table public.billing_documents add column if not exists sync_message text;
+alter table public.billing_documents add column if not exists last_synced_at timestamptz;
+alter table public.billing_documents add column if not exists updated_at timestamptz not null default now();
+drop index if exists public.billing_documents_idempotency_uidx;
+create unique index billing_documents_idempotency_uidx on public.billing_documents(organization_id,idempotency_key);
+create unique index if not exists holded_sync_org_idempotency_uidx on public.holded_sync(organization_id,idempotency_key);
+create unique index if not exists payment_links_org_case_provider_uidx on public.payment_links(organization_id,case_id,provider);
+

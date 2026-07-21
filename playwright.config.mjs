@@ -1,5 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const bypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+
 export default defineConfig({
   testDir: "./tests/e2e",
   timeout: 30_000,
@@ -19,11 +21,19 @@ export default defineConfig({
     video: "off",
     navigationTimeout: 20_000,
     actionTimeout: 10_000,
+    extraHTTPHeaders: bypassSecret ? {
+      "x-vercel-protection-bypass": bypassSecret,
+      "x-vercel-set-bypass-cookie": "true",
+    } : undefined,
   },
   projects: [
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      name: "mobile-chromium",
+      use: { ...devices["Pixel 7"] },
     },
   ],
 });

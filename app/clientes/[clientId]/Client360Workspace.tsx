@@ -179,7 +179,7 @@ export function Client360Workspace({ data }: { data: Client360Input }) {
       <div className="client360-actions">
         {email ? <a className="btn secondary" href={`mailto:${encodeURIComponent(email)}`}>Email</a> : null}
         {phone ? <a className="btn secondary" href={`https://wa.me/${phone}`} target="_blank" rel="noreferrer">WhatsApp</a> : null}
-        <a className="btn secondary" href={`/expedientes?clientId=${encodeURIComponent(clientId)}`}>Crear expediente</a>
+        <a className="btn secondary" href={`/expedientes/gestionar?clientId=${encodeURIComponent(clientId)}`}>Crear expediente</a>
         <a className="btn" href={`/clientes`}>Volver a clientes</a>
       </div>
     </section>
@@ -248,7 +248,7 @@ export function Client360Workspace({ data }: { data: Client360Input }) {
     </div> : null}
 
     {tab === "viajes" ? <section className="card">
-      <div className="panel-head"><div><h2>Expedientes y viajes</h2><p>Todos los viajes del cliente desde una sola ficha.</p></div><a className="btn" href={`/expedientes?clientId=${encodeURIComponent(clientId)}`}>Nuevo expediente</a></div>
+      <div className="panel-head"><div><h2>Expedientes y viajes</h2><p>Todos los viajes del cliente desde una sola ficha.</p></div><a className="btn" href={`/expedientes/gestionar?clientId=${encodeURIComponent(clientId)}`}>Nuevo expediente</a></div>
       {data.cases.length === 0 ? <div className="empty-state"><h3>Sin expedientes</h3><p>El cliente todavía no tiene viajes creados.</p></div> : <div className="table-scroll"><table><thead><tr><th>Expediente</th><th>Destino</th><th>Fechas</th><th>Estado</th><th>Próxima acción</th><th>Venta</th><th></th></tr></thead><tbody>{data.cases.map((caseRow) => {
         const caseId = text(caseRow.id);
         const proposal = proposalByCase.get(caseId);

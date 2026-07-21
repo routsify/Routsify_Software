@@ -2,6 +2,9 @@
   "name": "routsify-software",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": "24.x"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "npm run validate:platform && next build",
@@ -12,9 +15,11 @@
     "validate:mvp": "node scripts/validate-mvp.mjs",
     "validate:booking": "node scripts/validate-booking-api.mjs",
     "validate:holded": "node scripts/validate-holded-v2.mjs",
-    "validate:platform": "npm run validate:mvp && npm run validate:booking && npm run validate:holded && node scripts/validate-platform.mjs",
-    "test:e2e": "npx --yes @playwright/test@latest test",
-    "quality:dead-code": "npx --yes knip@5 --config knip.json",
+    "validate:ui": "node scripts/validate-ui-actions.mjs",
+    "validate:migrations": "node scripts/validate-migrations.mjs",
+    "validate:platform": "npm run validate:mvp && npm run validate:booking && npm run validate:holded && npm run validate:ui && npm run validate:migrations && node scripts/validate-platform.mjs",
+    "test:e2e": "playwright test",
+    "quality:dead-code": "knip --config knip.json --files --dependencies --treat-config-hints-as-errors",
     "analyze:bundle": "next experimental-analyze --output",
     "db:types": "npx --yes supabase@2 gen types typescript --project-id wphiurjzkxbkakiozgvf --schema public > lib/database.types.ts"
   },
@@ -24,17 +29,17 @@
     "echarts": "6.1.0",
     "lucide-react": "0.468.0",
     "next": "16.2.10",
-    "react": "19.2.1",
-    "react-dom": "19.2.1"
+    "react": "19.2.7",
+    "react-dom": "19.2.7"
   },
   "devDependencies": {
-    "@netlify/plugin-nextjs": "5.15.12",
-    "@types/node": "22.10.5",
-    "@types/react": "19.2.1",
-    "@types/react-dom": "19.2.1",
+    "@playwright/test": "1.61.1",
+    "@types/node": "24.13.3",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
     "eslint": "9.17.0",
     "eslint-config-next": "16.2.10",
-    "postcss": "8.5.17",
+    "knip": "5.88.1",
     "typescript": "5.7.3"
   },
   "overrides": {

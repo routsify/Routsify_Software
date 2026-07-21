@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runAutomationRulesForAllOrganizations } from "@/lib/automation-rules-server";
 import { syncFilloutForAllOrganizationsV2 } from "@/lib/fillout-sync-server";
+import { recordIntegrationRun } from "@/lib/integration-health-server";
 import { runRoutsifyJob, type RoutsifyJob } from "@/lib/jobs-server";
+import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -51,11 +53,26 @@ export async function GET(request: NextRequest) {
   }
 
   const failed = results.filter((result) => !result.ok).length;
+  const finishedAt = new Date().toISOString();
+  const { data: organizations } = await getSupabaseAdminClient().from("organizations").select("id");
+  const failedJobs = results.filter((result) => !result.ok).map((result) => result.job);
+  await Promise.allSettled((organizations || []).map((organization) => recordIntegrationRun({
+    organizationId: String(organization.id),
+    integration: "operations_cron",
+    kind: "cron",
+    status: failed === 0 ? "done" : "failed",
+    startedAt,
+    finishedAt,
+    triggerSource: schedule === "manual" ? "manual" : "vercel_cron",
+    summary: `${results.length - failed}/${results.length} procesos completados.`,
+    lastError: failedJobs.length ? `Procesos con error: ${failedJobs.join(", ")}` : null,
+    metadata: { schedule, completed: results.length - failed, failed, jobs: results.map((result) => ({ job: result.job, ok: result.ok })) },
+  })));
   return NextResponse.json({
     ok: failed === 0,
     schedule,
     startedAt,
-    finishedAt: new Date().toISOString(),
+    finishedAt,
     jobs: results,
     failed,
   }, { status: failed === 0 ? 200 : 207 });

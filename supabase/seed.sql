@@ -1,0 +1,2 @@
+-- Intentionally empty.
+-- Add synthetic development fixtures only; never copy production customer data here.

@@ -73,15 +73,16 @@ export function hasPermission(role: string | null | undefined, permission: AppPe
 }
 
 export const appNavigation = [
-  { href: "/hoy", label: "Inicio", permission: "app.view" },
-  { href: "/control", label: "Control operativo", permission: "app.view" },
-  { href: "/clientes", label: "Clientes", permission: "clients.view" },
-  { href: "/expedientes", label: "Expedientes", permission: "cases.view" },
-  { href: "/propuestas", label: "Presupuestos", permission: "budgets.view" },
-  { href: "/proveedores", label: "Proveedores", permission: "suppliers.view" },
-  { href: "/compras", label: "Compras", permission: "purchases.view" },
-  { href: "/comunicaciones", label: "Comunicaciones", permission: "communications.view" },
-  { href: "/automatizaciones", label: "Automatizaciones", permission: "settings.manage" },
-  { href: "/informes", label: "Informes", permission: "reports.view" },
-  { href: "/ajustes", label: "Ajustes", permission: "settings.view" },
-] as const satisfies ReadonlyArray<{ href: string; label: string; permission: AppPermission }>;
+  { href: "/hoy", label: "Hoy", permission: "app.view", section: "Operación" },
+  { href: "/solicitudes", label: "Solicitudes", permission: "clients.view", section: "Operación" },
+  { href: "/expedientes", label: "Expedientes", permission: "cases.view", section: "Operación" },
+  { href: "/propuestas", label: "Presupuestos", permission: "budgets.view", section: "Operación" },
+  { href: "/compras", label: "Compras", permission: "purchases.view", section: "Operación" },
+  { href: "/clientes", label: "Clientes", permission: "clients.view", section: "Relaciones" },
+  { href: "/proveedores", label: "Proveedores", permission: "suppliers.view", section: "Relaciones" },
+  { href: "/comunicaciones", label: "Comunicaciones", permission: "communications.view", section: "Relaciones" },
+  { href: "/control", label: "Control", permission: "app.view", section: "Gestión" },
+  { href: "/informes", label: "Informes", permission: "reports.view", section: "Gestión" },
+  { href: "/automatizaciones", label: "Automatizaciones", permission: "settings.manage", section: "Gestión" },
+  { href: "/ajustes", label: "Ajustes", permission: "settings.view", section: "Gestión" },
+] as const satisfies ReadonlyArray<{ href: string; label: string; permission: AppPermission; section: "Operación" | "Relaciones" | "Gestión" }>;

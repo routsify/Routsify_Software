@@ -1,26 +1,24 @@
 # Routsify Software
 
-MVP operativo de Routsify construido con Next.js, TypeScript y Supabase. Holded se mantiene como fuente fiscal/contable y Routsify como fuente de verdad de la operación del viaje.
+Plataforma operativa de Routsify construida con Next.js, TypeScript y Supabase. Routsify mantiene la verdad de la operación del viaje; Holded conserva la verdad fiscal y contable.
 
-## Estado
+## Flujo principal
 
-La rama del MVP incorpora autenticación y roles, clientes/leads/bookings con deduplicación, expedientes, presupuesto nativo y versionado, propuesta pública segura, compras esperadas, facturas de proveedor privadas, pagos, fiscalidad en `manual_review`, outbox Holded, jobs, cierre operativo e informes mínimos.
+- **Hoy**: prioridades, tareas y estado operativo.
+- **Solicitudes**: revisión de leads de Fillout, resultado comercial y archivo reversible.
+- **Expedientes**: viaje, viajeros, documentos, contrato, pagos, tareas y cronología.
+- **Presupuestos**: escenarios, líneas, versiones, aceptación y enlaces públicos firmados.
+- **Compras**: costes previstos, facturas privadas, conciliación y coste real.
+- **Clientes y proveedores**: fichas 360, importación y relaciones operativas.
+- **Comunicaciones**: seguimientos, plantillas, email y WhatsApp.
+- **Control, informes y automatizaciones**: supervisión y decisiones.
+- **Ajustes**: organización, usuarios, políticas e integraciones.
 
-No se deben usar datos reales mientras `NEXT_PUBLIC_DEMO_MODE` o `ROUTSIFY_ALLOW_PUBLIC_DEMO` estén activos.
-
-## Módulos principales
-
-- Inicio
-- Clientes
-- Expedientes
-- Presupuestos
-- Compras / Proveedores
-- Informes
-- Ajustes
-
-Viajeros, documentos, contrato, pago, tareas y comunicaciones se gestionan dentro del expediente.
+Los antiguos accesos independientes de contratos, documentos, facturación, tareas, viajeros, integraciones y seguridad se conservan como redirecciones compatibles, pero no duplican navegación ni pantallas.
 
 ## Arranque local
+
+Requiere Node.js 24.
 
 ```bash
 cp .env.example .env.local
@@ -28,49 +26,57 @@ npm ci
 npm run validate:platform
 npm run typecheck
 npm run build
-npm run dev
+npm run dev -- --hostname 127.0.0.1
 ```
 
-## Validaciones
+La aplicación nunca activa el modo demo de forma implícita. No uses datos reales con `NEXT_PUBLIC_DEMO_MODE=true` o `ROUTSIFY_ALLOW_PUBLIC_DEMO=true`.
 
-- `npm run validate:mvp`: comprueba piezas funcionales y de seguridad obligatorias.
-- `npm run validate:migrations`: comprueba versiones únicas y contenido crítico del esquema.
-- `npm run validate:platform`: ejecuta ambas validaciones y revisa la configuración de despliegue.
-- `npm run typecheck`: valida TypeScript.
-- `npm run build`: genera el build de Next.js.
+Para Supabase se recomienda `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` en navegador y `SUPABASE_SECRET_KEY` en servidor. Las claves heredadas continúan admitidas durante la transición.
 
-GitHub Actions ejecuta validación, typecheck y build en pull requests y cambios a `main`.
+## Base de datos
+
+- `supabase/migrations/` reproduce el historial autoritativo del proyecto remoto en orden cronológico.
+- `supabase/config.toml` permite trabajar con la CLI de Supabase.
+- `lib/database.types.ts` contiene los tipos generados del esquema vivo.
+- `supabase/seed.sql` se reserva exclusivamente para datos sintéticos.
+
+Las migraciones deben añadirse; no se editan las ya aplicadas. Ejecuta `npm run validate:migrations` antes de publicar.
+
+## Calidad
+
+```bash
+npm run lint
+npm run typecheck
+npm run validate:platform
+npm run quality:dead-code
+npm run build
+npm run test:e2e
+```
+
+`validate:platform` comprueba los contratos funcionales, la seguridad, Holded v2, Booking, los controles de UI y las 103 migraciones ordenadas. El validador de UI rechaza botones sin tipo o acción, formularios desconectados y elementos no semánticos clicables. Knip bloquea archivos o dependencias sin uso.
+
+Las pruebas E2E ejecutan Chromium de escritorio y móvil contra un despliegue de Vercel. Las credenciales y el bypass de automatización se configuran como secretos de GitHub, nunca en el repositorio.
 
 ## Despliegue
 
-Vercel/Netlify pueden desplegar automáticamente desde GitHub. La aplicación requiere Supabase real, migraciones aplicadas, usuarios/perfiles por rol, buckets privados y secretos configurados. La integración Holded y los jobs se activan solo después de validarlos en staging.
+Vercel es el único destino de despliegue. GitHub Actions usa Node.js 24 y ejecuta instalación reproducible con `npm ci`, validaciones, TypeScript y build. Antes de promover a producción:
 
-Documentación:
+1. Confirmar que las migraciones remotas y locales coinciden.
+2. Verificar variables de entorno en Preview y Production.
+3. Probar autenticación y permisos por rol.
+4. Verificar URLs firmadas, buckets privados, caducidad y auditoría.
+5. Probar idempotencia de webhooks, aceptación, pagos y reintentos Holded.
+6. Mantener fiscalidad en `manual_review` hasta la validación de asesoría.
+7. Revisar logs, errores y smoke tests del despliegue.
 
-- `docs/MVP_GAP_AUDIT_AND_PHASES.md`
+Documentación operativa adicional:
+
 - `docs/PRODUCTION_CUTOVER.md`
 - `docs/SCHEDULED_JOBS.md`
+- `docs/THIRD_PARTY_INTEGRATIONS.md`
+- `docs/ROUTSIFY_BOOKING_API.md`
 
-## Endpoints técnicos principales
+## Endpoints de salud
 
-- `GET /api/health`
-- `GET /api/health/internal`
-- `POST /api/documentos/upload-url`
-- `POST /api/documentos/confirm-upload`
-- `POST /api/routsify/outbox/process`
-- `POST /api/routsify/jobs/run`
-- `POST /api/webhooks/forms`
-- `POST /api/webhooks/bookings`
-- `POST /api/webhooks/payments`
-- `POST /api/webhooks/holded`
-
-## Criterio de salida de demo
-
-1. Aplicar migraciones en staging y luego producción.
-2. Crear usuarios y perfiles por rol.
-3. Probar RLS con casos positivos y negativos.
-4. Probar buckets privados, URLs firmadas, caducidad y auditoría.
-5. Probar webhooks duplicados, aceptación duplicada, pago duplicado y reintentos Holded.
-6. Mantener fiscalidad en `manual_review` hasta validación de asesoría.
-7. Configurar jobs y observar ejecuciones.
-8. Establecer `NEXT_PUBLIC_DEMO_MODE=false` y `ROUTSIFY_ALLOW_PUBLIC_DEMO=false`.
+- `GET /api/health`: salud pública sin información sensible.
+- `GET /api/health/internal`: diagnóstico protegido.

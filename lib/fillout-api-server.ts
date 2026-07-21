@@ -213,7 +213,7 @@ export async function syncFilloutSubmissions(organizationId: string, options: { 
     if (submissions.length < PAGE_SIZE || page + 1 >= pageCount) break;
   }
 
-  const processing = queued > 0 ? await processOutboxBatch(Math.min(100, Math.max(25, queued))) : null;
+  const processing = queued > 0 ? await processOutboxBatch(Math.min(100, Math.max(25, queued)), organizationId) : null;
   return {
     ok: failed === 0,
     formId: settings.formId,

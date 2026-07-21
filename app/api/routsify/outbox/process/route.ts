@@ -10,6 +10,6 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json().catch(() => ({})) as { limit?: number };
   const limit = Math.min(Math.max(Number(body.limit || 10), 1), 50);
-  const result = await processOutboxBatch(limit);
+  const result = await processOutboxBatch(limit, access.organizationId);
   return NextResponse.json(result, { status: result.ok ? 200 : 400 });
 }

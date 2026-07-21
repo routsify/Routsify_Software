@@ -48,8 +48,6 @@ export async function createPrivateDocumentUploadUrl(input: { organizationId: st
   return { ok: true, mode: "real" as const, bucket, path, signedUrl: data.signedUrl, token: data.token, expiresAt };
 }
 
-export const createCaseDocumentUploadUrl = createPrivateDocumentUploadUrl;
-
 export async function createPrivateDocumentReadUrl(bucket: string, path: string, expiresInSeconds = 300, input?: { organizationId?: string; actorId?: string; purpose?: string }) {
   const allowedBuckets = new Set([CASE_DOCUMENTS_BUCKET, TRAVEL_DOCUMENTS_BUCKET, INVOICES_BUCKET, PROPOSAL_ASSETS_BUCKET]);
   if (!allowedBuckets.has(bucket)) return { ok: false, mode: "real" as const, error: "invalid_private_bucket", path };
