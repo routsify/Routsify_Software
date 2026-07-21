@@ -1,13 +1,15 @@
 import { loadEffectiveSettings } from "@/lib/effective-settings-server";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
+import { isCaseStatus, type CaseStatus } from "@/lib/case-status";
 
 export type CaseHealthLevel = "good" | "attention" | "critical";
+export type CaseDirectoryStatus = "active" | "all" | CaseStatus;
 
 export type CaseDirectoryRow = {
   id: string;
   case_code: string;
   title: string | null;
-  status: string;
+  status: CaseStatus;
   destination: string | null;
   trip_start: string | null;
   trip_end: string | null;
@@ -60,7 +62,7 @@ export type CaseDirectoryPage = {
   pageSize: number;
   totalPages: number;
   query: string;
-  status: string;
+  status: CaseDirectoryStatus;
   health: "all" | CaseHealthLevel;
   stats: CaseDirectoryStats;
 };
@@ -79,6 +81,10 @@ function cleanQuery(value?: string) { return String(value || "").trim().slice(0,
 function normalizePage(value?: number) { const parsed = Math.floor(Number(value || 1)); return Number.isFinite(parsed) && parsed > 0 ? parsed : 1; }
 function normalizePageSize(value?: number) { const parsed = Number(value || 50); return PAGE_SIZES.has(parsed) ? parsed : 50; }
 function normalizeHealth(value?: string): "all" | CaseHealthLevel { return value === "critical" || value === "attention" || value === "good" ? value : "all"; }
+function normalizeCaseStatus(value?: string): CaseDirectoryStatus {
+  if (value === "all" || value === "active" || isCaseStatus(value)) return value;
+  return "active";
+}
 function one(value: unknown): Row | null {
   if (Array.isArray(value)) return value.length && value[0] && typeof value[0] === "object" ? value[0] as Row : null;
   return value && typeof value === "object" ? value as Row : null;
@@ -131,7 +137,7 @@ function healthFor(input: {
   if (overdueTasks.length) { score -= Math.min(25, 8 + overdueTasks.length * 4); issues.push(`${overdueTasks.length} tarea${overdueTasks.length === 1 ? "" : "s"} vencida${overdueTasks.length === 1 ? "" : "s"}`); }
   if (active && !text(input.caseRow.next_action)) { score -= 10; issues.push("Sin siguiente acción definida"); }
   if (active && input.daysToTrip === null) { score -= 5; issues.push("Fechas de viaje pendientes"); }
-  if (active && input.daysToTrip !== null && input.daysToTrip < 0 && status !== "traveling" && status !== "post_trip" && status !== "ready_to_close") { score -= 20; issues.push("El viaje ya ha comenzado o terminado y el estado no está actualizado"); }
+  if (active && input.daysToTrip !== null && input.daysToTrip < 0 && status !== "ready_to_close") { score -= 20; issues.push("El viaje ya ha comenzado o terminado y el estado no está actualizado"); }
   if (active && input.daysToTrip !== null && input.daysToTrip <= 30 && input.acceptedValue > 0 && !signedContract) { score -= 20; issues.push("Contrato sin firmar a menos de 30 días"); }
   if (active && input.daysToTrip !== null && input.daysToTrip <= 30 && input.acceptedValue > input.paidTotal + 0.01) { score -= 20; issues.push(`Cobro pendiente: ${(input.acceptedValue - input.paidTotal).toFixed(2)} €`); }
   if (active && input.daysToTrip !== null && input.daysToTrip <= 21 && input.pendingPurchases.length) { score -= Math.min(25, 10 + input.pendingPurchases.length * 4); issues.push(`${input.pendingPurchases.length} compra${input.pendingPurchases.length === 1 ? "" : "s"} pendiente${input.pendingPurchases.length === 1 ? "" : "s"}`); }
@@ -154,7 +160,7 @@ export async function listCaseDirectoryPage(
   const requestedPage = normalizePage(options.page);
   const pageSize = normalizePageSize(options.pageSize);
   const query = cleanQuery(options.query);
-  const status = String(options.status || "active");
+  const status = normalizeCaseStatus(options.status);
   const health = normalizeHealth(options.health);
 
   let baseQuery = db.from("cases").select("id,client_id,case_code,title,status,destination,trip_start,trip_end,next_action,next_action_at,blocker,accepted_value,currency,priority,updated_at,clients(display_name,email,phone)").eq("organization_id", organizationId);
@@ -225,7 +231,7 @@ export async function listCaseDirectoryPage(
       id: caseId,
       case_code: text(caseRow.case_code) || "EXP-SIN-CÓDIGO",
       title: text(caseRow.title) || null,
-      status: text(caseRow.status) || "new_lead",
+      status: isCaseStatus(caseRow.status) ? caseRow.status : "new_lead",
       destination: text(caseRow.destination) || null,
       trip_start: text(caseRow.trip_start) || null,
       trip_end: text(caseRow.trip_end) || null,

@@ -2,7 +2,6 @@
   "$schema": "https://unpkg.com/knip@5/schema.json",
   "entry": [
     "app/**/*.{ts,tsx}",
-    "proxy.ts",
     "scripts/**/*.{js,mjs,cjs,ts}"
   ],
   "project": [
@@ -11,14 +10,5 @@
     "lib/**/*.{ts,tsx}",
     "scripts/**/*.{js,mjs,cjs,ts}",
     "*.{ts,tsx,js,mjs,cjs}"
-  ],
-  "ignore": [
-    ".next/**",
-    "supabase/migrations/**",
-    "playwright-report/**",
-    "test-results/**"
-  ],
-  "ignoreDependencies": [
-    "@netlify/plugin-nextjs"
   ]
 }

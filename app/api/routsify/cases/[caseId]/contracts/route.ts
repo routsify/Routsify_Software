@@ -3,10 +3,11 @@ import { jsonAccessDenied, requireInternalAccess } from "@/lib/api-security";
 import { loadEffectiveSettings } from "@/lib/effective-settings-server";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { resolveOrganizationId, getRequestUserId } from "@/lib/request-context";
+import { isCaseStatus, type CaseStatus } from "@/lib/case-status";
 
 const statuses = new Set(["draft", "sent", "signed", "cancelled"]);
-const statusesAfterContractReady = new Set(["contract_signed", "payment_confirmed", "paid", "in_progress", "traveling", "completed", "closed", "cancelled"]);
-const statusesAfterContractSigned = new Set(["payment_confirmed", "paid", "in_progress", "traveling", "completed", "closed", "cancelled"]);
+const statusesAfterContractReady = new Set<CaseStatus>(["contract_signed", "payment_confirmed", "suppliers_pending", "ready_to_close", "closed"]);
+const statusesAfterContractSigned = new Set<CaseStatus>(["payment_confirmed", "suppliers_pending", "ready_to_close", "closed"]);
 
 function hasBillingAddress(value: unknown) {
   if (typeof value === "string") return value.trim().length > 0;
@@ -55,6 +56,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   }
 
   const now = new Date().toISOString();
+  const currentCaseStatus = isCaseStatus(caseRow.status) ? caseRow.status : null;
   const contractId = String(body?.id || "").trim();
   const { data: existingContract } = contractId
     ? await supabase.from("contracts").select("id,status,signed_at").eq("id", contractId).eq("organization_id", organizationId).eq("case_id", caseId).maybeSingle()
@@ -74,11 +76,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const { data, error } = await query.select("*").single();
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
 
-  if (status === "sent" && !statusesAfterContractReady.has(String(caseRow.status || ""))) {
+  if (status === "sent" && (!currentCaseStatus || !statusesAfterContractReady.has(currentCaseStatus))) {
     await supabase.from("cases").update({ status: "contract_ready", next_action: "Obtener firma del contrato", updated_at: now }).eq("id", caseId).eq("organization_id", organizationId);
   }
   if (status === "signed") {
-    if (!statusesAfterContractSigned.has(String(caseRow.status || ""))) {
+    if (!currentCaseStatus || !statusesAfterContractSigned.has(currentCaseStatus)) {
       await supabase.from("cases").update({ status: "contract_signed", next_action: "Confirmar pago", updated_at: now }).eq("id", caseId).eq("organization_id", organizationId);
     }
     await supabase.from("tasks")

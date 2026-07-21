@@ -1,11 +1,21 @@
 "use client";
 
 import { useState } from "react";
+import { LogOut } from "lucide-react";
 import { getSupabaseBrowserClient, hasSupabaseBrowserEnv } from "@/lib/supabase-browser";
 
 type AuthStatusProps = {
   email?: string | null;
   role?: string | null;
+};
+
+const roleLabels: Record<string, string> = {
+  admin: "Admin",
+  direction: "Dirección",
+  sales: "Ventas",
+  operations: "Operaciones",
+  billing: "Facturación",
+  viewer: "Lectura",
 };
 
 export function AuthStatus({ email = null, role = null }: AuthStatusProps) {
@@ -27,9 +37,8 @@ export function AuthStatus({ email = null, role = null }: AuthStatusProps) {
 
   return (
     <div className="auth-status">
-      <span className="badge">{email}</span>
-      {role ? <span className="badge">{role}</span> : null}
-      <button className="btn secondary" type="button" onClick={signOut} disabled={signingOut}>{signingOut ? "Saliendo..." : "Salir"}</button>
+      <span className="auth-identity" title={email}><strong>{email.split("@")[0]}</strong>{role ? <small>{roleLabels[role] || role}</small> : null}</span>
+      <button className="icon-control" aria-label="Cerrar sesión" title="Cerrar sesión" type="button" onClick={signOut} disabled={signingOut}><LogOut aria-hidden="true" size={18} /></button>
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AppNavigation } from "@/components/AppNavigation";
 import { AuthStatus } from "@/components/AuthStatus";
 import { GlobalSearch } from "@/components/GlobalSearch";
 import { Logo } from "@/components/Logo";
@@ -15,6 +16,7 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
   visibleLabels.add("Control operativo");
   visibleLabels.add("Comunicaciones");
   visibleLabels.add("Automatizaciones");
+  visibleLabels.add("Solicitudes");
   if (visibleLabels.has("Compras / Proveedores")) {
     visibleLabels.add("Proveedores");
     visibleLabels.add("Compras");
@@ -27,21 +29,15 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <PermissionProvider role={session.role}>
       <ThemeShell theme={theme}>
+        <a className="skip-link" href="#main-content">Saltar al contenido</a>
         <aside className="sidebar">
           <Link className="brand" href="/hoy" prefetch={false}>
             <Logo size={34} />
             <span>{theme.companyName}</span>
           </Link>
-          <nav className="nav">
-            {visibleNavigation.map((item, index) => (
-              <Link key={item.href} href={item.href} prefetch={false}>
-                <span className="nav-index">{index + 1}</span>
-                <span>{item.label}</span>
-              </Link>
-            ))}
-          </nav>
+          <AppNavigation items={visibleNavigation} />
         </aside>
-        <main className="main">
+        <main className="main" id="main-content">
           <div className="topbar">
             <GlobalSearch />
             <div className="topbar-actions"><AuthStatus email={session.email} role={session.role} /></div>

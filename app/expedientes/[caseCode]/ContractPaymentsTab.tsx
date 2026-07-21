@@ -87,7 +87,7 @@ export function ContractPaymentsTab({ caseRow, initialContracts = [], initialPay
         <label>Estado<select value={contractDraft.status} onChange={(event) => setContractDraft((current) => ({ ...current, status: event.target.value }))}><option value="draft">Borrador</option><option value="sent">Enviado</option><option value="signed">Firmado</option><option value="cancelled">Cancelado</option></select></label>
         <label>Enlace externo o documento firmado<input className="input" type="url" placeholder="https://..." value={contractDraft.external_url} onChange={(event) => setContractDraft((current) => ({ ...current, external_url: event.target.value }))} /></label>
         <label>Notas<textarea className="input" rows={3} value={contractDraft.notes} onChange={(event) => setContractDraft((current) => ({ ...current, notes: event.target.value }))} /></label>
-        <button className="btn" disabled={saving}>{saving ? "Guardando..." : editingContractId ? "Guardar cambios" : "Crear contrato"}</button>
+        <button className="btn" type="submit" disabled={saving}>{saving ? "Guardando..." : editingContractId ? "Guardar cambios" : "Crear contrato"}</button>
       </form>
     </div>
 
@@ -104,7 +104,7 @@ export function ContractPaymentsTab({ caseRow, initialContracts = [], initialPay
         <div className="grid grid-2"><label>Método<select value={paymentDraft.method} onChange={(event) => setPaymentDraft((current) => ({ ...current, method: event.target.value }))}><option value="transfer">Transferencia</option><option value="card">Tarjeta</option><option value="cash">Efectivo</option><option value="teya_manual">Teya manual</option><option value="other">Otro</option></select></label><label>Fecha y hora<input className="input" type="datetime-local" value={paymentDraft.receivedAt} onChange={(event) => setPaymentDraft((current) => ({ ...current, receivedAt: event.target.value }))} /></label></div>
         <label>Notas<textarea className="input" rows={2} value={paymentDraft.notes} onChange={(event) => setPaymentDraft((current) => ({ ...current, notes: event.target.value }))} /></label>
         {!signedContract ? <p className="form-warning">El contrato debe estar firmado antes de registrar el pago.</p> : null}
-        <button className="btn" disabled={saving || !signedContract || acceptedValue <= 0 || pending <= 0}>{saving ? "Confirmando..." : pending <= 0 ? "Pago completo" : "Confirmar pago"}</button>
+        <button className="btn" type="submit" disabled={saving || !signedContract || acceptedValue <= 0 || pending <= 0}>{saving ? "Confirmando..." : pending <= 0 ? "Pago completo" : "Confirmar pago"}</button>
       </form>
     </div>
 

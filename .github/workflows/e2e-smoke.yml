@@ -1,10 +1,7 @@
 name: Playwright Smoke
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+  deployment_status:
   schedule:
     - cron: "17 5 * * *"
   workflow_dispatch:
@@ -19,12 +16,14 @@ permissions:
 
 jobs:
   smoke:
+    if: github.event_name != 'deployment_status' || (github.event.deployment_status.state == 'success' && (contains(github.event.deployment_status.environment_url, 'vercel.app') || contains(github.event.deployment_status.target_url, 'vercel.app')))
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      E2E_BASE_URL: ${{ inputs.base_url || 'https://routsify-software.vercel.app' }}
+      E2E_BASE_URL: ${{ inputs.base_url || github.event.deployment_status.environment_url || github.event.deployment_status.target_url || 'https://routsify-software.vercel.app' }}
       E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
       E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+      VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -32,22 +31,16 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
-
-      - name: Generate lockfile for CI
-        run: npm install --package-lock-only --ignore-scripts --silent
+          node-version: 24
 
       - name: Install application dependencies
         run: npm ci --ignore-scripts --silent
-
-      - name: Install Playwright test runner
-        run: npm install --no-save --ignore-scripts @playwright/test@latest
 
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 
       - name: Run smoke tests
-        run: npx playwright test
+        run: npm run test:e2e
 
       - name: Upload Playwright report
         if: ${{ !cancelled() }}

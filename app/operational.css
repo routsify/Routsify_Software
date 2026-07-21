@@ -80,7 +80,7 @@
 
 .sidebar { background: var(--sidebar, var(--brand)); }
 .main { background: var(--app-background, #f7faf7); }
-.card, .header, .kpi-card, .workflow-step { background: var(--surface, #fff); border-radius: var(--radius-card, 16px); }
+.card, .kpi-card, .workflow-step { background: var(--surface, #fff); border-radius: var(--radius-card, 16px); }
 .btn, .input, select, textarea, .global-search input, .global-search button, .quick-action { border-radius: var(--radius-control, 10px); }
 .density-compact .main { padding: 14px 18px 26px; }
 .density-compact .card { padding: 14px; }

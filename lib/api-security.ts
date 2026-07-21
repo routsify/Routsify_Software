@@ -60,6 +60,7 @@ function requiredPermission(request: NextRequest): AppPermission {
   if (path.includes("/travelers") || path.includes("/contracts")) return isRead ? "operations.sensitive.view" : "operations.sensitive.manage";
   if (path.includes("/tasks") || path.includes("/timeline")) return isRead ? "tasks.view" : "tasks.manage";
   if (path.startsWith("/api/routsify/reports")) return "reports.view";
+  if (path.startsWith("/api/routsify/leads")) return isRead ? "clients.view" : "clients.manage";
   if (path.startsWith("/api/routsify/clients")) return isRead ? "clients.view" : "clients.manage";
   if (path.startsWith("/api/routsify/cases")) return isRead ? "cases.view" : "cases.manage";
   return isRead ? "app.view" : "system.manage";

@@ -80,7 +80,7 @@ export function ClientOperationsOverview({ initialClients = [], initialLeads = [
             return <div className="client-task-item" key={task.id}><div><strong>{task.title || "Tarea"}</strong><small>{dateTime(task.due_at)} · {task.priority || "normal"}</small></div><div className="client-task-actions">{isReminder && links.email ? <a className="btn secondary" href={links.email}>Email</a> : null}{isReminder && links.whatsapp ? <a className="btn secondary" href={links.whatsapp} target="_blank" rel="noreferrer">WhatsApp</a> : null}<button className="btn" type="button" disabled={busyId === task.id} onClick={() => task.id && void updateTask(task.id, "done")}>{busyId === task.id ? "Guardando..." : "Completar"}</button></div></div>;
           }) : <p className="field-help">No hay tareas abiertas para este cliente.</p>}</div>
           <div className="form-actions">
-            <a className="btn secondary" href={`/expedientes?clientId=${encodeURIComponent(item.id)}`}>Crear expediente manualmente</a>
+            <a className="btn secondary" href={`/expedientes/gestionar?clientId=${encodeURIComponent(item.id)}`}>Crear expediente manualmente</a>
             {primaryCase?.case_code ? <a className="btn secondary" href={`/expedientes/${encodeURIComponent(primaryCase.case_code)}`}>Abrir expediente</a> : null}
             {primaryCase?.id ? <a className="btn" href={`/propuestas?caseId=${encodeURIComponent(String(primaryCase.id))}`}>Abrir presupuesto</a> : null}
           </div>

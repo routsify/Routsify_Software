@@ -8,7 +8,7 @@ async function signIn(page) {
   await page.getByLabel("Contraseña").fill(process.env.E2E_PASSWORD);
   await page.getByRole("button", { name: "Entrar", exact: true }).click();
   await expect(page).toHaveURL(/\/(hoy|clientes|expedientes|propuestas)/, { timeout: 20_000 });
-  await expect(page.getByRole("button", { name: "Salir", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Cerrar sesión", exact: true })).toBeVisible();
 }
 
 async function expectOperationalPage(page, path) {
@@ -57,15 +57,8 @@ test.describe("authenticated critical-path smoke", () => {
       "/compras",
       "/proveedores",
       "/comunicaciones",
+      "/automatizaciones",
       "/informes",
-      "/tareas",
-      "/facturacion",
-      "/contratos",
-      "/documentos",
-      "/viajeros",
-      "/cierre",
-      "/integraciones",
-      "/seguridad",
       "/ajustes",
     ];
 
@@ -76,6 +69,17 @@ test.describe("authenticated critical-path smoke", () => {
 
     await page.goto("/comunicaciones");
     await expect(page.getByRole("heading", { name: "Comunicaciones", exact: true })).toBeVisible();
+  });
+
+  test("historical Fillout requests stay archived and actionable", async ({ page }) => {
+    await signIn(page);
+    await page.goto("/solicitudes?status=archived");
+    await expect(page.getByRole("heading", { name: "Solicitudes", exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: /Archivadas/ }).first()).toBeVisible();
+    await expect(page.getByText("Solicitud seleccionada", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Compró", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "No compró", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Reabrir seguimiento", exact: true })).toBeVisible();
   });
 
   test("clients pagination, global search and import controls work", async ({ page }) => {

@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Search } from "lucide-react";
 
 export function GlobalSearch() {
   const router = useRouter();
@@ -20,9 +21,9 @@ export function GlobalSearch() {
         aria-label="Buscar"
         value={query}
         onChange={(event) => setQuery(event.target.value)}
-        placeholder="Buscar clientes, proveedores, expedientes o compras..."
+        placeholder="Buscar en Routsify…"
       />
-      <button type="submit">Buscar</button>
+      <button type="submit" aria-label="Buscar"><Search aria-hidden="true" size={18} /><span>Buscar</span></button>
     </form>
   );
 }

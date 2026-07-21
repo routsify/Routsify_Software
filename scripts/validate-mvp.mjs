@@ -11,6 +11,7 @@ for (const file of [
   "app/login/page.tsx",
   "app/login/LoginForm.tsx",
   "lib/api-security.ts",
+  "lib/case-status.ts",
   "lib/rbac.ts",
   "lib/effective-settings-server.ts",
   "lib/runtime-mode.ts",
@@ -60,14 +61,14 @@ for (const file of [
   "app/api/routsify/communications/settings/route.ts",
   "app/api/routsify/communications/templates/[templateId]/route.ts",
   "app/api/routsify/clients/documents/[documentId]/ocr/route.ts",
-  "supabase/migrations/0018_integrations_fiscal_ocr_privacy.sql",
-  "supabase/migrations/0019_settings_driven_business_policies.sql",
-  "supabase/migrations/0029_communication_followup_engine.sql",
-  "supabase/migrations/0030_harden_auxiliary_rls_and_communication_indexes.sql",
-  "supabase/migrations/0031_outbound_provider_delivery_tracking.sql",
-  "supabase/migrations/0032_expand_organization_secret_keys.sql",
-  "supabase/migrations/0005_routsify_settings_and_outbox_worker.sql",
-  "supabase/migrations/0015_accept_proposal_version_rpc.sql",
+  "supabase/migrations/20260711213519_reviewed_mvp_v1_1_ocr_privacy.sql",
+  "supabase/migrations/20260715204042_settings_driven_business_policies.sql",
+  "supabase/migrations/20260716193623_communication_followup_engine.sql",
+  "supabase/migrations/20260717150355_harden_auxiliary_rls_and_communication_indexes.sql",
+  "supabase/migrations/20260717150705_outbound_provider_delivery_tracking.sql",
+  "supabase/migrations/20260717154126_expand_organization_secret_keys.sql",
+  "supabase/migrations/20260710172746_create_routsify_settings.sql",
+  "supabase/migrations/20260711170559_accept_proposal_version_rpc.sql",
   "docs/THIRD_PARTY_INTEGRATIONS.md",
   "components/AppShell.tsx",
   "lib/navigation.ts",
@@ -90,19 +91,22 @@ for (const token of ["auth.getUser", "requiredPermission", "hasPermission", "tim
 const rbac = read("lib/rbac.ts");
 for (const token of ["rolePermissions", "hasPermission", "settings.secrets.manage", "reports.view", "communications.view", "communications.manage", "appNavigation"]) assert(rbac.includes(token), `Missing RBAC token: ${token}`);
 
+const caseDirectory = read("lib/case-directory-server.ts");
+for (const token of ["normalizeCaseStatus", "isCaseStatus", "CaseDirectoryStatus"]) assert(caseDirectory.includes(token), `Missing case status schema guard: ${token}`);
+
 const effectiveSettings = read("lib/effective-settings-server.ts");
 for (const token of ["defaultSettings", "loadEffectiveSettings", "routsify_settings", "stringArray"]) assert(effectiveSettings.includes(token), `Missing effective settings token: ${token}`);
 
-const businessPolicies = read("supabase/migrations/0019_settings_driven_business_policies.sql");
+const businessPolicies = read("supabase/migrations/20260715204042_settings_driven_business_policies.sql");
 for (const token of ["routsify_setting_boolean", "purchases.auto_create", "cases.close.requires_purchases", "generate_expected_purchases_after_acceptance", "accept_proposal_version", "operational_close_preflight", "protect_case_closure"]) assert(businessPolicies.includes(token), `Missing settings-driven business policy token: ${token}`);
 
-const communicationsMigration = read("supabase/migrations/0029_communication_followup_engine.sql");
+const communicationsMigration = read("supabase/migrations/20260716193623_communication_followup_engine.sql");
 for (const token of ["communication_templates", "communication_followups", "thread_key", "sequence_step", "enable row level security"]) assert(communicationsMigration.includes(token), `Missing communication schema token: ${token}`);
 
-const hardeningMigration = read("supabase/migrations/0030_harden_auxiliary_rls_and_communication_indexes.sql");
+const hardeningMigration = read("supabase/migrations/20260717150355_harden_auxiliary_rls_and_communication_indexes.sql");
 for (const token of ["automation_rules_select_scoped", "saved_views_user_scoped", "communication_followups_insert_scoped", "communication_followups_task_id_idx"]) assert(hardeningMigration.includes(token), `Missing RLS hardening token: ${token}`);
 
-const secretMigration = read("supabase/migrations/0032_expand_organization_secret_keys.sql");
+const secretMigration = read("supabase/migrations/20260717154126_expand_organization_secret_keys.sql");
 for (const token of ["smtp_username", "smtp_password", "whatsapp_access_token", "whatsapp_verify_token", "whatsapp_app_secret", "fillout_webhook_secret", "booking_webhook_secret"]) assert(secretMigration.includes(token), `Missing Vault secret token: ${token}`);
 
 const communicationsEngine = read("lib/communications-server.ts");
@@ -137,8 +141,8 @@ for (const forbidden of ["Supabase Auth", ">RLS<", "middleware de autenticación
 const middleware = read("proxy.ts");
 for (const token of ["/api/routsify", "/api/webhooks/", "/api/documentos/confirm-upload", "authentication_required", "isPublicDemoAllowed"]) assert(middleware.includes(token), `Missing proxy token: ${token}`);
 
-const nav = read("lib/navigation.ts");
-for (const label of ["Inicio", "Clientes", "Expedientes", "Presupuestos", "Compras / Proveedores", "Informes", "Ajustes"]) assert(nav.includes(label), `Missing module: ${label}`);
+const nav = read("lib/rbac.ts");
+for (const label of ["Hoy", "Solicitudes", "Clientes", "Expedientes", "Presupuestos", "Compras", "Proveedores", "Comunicaciones", "Control", "Informes", "Automatizaciones", "Ajustes"]) assert(nav.includes(label), `Missing module: ${label}`);
 assert(!nav.includes("/viajeros"), "Travelers must not be a main module");
 assert(!nav.includes("/contratos"), "Contracts must not be a main module");
 
@@ -179,7 +183,7 @@ for (const token of ["proposal_must_be_accepted", "signed_contract_required", "c
 const outbox = read("lib/outbox-server.ts");
 for (const token of ["holded_pending_configuration", "getOrganizationSecret", "pending_configuration"]) assert(outbox.includes(token), `Missing optional Holded token: ${token}`);
 
-const acceptance = read("supabase/migrations/0015_accept_proposal_version_rpc.sql");
+const acceptance = read("supabase/migrations/20260711170559_accept_proposal_version_rpc.sql");
 for (const token of ["accept_proposal_version", "proposal_versions", "locked", "proposal_accepted"]) assert(acceptance.includes(token), `Missing acceptance token: ${token}`);
 
 const worker = read("lib/outbox-worker-server.ts");
