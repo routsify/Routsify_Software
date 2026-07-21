@@ -85,6 +85,42 @@ export async function runDocumentOcr(input: { organizationId: string; documentId
   const supabase = getSupabaseAdminClient();
   const { data: document, error } = await supabase.from("documents").select("id,organization_id,case_id,storage_bucket,bucket,storage_path,file_name,mime_type").eq("id", input.documentId).eq("organization_id", input.organizationId).maybeSingle();
   if (error || !document) throw new Error(error?.message || "document_not_found");
+
+  let cachedRunQuery = supabase
+    .from("ocr_runs")
+    .select("id,status,confidence_overall")
+    .eq("organization_id", input.organizationId)
+    .eq("document_id", document.id)
+    .eq("status", "review_required")
+    .not("completed_at", "is", null)
+    .order("completed_at", { ascending: false })
+    .limit(1);
+  cachedRunQuery = input.travelerId
+    ? cachedRunQuery.eq("traveler_id", input.travelerId)
+    : cachedRunQuery.is("traveler_id", null);
+  const { data: cachedRun, error: cachedRunError } = await cachedRunQuery.maybeSingle();
+  if (cachedRunError) throw new Error(cachedRunError.message);
+  if (cachedRun) {
+    const { data: cachedFields, error: cachedFieldsError } = await supabase
+      .from("ocr_fields")
+      .select("field_name,extracted_value,confidence")
+      .eq("organization_id", input.organizationId)
+      .eq("ocr_run_id", cachedRun.id);
+    if (cachedFieldsError) throw new Error(cachedFieldsError.message);
+    const fields = (cachedFields || []).map((field) => ({
+      name: String(field.field_name) as OcrFieldName,
+      value: field.extracted_value === null ? null : String(field.extracted_value),
+      confidence: cleanConfidence(field.confidence),
+    })).filter((field) => fieldNames.includes(field.name));
+    return {
+      runId: cachedRun.id,
+      status: "review_required",
+      confidence: cleanConfidence(cachedRun.confidence_overall),
+      fields,
+      cached: true,
+    };
+  }
+
   const bucket = String(document.storage_bucket || document.bucket || "case-documents");
   const { data: file, error: downloadError } = await supabase.storage.from(bucket).download(String(document.storage_path));
   if (downloadError || !file) throw new Error(downloadError?.message || "document_download_failed");
