@@ -55,6 +55,8 @@ export async function POST(request: NextRequest) {
       actorId: access.actorId,
       remote,
       eventType: "booking.created",
+      requestedStartsAt: startsAt.toISOString(),
+      requestedEndsAt: endsAt,
       requestedPayload: {
         timezone: timezone || configuration.booking.defaultTimezone,
         duration_minutes: durationMinutes,
