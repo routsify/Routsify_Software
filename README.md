@@ -53,7 +53,7 @@ npm run build
 npm run test:e2e
 ```
 
-`validate:platform` comprueba los contratos funcionales, la seguridad, Holded v2, Booking, los controles de UI y las 104 migraciones ordenadas. El validador de UI rechaza botones sin tipo o acción, formularios desconectados y elementos no semánticos clicables. Knip bloquea archivos o dependencias sin uso.
+`validate:platform` comprueba los contratos funcionales, la seguridad, Holded v2, Booking, los controles de UI y las 105 migraciones ordenadas. El validador de UI rechaza botones sin tipo o acción, formularios desconectados y elementos no semánticos clicables. Knip bloquea archivos o dependencias sin uso.
 
 Las pruebas E2E ejecutan Chromium de escritorio y móvil contra un despliegue de Vercel. Las credenciales y el bypass de automatización se configuran como secretos de GitHub, nunca en el repositorio.
 
