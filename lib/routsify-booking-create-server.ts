@@ -111,6 +111,8 @@ export async function createRemoteBookingWithFormStatus(input: {
         initial_form_completed: formAnswer,
         has_completed_initial_form: input.initialFormCompleted,
         form_completed: input.initialFormCompleted,
+        trip_summary: input.initialFormCompleted ? "" : input.notes || "Reserva gestionada desde Routsify Software.",
+        message: input.notes || null,
       }),
       cache: "no-store",
       signal: controller.signal,
