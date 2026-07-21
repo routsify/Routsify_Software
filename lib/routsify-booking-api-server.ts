@@ -39,6 +39,22 @@ class BookingApiError extends Error {
   }
 }
 
+const retryableMutationStatuses = new Set([424, 429, 502, 503, 504]);
+
+async function retryBookingMutation<T>(operation: () => Promise<T>, attempts = 3) {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (!(error instanceof BookingApiError) || !retryableMutationStatuses.has(error.status) || attempt === attempts) throw error;
+      await new Promise((resolve) => setTimeout(resolve, attempt * 250));
+    }
+  }
+  throw lastError;
+}
+
 function text(value: unknown) {
   return String(value ?? "").trim();
 }
@@ -372,7 +388,7 @@ export async function updateRemoteBooking(input: { organizationId: string; exter
   const path = configuration.booking.bookingPathTemplate.replace("{id}", encodeURIComponent(input.externalBookingId));
   const timezone = input.timezone || configuration.booking.defaultTimezone;
   const parts = input.startsAt ? zonedParts(input.startsAt, timezone) : null;
-  const result = await bookingApiRequest({
+  const result = await retryBookingMutation(() => bookingApiRequest({
     organizationId: input.organizationId,
     path,
     method: "PATCH",
@@ -384,7 +400,7 @@ export async function updateRemoteBooking(input: { organizationId: string; exter
       ...(input.status ? { status: input.status } : {}),
       source: "routsify_software",
     },
-  });
+  }));
   return normalizeRemoteBooking(result.payload);
 }
 
@@ -392,13 +408,13 @@ export async function cancelRemoteBooking(input: { organizationId: string; exter
   const configuration = await loadThirdPartyIntegrationConfig(input.organizationId);
   const path = configuration.booking.bookingPathTemplate.replace("{id}", encodeURIComponent(input.externalBookingId));
   try {
-    const result = await bookingApiRequest({ organizationId: input.organizationId, path, method: "DELETE" });
+    const result = await retryBookingMutation(() => bookingApiRequest({ organizationId: input.organizationId, path, method: "DELETE" }));
     const normalized = normalizeRemoteBooking(result.payload);
     return { ...normalized, externalBookingId: normalized.externalBookingId || input.externalBookingId, status: normalized.status || "cancelled" };
   } catch (error) {
     if (!(error instanceof BookingApiError) || ![404, 405].includes(error.status)) throw error;
     try {
-      const result = await bookingApiRequest({ organizationId: input.organizationId, path: `${path.replace(/\/+$/, "")}/cancel`, method: "POST", body: { source: "routsify_software" } });
+      const result = await retryBookingMutation(() => bookingApiRequest({ organizationId: input.organizationId, path: `${path.replace(/\/+$/, "")}/cancel`, method: "POST", body: { source: "routsify_software" } }));
       const normalized = normalizeRemoteBooking(result.payload);
       return { ...normalized, externalBookingId: normalized.externalBookingId || input.externalBookingId, status: "cancelled" };
     } catch (cancelError) {
