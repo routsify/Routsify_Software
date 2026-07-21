@@ -64,6 +64,29 @@ function isKnownPageHref(value) {
   return pageRoutePatterns.some((pattern) => pattern.test(pathname));
 }
 
+function isMeaningfulStaticHref(value) {
+  const normalized = value.trim();
+  if (!normalized || normalized === "#") return false;
+  const scheme = /^([a-z][a-z\d+.-]*):/i.exec(normalized)?.[1]?.toLowerCase();
+  return !scheme || ["http", "https", "mailto", "tel"].includes(scheme);
+}
+
+for (const [value, expected] of [
+  ["/clientes", true],
+  ["https://routsify.com", true],
+  ["mailto:pruebas@routsify.com", true],
+  ["tel:+34910000000", true],
+  ["javascript:alert(1)", false],
+  ["data:text/html,<script>alert(1)</script>", false],
+  ["vbscript:msgbox(1)", false],
+  ["file:///etc/passwd", false],
+  ["#", false],
+]) {
+  if (isMeaningfulStaticHref(value) !== expected) {
+    failures.push(`validator regression for href scheme: ${value}`);
+  }
+}
+
 function ancestorForm(node) {
   let current = node.parent;
   while (current) {
@@ -98,7 +121,7 @@ for (const file of files) {
       }
       if (tag === "a" || tag === "Link") {
         const href = stringAttribute(opening, "href");
-        if (!href || href === "#" || href.toLowerCase().startsWith("javascript:")) {
+        if (!href || (href !== "expression" && !isMeaningfulStaticHref(href))) {
           failures.push(`${file}:${line} ${tag} has no meaningful href`);
         }
         const localHref = hrefTemplate(opening);
