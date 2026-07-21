@@ -3,6 +3,8 @@ import { jsonAccessDenied, requireInternalAccess } from "@/lib/api-security";
 import { runDocumentOcr } from "@/lib/openai-ocr-server";
 import { resolveOrganizationId } from "@/lib/request-context";
 
+export const maxDuration = 120;
+
 export async function POST(request: NextRequest, { params }: { params: Promise<{ documentId: string }> }) {
   const access = await requireInternalAccess(request);
   if (!access.ok) return jsonAccessDenied(access);
