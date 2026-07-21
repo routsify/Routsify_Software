@@ -469,7 +469,11 @@ test.describe("certificación operativa de producción", () => {
       const setting = (key) => text(settings.data.find((item) => item.key === key)?.value);
       const legalReady = Boolean(setting("legal.general_conditions_url") && setting("legal.standard_information_url"));
       const legal = await api(request, "POST", `/api/routsify/cases/${certification.caseId}/legal-delivery`, {}, { acceptedStatuses: [409] });
-      if (legalReady) expect(legal.data.event_type).toBe("legal_pack.sent");
+      if (legalReady) {
+        expect(legal.data.event_type).toBe("legal_pack.sent");
+        expect(legal.delivery.provider).toBe("hostinger_smtp");
+        expect(legal.delivery.status).toBe("accepted");
+      }
       else {
         expect(legal._responseStatus).toBe(409);
         expect(legal.error).toBe("legal_templates_incomplete");
@@ -566,6 +570,7 @@ test.describe("certificación operativa de producción", () => {
           for (const heading of ["Información precontractual aceptada", "Datos de viajeros y documentación", "Redacción, enlace privado y firma del contrato", "Enlace de pago y confirmación del cobro", "Entrega de documentación legal", "Compras de proveedores y entrega de tickets"]) {
             await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
           }
+          await expect(page.getByRole("button", { name: /Enviar documentación legal|Documentación enviada/ })).toBeVisible();
         }
       }
     });
