@@ -2,12 +2,6 @@ name: Production Operational Certification
 
 on:
   deployment_status:
-  push:
-    branches:
-      - main
-    paths:
-      - "tests/e2e/operational-certification.spec.mjs"
-      - ".github/workflows/operational-certification.yml"
   workflow_dispatch:
     inputs:
       base_url:
@@ -25,7 +19,7 @@ concurrency:
 
 jobs:
   certify:
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push' || (github.event_name == 'deployment_status' && github.event.deployment_status.state == 'success' && github.event.deployment.environment == 'Production' && (contains(github.event.deployment_status.environment_url, 'vercel.app') || contains(github.event.deployment_status.target_url, 'vercel.app')))
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'deployment_status' && github.event.deployment_status.state == 'success' && github.event.deployment.environment == 'Production' && (contains(github.event.deployment_status.environment_url, 'vercel.app') || contains(github.event.deployment_status.target_url, 'vercel.app')))
     runs-on: ubuntu-latest
     timeout-minutes: 35
     env:
@@ -48,9 +42,6 @@ jobs:
           AUTHORIZED=false
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]] || git log -1 --pretty=%B | grep -Fq '[certify-production]'; then
             AUTHORIZED=true
-          fi
-          if [[ "${{ github.event_name }}" == "push" ]] && git diff-tree --no-commit-id --name-only -r HEAD | grep -Evq '^(tests/e2e/operational-certification\.spec\.mjs|\.github/workflows/operational-certification\.yml)$'; then
-            AUTHORIZED=false
           fi
           if [[ "$AUTHORIZED" == "true" ]]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
