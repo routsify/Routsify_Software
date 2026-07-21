@@ -20,7 +20,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      E2E_BASE_URL: ${{ inputs.base_url || github.event.deployment_status.environment_url || github.event.deployment_status.target_url || 'https://routsify-software.vercel.app' }}
+      # The immutable Vercel deployment URL can be protected even when the
+      # canonical production alias is public. deployment_status only fires
+      # after the alias has been promoted, so test the URL users actually use.
+      E2E_BASE_URL: ${{ inputs.base_url || 'https://routsify-software.vercel.app' }}
       E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
       E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
       VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}

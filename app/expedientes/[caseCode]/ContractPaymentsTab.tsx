@@ -4,7 +4,7 @@ import { FormEvent, useMemo, useState } from "react";
 import type { CaseRow, ContractRow, FiscalRow, PaymentRow } from "./workspace-types";
 import { formatDateTime, money, numberValue } from "./workspace-types";
 
-const emptyContract = { title: "Contrato de viaje", status: "draft", external_url: "", notes: "" };
+const emptyContract = { title: "Contrato de viaje", status: "draft", external_url: "", notes: "", signer_name: "", signer_email: "" };
 const emptyPayment = { amount: "", reference: "", method: "transfer", receivedAt: "", notes: "" };
 const contractLabels: Record<string, string> = { draft: "Borrador", sent: "Enviado", signed: "Firmado", cancelled: "Cancelado" };
 const paymentLabels: Record<string, string> = { confirmed: "Confirmado", paid: "Pagado", received: "Recibido", pending: "Pendiente" };
@@ -18,7 +18,8 @@ export function ContractPaymentsTab({ caseRow, initialContracts = [], initialPay
   const [contracts, setContracts] = useState(initialContracts);
   const [payments, setPayments] = useState(initialPayments);
   const [fiscal, setFiscal] = useState(initialFiscal);
-  const [contractDraft, setContractDraft] = useState(emptyContract);
+  const defaultContract = { ...emptyContract, signer_name: caseRow.clients?.display_name || "", signer_email: caseRow.clients?.email || "" };
+  const [contractDraft, setContractDraft] = useState(defaultContract);
   const [editingContractId, setEditingContractId] = useState<string | null>(null);
   const [paymentDraft, setPaymentDraft] = useState(emptyPayment);
   const [message, setMessage] = useState<string | null>(null);
@@ -30,26 +31,28 @@ export function ContractPaymentsTab({ caseRow, initialContracts = [], initialPay
 
   function startEdit(item: ContractRow) {
     setEditingContractId(item.id);
-    setContractDraft({ title: item.title || "Contrato de viaje", status: item.status || "draft", external_url: item.external_url || "", notes: item.notes || "" });
+    setContractDraft({ title: item.title || "Contrato de viaje", status: item.status || "draft", external_url: item.external_url || "", notes: item.notes || "", signer_name: caseRow.clients?.display_name || "", signer_email: caseRow.clients?.email || "" });
     setMessage(null);
   }
 
   async function saveContract(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!contractDraft.title.trim()) return setMessage("Indica el título del contrato.");
-    if (contractDraft.status === "signed" && !window.confirm("¿Confirmas que el contrato está realmente firmado? Esta acción avanzará el expediente.")) return;
+    if (["sent", "signed"].includes(contractDraft.status) && !contractDraft.external_url.trim()) return setMessage("Añade el enlace al contrato antes de enviarlo o registrar su firma.");
+    if (contractDraft.status === "signed" && !contractDraft.signer_name.trim()) return setMessage("Indica quién ha firmado el contrato.");
+    if (contractDraft.status === "signed" && !window.confirm(`¿Confirmas que ${contractDraft.signer_name.trim()} ha firmado el contrato revisado? Se guardará evidencia inmutable de esta confirmación.`)) return;
     setSaving(true); setMessage(null);
     const response = await fetch(`/api/routsify/cases/${encodeURIComponent(caseRow.id)}/contracts`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ id: editingContractId || undefined, ...contractDraft, title: contractDraft.title.trim() }),
+      body: JSON.stringify({ id: editingContractId || undefined, ...contractDraft, title: contractDraft.title.trim(), external_url: contractDraft.external_url.trim() || undefined, signer_name: contractDraft.signer_name.trim() || undefined, signer_email: contractDraft.signer_email.trim() || undefined, review_confirmed: contractDraft.status === "signed" }),
     });
     const result = await response.json().catch(() => null);
     setSaving(false);
     if (!response.ok || !result?.ok) return setMessage(String(result?.error || "No se pudo guardar el contrato."));
     const updated = result.data as ContractRow;
     setContracts((current) => editingContractId ? current.map((item) => item.id === editingContractId ? updated : item) : [updated, ...current]);
-    setEditingContractId(null); setContractDraft(emptyContract);
+    setEditingContractId(null); setContractDraft(defaultContract);
     setMessage(updated.status === "signed" ? "Contrato firmado y expediente actualizado." : "Contrato guardado correctamente.");
   }
 
@@ -81,19 +84,20 @@ export function ContractPaymentsTab({ caseRow, initialContracts = [], initialPay
 
   return <section className="workspace-grid">
     <div className="card">
-      <div className="panel-head"><div><h2>{editingContractId ? "Editar contrato" : "Crear contrato"}</h2><p>El estado firmado solo debe marcarse cuando exista evidencia real.</p></div>{editingContractId ? <button className="link-button" type="button" onClick={() => { setEditingContractId(null); setContractDraft(emptyContract); }}>Cancelar edición</button> : null}</div>
+      <div className="panel-head"><div><h2>{editingContractId ? "Editar contrato" : "Crear contrato"}</h2><p>Al enviarlo se fija una versión; al firmarlo se conserva la evidencia.</p></div>{editingContractId ? <button className="link-button" type="button" onClick={() => { setEditingContractId(null); setContractDraft(defaultContract); }}>Cancelar edición</button> : null}</div>
       <form className="form" onSubmit={saveContract}>
         <label>Título<input className="input" required value={contractDraft.title} onChange={(event) => setContractDraft((current) => ({ ...current, title: event.target.value }))} /></label>
         <label>Estado<select value={contractDraft.status} onChange={(event) => setContractDraft((current) => ({ ...current, status: event.target.value }))}><option value="draft">Borrador</option><option value="sent">Enviado</option><option value="signed">Firmado</option><option value="cancelled">Cancelado</option></select></label>
-        <label>Enlace externo o documento firmado<input className="input" type="url" placeholder="https://..." value={contractDraft.external_url} onChange={(event) => setContractDraft((current) => ({ ...current, external_url: event.target.value }))} /></label>
+        <label>Enlace al contrato{["sent", "signed"].includes(contractDraft.status) ? " *" : ""}<input className="input" type="url" required={["sent", "signed"].includes(contractDraft.status)} placeholder="https://..." value={contractDraft.external_url} onChange={(event) => setContractDraft((current) => ({ ...current, external_url: event.target.value }))} /></label>
+        {contractDraft.status === "signed" ? <div className="grid grid-2"><label>Firmante *<input className="input" required value={contractDraft.signer_name} onChange={(event) => setContractDraft((current) => ({ ...current, signer_name: event.target.value }))} /></label><label>Email del firmante<input className="input" type="email" value={contractDraft.signer_email} onChange={(event) => setContractDraft((current) => ({ ...current, signer_email: event.target.value }))} /></label></div> : null}
         <label>Notas<textarea className="input" rows={3} value={contractDraft.notes} onChange={(event) => setContractDraft((current) => ({ ...current, notes: event.target.value }))} /></label>
-        <button className="btn" type="submit" disabled={saving}>{saving ? "Guardando..." : editingContractId ? "Guardar cambios" : "Crear contrato"}</button>
+        <button className="btn" type="submit" disabled={saving}>{saving ? "Guardando..." : contractDraft.status === "signed" ? "Registrar firma" : editingContractId ? "Guardar cambios" : "Crear contrato"}</button>
       </form>
     </div>
 
     <div className="card workspace-wide">
       <h2>Contratos</h2>
-      {contracts.length ? <div className="table-scroll"><table><thead><tr><th>Contrato</th><th>Estado</th><th>Firma</th><th>Enlace</th><th></th></tr></thead><tbody>{contracts.map((item) => <tr key={item.id}><td><strong>{item.title || "Contrato"}</strong><br/><small>{item.notes || "Sin notas"}</small></td><td><span className={`status-pill ${item.status === "signed" ? "status-success" : item.status === "cancelled" ? "status-danger" : "status-warning"}`}>{contractLabels[item.status || "draft"] || item.status}</span></td><td>{formatDateTime(item.signed_at)}</td><td>{item.external_url ? <a href={item.external_url} target="_blank" rel="noreferrer">Abrir</a> : "—"}</td><td><button className="link-button" type="button" onClick={() => startEdit(item)}>Editar</button></td></tr>)}</tbody></table></div> : <p>No hay contratos registrados.</p>}
+      {contracts.length ? <div className="table-scroll"><table><thead><tr><th>Contrato</th><th>Estado</th><th>Firma</th><th>Enlace</th><th></th></tr></thead><tbody>{contracts.map((item) => <tr key={item.id}><td><strong>{item.title || "Contrato"}</strong><br/><small>{item.notes || "Sin notas"}</small></td><td><span className={`status-pill ${item.status === "signed" ? "status-success" : item.status === "cancelled" ? "status-danger" : "status-warning"}`}>{contractLabels[item.status || "draft"] || item.status}</span></td><td>{formatDateTime(item.signed_at)}</td><td>{item.external_url ? <a href={item.external_url} target="_blank" rel="noreferrer">Abrir</a> : "—"}</td><td>{item.status === "signed" ? "—" : <button className="link-button" type="button" onClick={() => startEdit(item)}>Editar</button>}</td></tr>)}</tbody></table></div> : <p>No hay contratos registrados.</p>}
     </div>
 
     <div className="card">

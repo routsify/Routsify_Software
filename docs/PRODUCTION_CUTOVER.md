@@ -6,10 +6,10 @@ La versión final debe funcionar sin datos demo, con Supabase Auth, base de dato
 
 ## Política de despliegue
 
-- No se publica manualmente desde el código.
-- Vercel y Netlify hacen deploy automático cuando se actualiza GitHub.
-- El repositorio solo contiene comandos de build y validación.
-- GitHub Actions queda como validación manual opcional, no como deploy.
+- Vercel es el único destino de despliegue.
+- La rama `main` publica producción mediante la integración GitHub → Vercel.
+- Cada cambio debe superar CI, CodeQL, Knip, build y smoke E2E antes de considerarse operativo.
+- La certificación completa de venta solo se ejecuta de forma explícita con el marcador `[certify-production]` o mediante `workflow_dispatch`.
 
 ## Pasos obligatorios antes de publicar
 
@@ -18,31 +18,38 @@ La versión final debe funcionar sin datos demo, con Supabase Auth, base de dato
 3. Crear o validar el usuario administrador en Supabase Auth.
 4. Iniciar sesión una vez para ejecutar `ensure_profile_for_current_user` si hace falta.
 5. Revisar que el usuario queda asociado a la organización correcta.
-6. Configurar variables de entorno en Vercel y/o Netlify.
+6. Configurar variables de entorno en Vercel para Preview y Production.
 7. Desactivar modo demo.
-8. Ejecutar validación local o GitHub Actions manual.
-9. Subir cambios a GitHub para que Vercel/Netlify publiquen automáticamente.
-10. Probar rutas principales con usuario real.
+8. Ejecutar `npm run validate:platform`, `npm run typecheck` y `npm run build`.
+9. Fusionar mediante pull request para que Vercel publique automáticamente.
+10. Confirmar `GET /api/health`, logs sin errores y Playwright Smoke en verde.
+11. Antes del lanzamiento, ejecutar una certificación operativa controlada y revisar que el outbox quede sin fallos.
 
 ## Variables obligatorias
 
-- NEXT_PUBLIC_DEMO_MODE=false
-- ROUTSIFY_ALLOW_PUBLIC_DEMO=false
-- NEXT_PUBLIC_SUPABASE_URL
-- NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
-- SUPABASE_SERVICE_ROLE_KEY
-- PROPOSAL_TOKEN_SECRET
-- FORM_WEBHOOK_SECRET
-- BOOKING_WEBHOOK_SECRET
-- ROUTSIFY_INTERNAL_API_TOKEN
+- `NEXT_PUBLIC_DEMO_MODE=false`
+- `ROUTSIFY_ALLOW_PUBLIC_DEMO=false`
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+- `SUPABASE_SECRET_KEY` (preferida) o `SUPABASE_SERVICE_ROLE_KEY` durante la transición
+- `ROUTSIFY_DEFAULT_ORGANIZATION_ID`
+- `PROPOSAL_TOKEN_SECRET`
+- `ROUTSIFY_INTERNAL_API_TOKEN`
+- `CRON_SECRET`
+- Secretos de webhook aplicables: `FORM_WEBHOOK_SECRET`, `BOOKING_WEBHOOK_SECRET`, `PAYMENT_WEBHOOK_SECRET` y `HOLDED_WEBHOOK_SECRET`
 
 ## Rutas visibles finales
 
-- Inicio
+- Hoy
+- Control
 - Clientes
+- Solicitudes
 - Expedientes
-- Presupuestos
-- Compras / Proveedores
+- Propuestas
+- Compras
+- Proveedores
+- Comunicaciones
+- Automatizaciones
 - Informes
 - Ajustes
 
@@ -51,5 +58,6 @@ La versión final debe funcionar sin datos demo, con Supabase Auth, base de dato
 - No meter datos reales con modo demo activo.
 - No publicar sin usuario administrador creado.
 - No activar Holded automático sin outbox validado.
-- No activar fiscalidad automática sin revisión manual.
-- No ejecutar deploy manual desde herramientas externas si Vercel/Netlify ya están conectados a GitHub.
+- No considerar firmado un contrato sin versión bloqueada y evidencia de firma.
+- No ejecutar cargos reales durante una certificación: los cobros de prueba se registran como referencias manuales inequívocas.
+- No ejecutar deploy manual si Vercel ya está conectado a GitHub.
