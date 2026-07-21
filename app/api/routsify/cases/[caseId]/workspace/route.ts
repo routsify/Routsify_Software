@@ -80,7 +80,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
   if (section === "activity") {
     const [tasksResult, timelineResult] = await Promise.all([
-      supabase.from("tasks").select("id,title,status,priority,due_at").eq("case_id", caseId).eq("organization_id", organizationId).order("created_at", { ascending: false }).limit(200),
+      supabase.from("tasks").select("id,title,status,priority,due_at,payload").eq("case_id", caseId).eq("organization_id", organizationId).order("created_at", { ascending: false }).limit(200),
       supabase.from("timeline_events").select("id,event_type,title,payload,created_at").eq("case_id", caseId).eq("organization_id", organizationId).order("created_at", { ascending: false }).limit(100),
     ]);
     const error = tasksResult.error || timelineResult.error;

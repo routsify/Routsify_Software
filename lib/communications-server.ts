@@ -594,7 +594,8 @@ export async function syncCommunicationFollowups(organizationId: string) {
     };
 
     if (text(purchase.status) === "expected") {
-      const dueMs = purchase.due_date ? new Date(`${text(purchase.due_date)}T12:00:00`).getTime() : null;
+      const confirmationAnchor = purchase.due_date || relatedCase.trip_start;
+      const dueMs = confirmationAnchor ? new Date(`${text(confirmationAnchor)}T12:00:00`).getTime() : null;
       const shouldConfirm = dueMs ? dueMs <= nowMs + supplierConfirmationDays * 86_400_000 : ageDays(purchase.updated_at || purchase.created_at, nowMs) >= supplierConfirmationDays;
       if (shouldConfirm) {
         const threadKey = `supplier_confirmation:${text(purchase.id)}`;

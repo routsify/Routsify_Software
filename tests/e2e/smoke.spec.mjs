@@ -17,6 +17,7 @@ async function expectOperationalPage(page, path) {
   expect(response.status(), `${path} devolvió HTTP ${response.status()}`).toBeLessThan(500);
   await expect(page).not.toHaveURL(/\/login(?:\?|$)/);
   await expect(page.locator("nextjs-portal")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Algo ha fallado", exact: true })).toHaveCount(0);
   await expect(page.locator("h1").first()).toBeVisible({ timeout: 15_000 });
 }
 
