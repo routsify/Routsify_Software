@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const data = await listRemoteBookingAvailability({ organizationId: access.organizationId, from, to, timezone, durationMinutes: durationValue || undefined });
-    return NextResponse.json({ ok: true, data: { slots: data.slots } });
+    return NextResponse.json({ ok: true, data: { slots: data.slots, durationMinutes: data.durationMinutes } });
   } catch (error) {
     const failure = bookingApiErrorResponse(error);
     return NextResponse.json({ ok: false, error: failure.error, provider: failure.payload }, { status: failure.status });
