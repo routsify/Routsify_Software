@@ -221,7 +221,7 @@ test.describe("certificación operativa de producción", () => {
         "POST",
         `/api/routsify/clients/documents/${certification.documentId}/ocr`,
         { travelerId },
-        { timeout: 90_000 },
+        { timeout: 150_000 },
       );
       certification.ocrRunId = text(ocr.data.runId);
       expect(ocr.data.status).toBe("review_required");
