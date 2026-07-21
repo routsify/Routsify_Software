@@ -73,15 +73,47 @@ async function processOutbox(request) {
   return summary;
 }
 
+const legacySyntheticBookingIds = [
+  "763de89f-5dd3-45b2-99eb-7b607337469f",
+  "a6f3e095-330a-4e23-b64d-30addf222d7c",
+];
+
+async function bookingMutation(request, method, path, data, { allowNotFound = false } = {}) {
+  const retryableStatuses = [424, 429, 502, 503, 504];
+  const acceptedStatuses = allowNotFound ? [...retryableStatuses, 404] : retryableStatuses;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const result = await api(request, method, path, data, { timeout: 60_000, acceptedStatuses });
+    if (allowNotFound && result._responseStatus === 404) return null;
+    if (!retryableStatuses.includes(result._responseStatus)) return result;
+    if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, attempt * 500));
+  }
+  expect(false, `${method} ${path} agotó los reintentos transitorios`).toBe(true);
+  return null;
+}
+
 async function cleanupSyntheticBookings(request) {
   const clients = await api(request, "GET", "/api/routsify/clients?paginated=1&pageSize=200&q=PRUEBA%20E2E");
   const rows = Array.isArray(clients.data?.items) ? clients.data.items : [];
   let cancelled = 0;
+  let supportsListing = true;
   for (const client of rows.filter((item) => item.source === "production_certification" && text(item.display_name).startsWith("[PRUEBA E2E "))) {
-    const result = await api(request, "GET", `/api/routsify/clients/booking/reservations?clientId=${encodeURIComponent(client.id)}`);
+    const result = await api(request, "GET", `/api/routsify/clients/booking/reservations?clientId=${encodeURIComponent(client.id)}`, undefined, { acceptedStatuses: [404, 405] });
+    if ([404, 405].includes(result._responseStatus)) {
+      supportsListing = false;
+      break;
+    }
     const bookings = Array.isArray(result.data?.bookings) ? result.data.bookings : [];
     for (const booking of bookings.filter((item) => text(item.status).toLowerCase() !== "cancelled" && text(item.external_booking_id || item.external_id))) {
-      const response = await api(request, "DELETE", `/api/routsify/clients/booking/reservations/${encodeURIComponent(booking.id)}`, undefined, { timeout: 60_000 });
+      const response = await bookingMutation(request, "DELETE", `/api/routsify/clients/booking/reservations/${encodeURIComponent(booking.id)}`, undefined, { allowNotFound: true });
+      if (!response) continue;
+      expect(response.data.booking.status).toBe("cancelled");
+      cancelled += 1;
+    }
+  }
+  if (!supportsListing) {
+    for (const bookingId of legacySyntheticBookingIds) {
+      const response = await bookingMutation(request, "DELETE", `/api/routsify/clients/booking/reservations/${bookingId}`, undefined, { allowNotFound: true });
+      if (!response) continue;
       expect(response.data.booking.status).toBe("cancelled");
       cancelled += 1;
     }
@@ -411,13 +443,13 @@ test.describe("certificación operativa de producción", () => {
       const expectedEndsAt = new Date(new Date(slot.startsAt).getTime() + bookingDuration * 60_000).toISOString();
       expect(new Date(created.data.booking.starts_at).toISOString()).toBe(expectedStartsAt);
       expect(new Date(created.data.booking.ends_at).toISOString()).toBe(expectedEndsAt);
-      const updated = await api(request, "PATCH", `/api/routsify/clients/booking/reservations/${certification.bookingId}`, {
+      const updated = await bookingMutation(request, "PATCH", `/api/routsify/clients/booking/reservations/${certification.bookingId}`, {
         notes: `[PRUEBA E2E ${runTag}] Reserva verificada; cancelar a continuación`,
-      }, { timeout: 60_000 });
+      });
       expect(text(updated.data.booking.id)).toBe(certification.bookingId);
       expect(new Date(updated.data.booking.starts_at).toISOString()).toBe(expectedStartsAt);
       expect(new Date(updated.data.booking.ends_at).toISOString()).toBe(expectedEndsAt);
-      const cancelled = await api(request, "DELETE", `/api/routsify/clients/booking/reservations/${certification.bookingId}`, undefined, { timeout: 60_000 });
+      const cancelled = await bookingMutation(request, "DELETE", `/api/routsify/clients/booking/reservations/${certification.bookingId}`);
       expect(cancelled.data.booking.status).toBe("cancelled");
       expect(new Date(cancelled.data.booking.starts_at).toISOString()).toBe(expectedStartsAt);
       expect(new Date(cancelled.data.booking.ends_at).toISOString()).toBe(expectedEndsAt);
