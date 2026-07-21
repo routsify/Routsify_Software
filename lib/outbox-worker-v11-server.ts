@@ -175,10 +175,10 @@ async function form(row: WorkerRow): Promise<WorkerOutcome> {
   const leadQuery = mergeLead
     ? db.from("leads").update(mergedPayload).eq("id", mergeLead.id).eq("organization_id", row.organization_id)
     : db.from("leads").upsert(mergedPayload, { onConflict: "organization_id,source,source_submission_id" });
-  const { data: lead, error } = await leadQuery.select("id,call_booked_at").single();
+  const { data: lead, error } = await leadQuery.select("id,call_booked_at,booking_id").single();
   if (error) throw new Error(error.message);
 
-  let bookingId: string | null = null;
+  let bookingId: string | null = lead.booking_id ? String(lead.booking_id) : null;
   if (schedulingStart && schedulingEventId) {
     const { data: booking, error: bookingError } = await db.from("bookings").upsert({
       organization_id: row.organization_id,
@@ -200,7 +200,15 @@ async function form(row: WorkerRow): Promise<WorkerOutcome> {
     bookingId = String(booking.id);
     const { error: bookingLinkError } = await db.from("leads").update({ booking_id: bookingId, call_booked_at: schedulingStart, status: "form_received_call_booked", updated_at: now }).eq("id", lead.id).eq("organization_id", row.organization_id);
     if (bookingLinkError) throw new Error(bookingLinkError.message);
+  } else if (bookingId) {
+    const { error: bookingLinkError } = await db.from("bookings")
+      .update({ lead_id: lead.id, updated_at: now })
+      .eq("id", bookingId)
+      .eq("organization_id", row.organization_id);
+    if (bookingLinkError) throw new Error(bookingLinkError.message);
   }
+
+  const effectiveCall = schedulingStart || dateTime(lead.call_booked_at);
 
   await completePendingFormTasks(row.organization_id, client.clientId, String(lead.id));
   await createFollowUpTask({
@@ -225,11 +233,11 @@ async function form(row: WorkerRow): Promise<WorkerOutcome> {
     organizationId: row.organization_id,
     clientId: client.clientId,
     eventType: "fillout.received",
-    title: schedulingStart ? "Formulario y llamada recibidos" : "Formulario de viaje recibido",
-    payload: { lead_id: lead.id, booking_id: bookingId, source_submission_id: sourceId, destination: leadPayload.destination, scheduling_start: schedulingStart },
+    title: effectiveCall ? "Formulario y llamada recibidos" : "Formulario de viaje recibido",
+    payload: { lead_id: lead.id, booking_id: bookingId, source_submission_id: sourceId, destination: leadPayload.destination, scheduling_start: effectiveCall },
   });
 
-  return { status: "done", message: schedulingStart ? "Formulario y llamada unificados en una solicitud." : "Formulario registrado; la reserva continúa pendiente.", metadata: { client_id: client.clientId, lead_id: lead.id, booking_id: bookingId, possible_duplicate_client_id: client.possibleDuplicateClientId } };
+  return { status: "done", message: effectiveCall ? "Formulario y llamada unificados en una solicitud." : "Formulario registrado; la reserva continúa pendiente.", metadata: { client_id: client.clientId, lead_id: lead.id, booking_id: bookingId, possible_duplicate_client_id: client.possibleDuplicateClientId } };
 }
 
 async function booking(row: WorkerRow): Promise<WorkerOutcome> {
