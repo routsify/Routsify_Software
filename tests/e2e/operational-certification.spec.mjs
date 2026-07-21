@@ -73,6 +73,22 @@ async function processOutbox(request) {
   return summary;
 }
 
+async function cleanupSyntheticBookings(request) {
+  const clients = await api(request, "GET", "/api/routsify/clients?paginated=1&pageSize=200&q=PRUEBA%20E2E");
+  const rows = Array.isArray(clients.data?.items) ? clients.data.items : [];
+  let cancelled = 0;
+  for (const client of rows.filter((item) => item.source === "production_certification" && text(item.display_name).startsWith("[PRUEBA E2E "))) {
+    const result = await api(request, "GET", `/api/routsify/clients/booking/reservations?clientId=${encodeURIComponent(client.id)}`);
+    const bookings = Array.isArray(result.data?.bookings) ? result.data.bookings : [];
+    for (const booking of bookings.filter((item) => text(item.status).toLowerCase() !== "cancelled" && text(item.external_booking_id || item.external_id))) {
+      const response = await api(request, "DELETE", `/api/routsify/clients/booking/reservations/${encodeURIComponent(booking.id)}`, undefined, { timeout: 60_000 });
+      expect(response.data.booking.status).toBe("cancelled");
+      cancelled += 1;
+    }
+  }
+  return cancelled;
+}
+
 function buildSyntheticPdf() {
   const content = [
     "BT",
@@ -132,6 +148,10 @@ test.describe("certificación operativa de producción", () => {
       const whatsapp = health.data.integrations.find((item) => item.id === "whatsapp");
       expect(whatsapp).toBeTruthy();
       expect(["inactive", "setup_required", "disabled", "not_configured"]).toContain(whatsapp.state);
+    });
+
+    await test.step("cancelar reservas sintéticas activas de ensayos anteriores", async () => {
+      await cleanupSyntheticBookings(request);
     });
 
     await test.step("crear cliente, proveedor y expediente sintéticos", async () => {
@@ -393,11 +413,11 @@ test.describe("certificación operativa de producción", () => {
       expect(new Date(created.data.booking.ends_at).toISOString()).toBe(expectedEndsAt);
       const updated = await api(request, "PATCH", `/api/routsify/clients/booking/reservations/${certification.bookingId}`, {
         notes: `[PRUEBA E2E ${runTag}] Reserva verificada; cancelar a continuación`,
-      });
+      }, { timeout: 60_000 });
       expect(text(updated.data.booking.id)).toBe(certification.bookingId);
       expect(new Date(updated.data.booking.starts_at).toISOString()).toBe(expectedStartsAt);
       expect(new Date(updated.data.booking.ends_at).toISOString()).toBe(expectedEndsAt);
-      const cancelled = await api(request, "DELETE", `/api/routsify/clients/booking/reservations/${certification.bookingId}`);
+      const cancelled = await api(request, "DELETE", `/api/routsify/clients/booking/reservations/${certification.bookingId}`, undefined, { timeout: 60_000 });
       expect(cancelled.data.booking.status).toBe("cancelled");
       expect(new Date(cancelled.data.booking.starts_at).toISOString()).toBe(expectedStartsAt);
       expect(new Date(cancelled.data.booking.ends_at).toISOString()).toBe(expectedEndsAt);

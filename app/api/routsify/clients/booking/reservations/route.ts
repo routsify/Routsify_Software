@@ -9,6 +9,21 @@ function text(value: unknown) {
   return String(value ?? "").trim();
 }
 
+export async function GET(request: NextRequest) {
+  const access = await requireInternalAccess(request);
+  if (!access.ok) return jsonAccessDenied(access);
+  const clientId = text(request.nextUrl.searchParams.get("clientId"));
+  if (!clientId) return NextResponse.json({ ok: false, error: "client_id_required" }, { status: 400 });
+  const { data, error } = await getSupabaseAdminClient()
+    .from("bookings")
+    .select("*")
+    .eq("organization_id", access.organizationId)
+    .eq("client_id", clientId)
+    .order("created_at", { ascending: false });
+  if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
+  return NextResponse.json({ ok: true, data: { bookings: data || [] } });
+}
+
 export async function POST(request: NextRequest) {
   const access = await requireInternalAccess(request);
   if (!access.ok) return jsonAccessDenied(access);
