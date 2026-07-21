@@ -365,8 +365,9 @@ test.describe("certificación operativa de producción", () => {
 
       await page.goto(`/propuestas?caseId=${encodeURIComponent(certification.caseId)}`);
       await expect(page.getByLabel("Margen global %")).toBeVisible();
-      await expect(page.getByRole("button", { name: "+ Nuevo", exact: true })).toBeVisible();
-      await page.getByRole("button", { name: "+ Nuevo", exact: true }).click();
+      await expect(page.getByRole("button", { name: "Crear proveedor", exact: true })).toBeVisible();
+      await expect(page.getByRole("combobox", { name: "Proveedor", exact: true })).toBeVisible();
+      await page.getByRole("button", { name: "Crear proveedor", exact: true }).click();
       await expect(page.getByRole("heading", { name: "Nuevo proveedor", exact: true })).toBeVisible();
       await page.getByRole("button", { name: "Cerrar", exact: true }).click();
 
