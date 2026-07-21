@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { createHash } from "node:crypto";
 
 const enabled = process.env.E2E_OPERATIONAL_CERTIFICATION === "1";
 const hasCredentials = Boolean(process.env.E2E_EMAIL && process.env.E2E_PASSWORD);
@@ -156,6 +157,40 @@ function buildSyntheticPdf() {
   return Buffer.from(pdf, "latin1");
 }
 
+async function ensureSyntheticLegalDocument(request) {
+  const title = "[PRUEBA E2E] Contrato legal sintético · NO VÁLIDO";
+  const listed = await api(request, "GET", "/api/routsify/settings/legal-documents?includeTests=1");
+  const existing = (Array.isArray(listed.data) ? listed.data : []).find((item) => item.title === title && item.document_type === "travel_contract" && item.status === "ready" && item.is_test === true);
+  if (existing?.id) return text(existing.id);
+
+  const pdf = buildSyntheticPdf();
+  const fileName = "PRUEBA-E2E-CONTRATO-NO-VALIDO.pdf";
+  const upload = await api(request, "POST", "/api/routsify/settings/legal-documents/upload-url", {
+    documentType: "travel_contract",
+    fileName,
+    sizeBytes: pdf.length,
+    mimeType: "application/pdf",
+  });
+  const put = await request.put(upload.signedUrl, { data: pdf, headers: { "content-type": "application/pdf" } });
+  expect(put.ok(), `La subida del PDF legal devolvió ${put.status()}`).toBeTruthy();
+  const confirmed = await api(request, "POST", "/api/routsify/settings/legal-documents", {
+    documentType: "travel_contract",
+    title,
+    versionLabel: "CERT-E2E-1",
+    fileName,
+    sizeBytes: pdf.length,
+    mimeType: "application/pdf",
+    checksum: createHash("sha256").update(pdf).digest("hex"),
+    bucket: upload.bucket,
+    storagePath: upload.path,
+    activate: false,
+    isTest: true,
+  });
+  expect(confirmed.data.is_test).toBe(true);
+  expect(confirmed.data.is_active).toBe(false);
+  return text(confirmed.data.id);
+}
+
 test.describe("certificación operativa de producción", () => {
   test.skip(!enabled || !hasCredentials, "Requiere activación explícita y credenciales E2E.");
 
@@ -168,7 +203,7 @@ test.describe("certificación operativa de producción", () => {
     const clientEmail = taggedEmail(process.env.E2E_EMAIL, runTag);
     const tripStart = dateOffset(10);
     const tripEnd = dateOffset(13);
-    const certification = { runTag, clientId: null, supplierId: null, caseId: null, caseCode: null, proposalId: null, purchaseId: null, documentId: null, ticketDocumentId: null, ocrRunId: null, paymentLinkId: null, bookingId: null, communicationId: null };
+    const certification = { runTag, clientId: null, supplierId: null, caseId: null, caseCode: null, proposalId: null, purchaseId: null, documentId: null, ticketDocumentId: null, legalDocumentId: null, ocrRunId: null, paymentLinkId: null, bookingId: null, communicationId: null };
 
     await test.step("verificar conexiones configuradas", async () => {
       const health = await api(request, "GET", "/api/routsify/settings/integrations/health");
@@ -415,25 +450,25 @@ test.describe("certificación operativa de producción", () => {
 
     let contractId;
     await test.step("versionar, enviar y firmar el contrato con evidencia", async () => {
+      certification.legalDocumentId = await ensureSyntheticLegalDocument(request);
+      expect(certification.legalDocumentId).toBeTruthy();
       const contractWorkspace = await api(request, "GET", `/api/routsify/cases/${certification.caseId}/workspace?section=contract`);
       contractId = text(contractWorkspace.data.contracts[0]?.id);
       expect(contractId).toBeTruthy();
-      const contractUrl = `https://example.com/routsify-certification/${runTag}`;
       const sent = await api(request, "POST", `/api/routsify/cases/${certification.caseId}/contracts`, {
         id: contractId,
         title: "Contrato de viaje · PRUEBA E2E",
         status: "sent",
-        external_url: contractUrl,
-        legal_version: `CERT-${runTag}`,
+        legal_document_id: certification.legalDocumentId,
         notes: "Contrato sintético; no tiene validez comercial.",
       });
       expect(sent.data.status).toBe("sent");
+      expect(sent.data.legal_document_id).toBe(certification.legalDocumentId);
       const signed = await api(request, "POST", `/api/routsify/cases/${certification.caseId}/contracts`, {
         id: contractId,
         title: "Contrato de viaje · PRUEBA E2E",
         status: "signed",
-        external_url: contractUrl,
-        legal_version: `CERT-${runTag}`,
+        legal_document_id: certification.legalDocumentId,
         signer_name: "Ana Prueba",
         signer_email: clientEmail,
         review_confirmed: true,
@@ -441,6 +476,7 @@ test.describe("certificación operativa de producción", () => {
       });
       expect(signed.data.status).toBe("signed");
       expect(text(signed.data.current_version_id)).toBeTruthy();
+      expect(signed.data.legal_document_id).toBe(certification.legalDocumentId);
     });
 
     await test.step("registrar cobro, proforma y pago en Holded", async () => {
@@ -465,19 +501,11 @@ test.describe("certificación operativa de producción", () => {
       expect(workspace.data.payments.some((item) => item.payment_reference === `E2E-${runTag}` && Number(item.amount) === 15)).toBe(true);
       expect(workspace.data.fiscal_documents.some((item) => item.document_type === "proforma" && item.status === "issued")).toBe(true);
 
-      const settings = await api(request, "GET", "/api/routsify/settings");
-      const setting = (key) => text(settings.data.find((item) => item.key === key)?.value);
-      const legalReady = Boolean(setting("legal.general_conditions_url") && setting("legal.standard_information_url"));
-      const legal = await api(request, "POST", `/api/routsify/cases/${certification.caseId}/legal-delivery`, {}, { acceptedStatuses: [409] });
-      if (legalReady) {
-        expect(legal.data.event_type).toBe("legal_pack.sent");
-        expect(legal.delivery.provider).toBe("hostinger_smtp");
-        expect(legal.delivery.status).toBe("accepted");
-      }
-      else {
-        expect(legal._responseStatus).toBe(409);
-        expect(legal.error).toBe("legal_templates_incomplete");
-      }
+      const legal = await api(request, "POST", `/api/routsify/cases/${certification.caseId}/legal-delivery`, {});
+      expect(legal.data.event_type).toBe("legal_pack.sent");
+      expect(legal.delivery.provider).toBe("hostinger_smtp");
+      expect(legal.delivery.status).toBe("accepted");
+      expect(Number(legal.attachments)).toBeGreaterThanOrEqual(1);
     });
 
     await test.step("crear, modificar y cancelar una reserva real de prueba", async () => {
@@ -558,7 +586,7 @@ test.describe("certificación operativa de producción", () => {
       const health = await api(request, "GET", "/api/routsify/settings/integrations/health");
       expect(health.data.integrations.find((item) => item.id === "holded")?.state).toBe("healthy");
 
-      for (const path of [`/clientes/${certification.clientId}`, `/expedientes/${certification.caseCode}`, "/propuestas", "/compras", "/comunicaciones", "/informes"]) {
+      for (const path of [`/clientes/${certification.clientId}`, `/expedientes/${certification.caseCode}`, "/propuestas", "/compras", "/comunicaciones", "/informes", "/ajustes?tab=legal"]) {
         const response = await page.goto(path, { waitUntil: "domcontentloaded" });
         expect(response?.status(), `${path} no abrió correctamente`).toBeLessThan(500);
         await expect(page).not.toHaveURL(/\/login(?:\?|$)/);
@@ -567,7 +595,7 @@ test.describe("certificación operativa de producción", () => {
         await expect(page.locator("nextjs-portal")).toHaveCount(0);
         if (path.startsWith("/expedientes/")) {
           await expect(page.getByRole("heading", { name: "Del presupuesto aceptado a la entrega del viaje", exact: true })).toBeVisible();
-          for (const heading of ["Información precontractual aceptada", "Datos de viajeros y documentación", "Redacción, enlace privado y firma del contrato", "Enlace de pago y confirmación del cobro", "Entrega de documentación legal", "Compras de proveedores y entrega de tickets"]) {
+          for (const heading of ["Información precontractual aceptada", "Datos de viajeros y documentación", "PDF privado y firma del contrato", "Enlace de pago y confirmación del cobro", "Entrega de documentación legal", "Compras de proveedores y entrega de tickets"]) {
             await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
           }
           await expect(page.getByRole("button", { name: /Enviar documentación legal|Documentación enviada/ })).toBeVisible();

@@ -63,13 +63,14 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
   if (section === "contract") {
     if (!roleAllowed(access.role, ["admin", "direction", "sales", "operations", "billing"])) return NextResponse.json({ ok: false, error: "insufficient_role" }, { status: 403, headers: NO_STORE_HEADERS });
-    const [contractsResult, paymentsResult, fiscalResult] = await Promise.all([
-      supabase.from("contracts").select("id,title,status,external_url,signed_at,notes,created_at").eq("case_id", caseId).eq("organization_id", organizationId).order("created_at", { ascending: false }),
+    const [contractsResult, legalDocumentsResult, paymentsResult, fiscalResult] = await Promise.all([
+      supabase.from("contracts").select("id,title,status,external_url,legal_document_id,signed_at,notes,created_at,legal_documents(id,document_type,title,version_label,file_name,status,is_active)").eq("case_id", caseId).eq("organization_id", organizationId).order("created_at", { ascending: false }),
+      supabase.from("legal_documents").select("id,document_type,title,version_label,file_name,status,is_active,created_at").eq("organization_id", organizationId).eq("status", "ready").eq("is_test", false).order("is_active", { ascending: false }).order("created_at", { ascending: false }),
       supabase.from("payments").select("id,payment_reference,amount,currency,method,status,confirmed_at,received_at,created_at").eq("case_id", caseId).eq("organization_id", organizationId).order("created_at", { ascending: false }),
       supabase.from("billing_documents").select("id,document_type,type,document_number,status,amount,tax_amount,currency,issued_at,created_at").eq("case_id", caseId).eq("organization_id", organizationId).order("created_at", { ascending: false }),
     ]);
-    const error = contractsResult.error || paymentsResult.error || fiscalResult.error;
-    return error ? NextResponse.json({ ok: false, error: error.message }, { status: 400, headers: NO_STORE_HEADERS }) : ok({ contracts: contractsResult.data || [], payments: paymentsResult.data || [], fiscal_documents: fiscalResult.data || [] });
+    const error = contractsResult.error || legalDocumentsResult.error || paymentsResult.error || fiscalResult.error;
+    return error ? NextResponse.json({ ok: false, error: error.message }, { status: 400, headers: NO_STORE_HEADERS }) : ok({ contracts: contractsResult.data || [], legal_documents: legalDocumentsResult.data || [], payments: paymentsResult.data || [], fiscal_documents: fiscalResult.data || [] });
   }
 
   if (section === "purchases") {

@@ -451,7 +451,7 @@ export async function syncCommunicationFollowups(organizationId: string) {
     db.from("suppliers").select("id,name,email,phone,active").eq("organization_id", organizationId).eq("active", true).limit(1000),
     db.from("cases").select("id,client_id,case_code,title,status,destination,trip_start,accepted_value,currency").eq("organization_id", organizationId).neq("status", "closed").limit(1000),
     db.from("proposals").select("id,case_id,status,created_at,updated_at").eq("organization_id", organizationId).in("status", ["sent", "accepted", "rejected"]).limit(1000),
-    db.from("contracts").select("id,case_id,status,external_url,created_at,updated_at").eq("organization_id", organizationId).limit(1000),
+    db.from("contracts").select("id,case_id,status,legal_document_id,created_at,updated_at").eq("organization_id", organizationId).limit(1000),
     db.from("payments").select("case_id,status,amount").eq("organization_id", organizationId).limit(2000),
     db.from("expected_purchases").select("id,case_id,supplier_id,status,service,supplier_name,due_date,requested_at,invoice_number,invoice_total,active,required,created_at,updated_at").eq("organization_id", organizationId).eq("active", true).limit(2000),
     db.from("tasks").select("id,case_id,client_id,title,status,due_at,payload").eq("organization_id", organizationId).in("status", ["pending", "in_progress"]).contains("payload", { action_type: "fillout_reminder" }).limit(500),
@@ -542,11 +542,11 @@ export async function syncCommunicationFollowups(organizationId: string) {
       recipientName: text(client?.display_name),
       recipientEmail: text(client?.email),
       recipientPhone: text(client?.phone),
-      variables: { client_name: text(client?.display_name), case_code: text(relatedCase.case_code), destination: text(relatedCase.destination), contract_url: text(contract.external_url) },
+      variables: { client_name: text(client?.display_name), case_code: text(relatedCase.case_code), destination: text(relatedCase.destination) },
       caseId: text(relatedCase.id),
       clientId: text(relatedCase.client_id),
       contractId: text(contract.id),
-      metadata: { case_code: relatedCase.case_code, destination: relatedCase.destination, contract_url: contract.external_url },
+      metadata: { case_code: relatedCase.case_code, destination: relatedCase.destination, legal_document_id: contract.legal_document_id },
     });
     if (result.changed) planned += 1;
   }

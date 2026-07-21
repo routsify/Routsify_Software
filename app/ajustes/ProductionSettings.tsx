@@ -5,17 +5,18 @@ import { useRouter } from "next/navigation";
 import { defaultSettings, moduleFor, type AppSetting } from "@/lib/settings-master";
 import { enforceProtectedSettingValue, isProtectedSetting, protectedSettingDescription } from "@/lib/settings-invariants";
 import { IntegrationSecretsPanel, type IntegrationSecretStatus } from "./IntegrationSecretsPanel";
+import { LegalDocumentsPanel, type LegalDocumentRow } from "./LegalDocumentsPanel";
 import { UserManagementPanel } from "./UserManagementPanel";
 
-type TabId = "general" | "appearance" | "users" | "integrations" | "operations" | "legal" | "security";
+type TabId = "general" | "appearance" | "users" | "legal" | "integrations" | "operations" | "security";
 
 const tabs: Array<{ id: TabId; label: string; description: string; modules: string[] }> = [
   { id: "general", label: "General", description: "Empresa, moneda, fechas y menú visible.", modules: ["general", "navigation"] },
   { id: "appearance", label: "Apariencia", description: "Colores, tipografía, densidad y composición.", modules: ["appearance"] },
   { id: "users", label: "Usuarios", description: "Altas, invitaciones, roles y permisos.", modules: [] },
   { id: "integrations", label: "Integraciones", description: "Activa y conecta cada herramienta desde una tarjeta sencilla.", modules: ["integrations"] },
-  { id: "operations", label: "Operativa", description: "Clientes, expedientes, presupuestos, márgenes y compras.", modules: ["clients", "cases", "budgets", "margins", "purchases"] },
-  { id: "legal", label: "Plantillas legales", description: "Documentos vigentes para contrato, condiciones generales e información normalizada.", modules: ["contracts", "legal", "fiscal"] },
+  { id: "operations", label: "Operativa", description: "Clientes, expedientes, presupuestos, márgenes, compras, contratos y fiscalidad.", modules: ["clients", "cases", "budgets", "margins", "purchases", "contracts", "fiscal"] },
+  { id: "legal", label: "Documentación legal", description: "PDFs privados, versiones vigentes e histórico contractual.", modules: [] },
   { id: "security", label: "Seguridad y sistema", description: "Webhooks, logs, caché y políticas técnicas.", modules: ["security", "logs", "system"] },
 ];
 
@@ -23,7 +24,7 @@ function sameValue(left: AppSetting["value"], right: AppSetting["value"]) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-export function ProductionSettings({ storedRows = [], secretStatuses = [], canManageSecrets = false, isAdmin = canManageSecrets }: { storedRows?: Record<string, unknown>[]; secretStatuses?: IntegrationSecretStatus[]; canManageSecrets?: boolean; isAdmin?: boolean }) {
+export function ProductionSettings({ storedRows = [], secretStatuses = [], legalDocuments = [], canManageSecrets = false, isAdmin = canManageSecrets, initialTab = "general" }: { storedRows?: Record<string, unknown>[]; secretStatuses?: IntegrationSecretStatus[]; legalDocuments?: LegalDocumentRow[]; canManageSecrets?: boolean; isAdmin?: boolean; initialTab?: TabId }) {
   const router = useRouter();
   const initialSettings = useMemo(() => defaultSettings.map((setting) => {
     const stored = storedRows.find((row) => String(row.key || "") === setting.key);
@@ -39,7 +40,7 @@ export function ProductionSettings({ storedRows = [], secretStatuses = [], canMa
   const initialValues = useMemo(() => Object.fromEntries(initialSettings.map((setting) => [setting.key, setting.value])) as Record<string, AppSetting["value"]>, [initialSettings]);
   const [savedValues, setSavedValues] = useState(initialValues);
   const [draftValues, setDraftValues] = useState(initialValues);
-  const [activeTab, setActiveTab] = useState<TabId>("general");
+  const [activeTab, setActiveTab] = useState<TabId>(initialTab);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -48,6 +49,7 @@ export function ProductionSettings({ storedRows = [], secretStatuses = [], canMa
   const activeDefinition = tabs.find((tab) => tab.id === activeTab) || tabs[0];
   const activeSettings = initialSettings.filter((setting) => activeDefinition.modules.includes(setting.module));
   const configuredSecrets = secretStatuses.filter((item) => item.configured).length;
+  const activeLegalDocuments = legalDocuments.filter((item) => item.is_active && item.status === "ready").length;
 
   function setValue(key: string, value: AppSetting["value"]) {
     setDraftValues((current) => ({ ...current, [key]: value }));
@@ -147,20 +149,22 @@ export function ProductionSettings({ storedRows = [], secretStatuses = [], canMa
       <article className="settings-summary-card"><span>Control</span><strong>{isAdmin ? "Administrador" : "Consulta"}</strong><small>{isAdmin ? "Puedes modificar la configuración." : "Los cambios están restringidos."}</small></article>
       <article className="settings-summary-card"><span>Cambios pendientes</span><strong>{dirtyKeys.length}</strong><small>{dirtyKeys.length ? "Pendientes de guardar" : "Todo sincronizado"}</small></article>
       <article className="settings-summary-card"><span>Credenciales seguras</span><strong>{configuredSecrets}</strong><small>Guardadas de forma cifrada</small></article>
+      <article className="settings-summary-card"><span>PDFs legales vigentes</span><strong>{activeLegalDocuments}</strong><small>Versionados y privados</small></article>
     </section>
 
-    <nav className="settings-tabs" aria-label="Secciones de ajustes">{tabs.map((tab) => <button key={tab.id} type="button" className={`settings-tab ${activeTab === tab.id ? "active" : ""}`} onClick={() => { setActiveTab(tab.id); setMessage(null); setError(null); }}>{tab.label}</button>)}</nav>
+    <nav className="settings-tabs" aria-label="Secciones de ajustes">{tabs.map((tab) => <button key={tab.id} type="button" className={`settings-tab ${activeTab === tab.id ? "active" : ""}`} onClick={() => { setActiveTab(tab.id); setMessage(null); setError(null); window.history.replaceState(null, "", tab.id === "general" ? "/ajustes" : `/ajustes?tab=${tab.id}`); }}>{tab.label}</button>)}</nav>
 
     {activeTab === "users" ? <UserManagementPanel canManage={isAdmin} /> : null}
+    {activeTab === "legal" ? <LegalDocumentsPanel initialDocuments={legalDocuments} canManage={isAdmin} /> : null}
 
-    {activeTab !== "users" ? <section className="settings-section">
+    {activeTab !== "users" && activeTab !== "legal" ? <section className="settings-section">
       <div className="settings-section-header"><div><span className="eyebrow">Panel de control</span><h2>{activeDefinition.label}</h2><p>{activeDefinition.description}</p></div>{activeTab !== "integrations" && isAdmin && activeSettings.some((setting) => setting.editable) ? <button className="btn secondary" type="button" onClick={resetActiveTab} disabled={busy}>Restaurar valores de esta sección</button> : null}</div>
       {activeTab === "appearance" ? <div className="settings-preview" style={previewStyle}><aside className="settings-preview-sidebar"><strong>{String(draftValues["company.name"] || "Routsify")}</strong><span>Inicio</span><span>Clientes</span><span>Expedientes</span><span>Presupuestos</span></aside><div className="settings-preview-main"><span className="eyebrow">Vista previa inmediata</span><h2>Así se aplicará el estilo</h2><p>Los cambios visuales se muestran antes de guardar y se propagan al sistema al confirmar.</p><article className="settings-preview-card"><strong>Tarjeta de ejemplo</strong><p>Colores, fondos, radios, densidad y ancho del menú.</p><span className="settings-preview-button">Acción principal</span></article></div></div> : null}
       {activeTab !== "integrations" && activeSettings.length ? <div className="settings-fields">{activeSettings.map(renderField)}</div> : null}
       {activeTab === "integrations" ? <IntegrationSecretsPanel initialStatuses={secretStatuses} initialValues={initialValues} canManage={canManageSecrets} onSettingsSaved={syncIntegrationSettings} /> : null}
     </section> : null}
 
-    {activeTab !== "users" && activeTab !== "integrations" && isAdmin ? <div className="settings-savebar"><div><strong>{dirtyKeys.length ? `${dirtyKeys.length} cambios sin guardar` : "Todos los ajustes están guardados"}</strong><p>{dirtyKeys.length ? "Los cambios no afectarán al sistema hasta pulsar Guardar." : "La configuración efectiva coincide con la pantalla."}</p></div><button className="btn" type="button" onClick={() => void saveChanges()} disabled={busy || !dirtyKeys.length}>{busy ? "Guardando..." : "Guardar y aplicar cambios"}</button></div> : null}
+    {activeTab !== "users" && activeTab !== "legal" && activeTab !== "integrations" && isAdmin ? <div className="settings-savebar"><div><strong>{dirtyKeys.length ? `${dirtyKeys.length} cambios sin guardar` : "Todos los ajustes están guardados"}</strong><p>{dirtyKeys.length ? "Los cambios no afectarán al sistema hasta pulsar Guardar." : "La configuración efectiva coincide con la pantalla."}</p></div><button className="btn" type="button" onClick={() => void saveChanges()} disabled={busy || !dirtyKeys.length}>{busy ? "Guardando..." : "Guardar y aplicar cambios"}</button></div> : null}
     {message ? <p className="client-message settings-feedback" role="status">{message}</p> : null}
     {error ? <p className="form-warning settings-feedback" role="alert">{error}</p> : null}
   </div>;

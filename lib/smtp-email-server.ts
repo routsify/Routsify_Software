@@ -80,6 +80,14 @@ function formatAddress(name: string, address: string) {
   return name ? `${encodedHeader(name)} <${cleanAddress}>` : cleanAddress;
 }
 
+function attachmentName(value: string) {
+  return safeHeader(value)
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9._ -]/g, "-")
+    .slice(0, 160) || "documento.pdf";
+}
+
 async function connect(input: { host: string; port: number; username: string; password: string }) {
   const socket = tls.connect({ host: input.host, port: input.port, servername: input.host, rejectUnauthorized: true });
   socket.setTimeout(SMTP_TIMEOUT_MS, () => socket.destroy(new Error("smtp_timeout")));
@@ -132,6 +140,7 @@ export async function sendTransactionalEmail(input: {
   to: string;
   subject: string;
   body: string;
+  attachments?: Array<{ fileName: string; content: Buffer; contentType?: string }>;
 }) {
   const config = await smtpConfiguration(input.organizationId);
   if (!config.enabled) return { ok: false as const, status: 503, error: "email_integration_disabled" };
@@ -149,6 +158,8 @@ export async function sendTransactionalEmail(input: {
     await connection.session.command("DATA", [354]);
 
     const messageId = `<${randomUUID()}@${config.fromAddress.split("@")[1] || "routsify.local"}>`;
+    const attachments = input.attachments || [];
+    const boundary = `routsify-${randomUUID()}`;
     const headers = [
       `Date: ${new Date().toUTCString()}`,
       `Message-ID: ${messageId}`,
@@ -157,11 +168,30 @@ export async function sendTransactionalEmail(input: {
       config.replyTo ? `Reply-To: ${safeHeader(config.replyTo)}` : null,
       `Subject: ${encodedHeader(input.subject || "Mensaje de Routsify")}`,
       "MIME-Version: 1.0",
-      "Content-Type: text/plain; charset=UTF-8",
-      "Content-Transfer-Encoding: base64",
+      attachments.length ? `Content-Type: multipart/mixed; boundary="${boundary}"` : "Content-Type: text/plain; charset=UTF-8",
+      attachments.length ? null : "Content-Transfer-Encoding: base64",
     ].filter(Boolean).join("\r\n");
     const encodedBody = chunks(Buffer.from(input.body, "utf8").toString("base64"));
-    connection.session.write(`${headers}\r\n\r\n${encodedBody}\r\n.\r\n`);
+    const mimeBody = attachments.length ? [
+      `--${boundary}`,
+      "Content-Type: text/plain; charset=UTF-8",
+      "Content-Transfer-Encoding: base64",
+      "",
+      encodedBody,
+      ...attachments.flatMap((attachment) => {
+        const fileName = attachmentName(attachment.fileName);
+        return [
+          `--${boundary}`,
+          `Content-Type: ${safeHeader(attachment.contentType || "application/octet-stream")}; name="${fileName}"`,
+          `Content-Disposition: attachment; filename="${fileName}"`,
+          "Content-Transfer-Encoding: base64",
+          "",
+          chunks(attachment.content.toString("base64")),
+        ];
+      }),
+      `--${boundary}--`,
+    ].join("\r\n") : encodedBody;
+    connection.session.write(`${headers}\r\n\r\n${mimeBody}\r\n.\r\n`);
     await connection.session.response([250]);
     await connection.session.command("QUIT", [221]);
     return { ok: true as const, status: 200, provider: "hostinger_smtp", messageId };

@@ -9,7 +9,7 @@ import { DocumentsTab } from "./DocumentsTab";
 import { LegalDeliveryPanel } from "./LegalDeliveryPanel";
 import { SummaryTab } from "./SummaryTab";
 import { TravelersTab } from "./TravelersTab";
-import type { ContractRow, DocumentRow, FiscalRow, PaymentRow, PurchaseRow, TaskRow, TimelineRow, Traveler, WorkspaceProps } from "./workspace-types";
+import type { ContractRow, DocumentRow, FiscalRow, LegalDocumentRow, PaymentRow, PurchaseRow, TaskRow, TimelineRow, Traveler, WorkspaceProps } from "./workspace-types";
 import { money, numberValue } from "./workspace-types";
 
 function isIdentityDocument(item: DocumentRow) {
@@ -36,6 +36,7 @@ export function CaseWorkspace(props: WorkspaceProps & { role?: string | null }) 
   const [tasks, setTasks] = useState<TaskRow[]>(props.initialTasks || []);
   const [timeline, setTimeline] = useState<TimelineRow[]>(props.initialTimeline || []);
   const [contracts, setContracts] = useState<ContractRow[]>(props.initialContracts || []);
+  const [legalDocuments, setLegalDocuments] = useState<LegalDocumentRow[]>(props.initialLegalDocuments || []);
   const [payments, setPayments] = useState<PaymentRow[]>(props.initialPayments || []);
   const [fiscal, setFiscal] = useState<FiscalRow[]>(props.initialFiscal || []);
   const [purchases, setPurchases] = useState<PurchaseRow[]>(props.initialPurchases || []);
@@ -68,6 +69,7 @@ export function CaseWorkspace(props: WorkspaceProps & { role?: string | null }) 
         if (Array.isArray(data.tasks)) setTasks(data.tasks as TaskRow[]);
         if (Array.isArray(data.timeline)) setTimeline(data.timeline as TimelineRow[]);
         if (Array.isArray(data.contracts)) setContracts(data.contracts as ContractRow[]);
+        if (Array.isArray(data.legal_documents)) setLegalDocuments(data.legal_documents as LegalDocumentRow[]);
         if (Array.isArray(data.payments)) setPayments(data.payments as PaymentRow[]);
         if (Array.isArray(data.fiscal_documents)) setFiscal(data.fiscal_documents as FiscalRow[]);
         if (Array.isArray(data.purchases)) setPurchases(data.purchases as PurchaseRow[]);
@@ -120,17 +122,17 @@ export function CaseWorkspace(props: WorkspaceProps & { role?: string | null }) 
       {canAccessSensitive ? <DocumentsTab caseId={props.initialCase.id} caseCode={props.initialCase.case_code} initialDocuments={documents} travelers={travelers} onChange={setDocuments} onTravelerChange={updateTraveler} /> : <section className="card"><h2>Acceso restringido</h2><p>La documentación sensible no está disponible para tu rol.</p></section>}
     </ProcessStage>
 
-    <ProcessStage number={3} id="contrato" title="Redacción, enlace privado y firma del contrato" description="Parte de la información precontractual aceptada, fija la versión contractual y registra la evidencia de firma." done={signedContract} active={firstPending === 3}>
-      {canAccessContract ? <ContractPaymentsTab mode="contracts" caseRow={props.initialCase} initialContracts={contracts} initialPayments={payments} initialFiscal={fiscal} onContractsChange={setContracts} onPaymentsChange={setPayments} onFiscalChange={setFiscal} /> : <section className="card"><h2>Acceso restringido</h2><p>El contrato no está disponible para tu rol.</p></section>}
+    <ProcessStage number={3} id="contrato" title="PDF privado y firma del contrato" description="Parte de la información precontractual aceptada, fija los PDFs legales vigentes y registra la evidencia de firma." done={signedContract} active={firstPending === 3}>
+      {canAccessContract ? <ContractPaymentsTab mode="contracts" caseRow={props.initialCase} initialContracts={contracts} initialLegalDocuments={legalDocuments} initialPayments={payments} initialFiscal={fiscal} onContractsChange={setContracts} onPaymentsChange={setPayments} onFiscalChange={setFiscal} /> : <section className="card"><h2>Acceso restringido</h2><p>El contrato no está disponible para tu rol.</p></section>}
     </ProcessStage>
 
     <ProcessStage number={4} id="pago" title="Enlace de pago y confirmación del cobro" description={`Guarda el enlace Teya por el importe correspondiente y registra el cobro. Cobrado: ${money(paid, props.initialCase.currency || "EUR")} de ${money(acceptedValue, props.initialCase.currency || "EUR")}.`} done={fullyPaid} active={firstPending === 4}>
       <CasePaymentLinkPanel proposalId={acceptedProposal?.id} caseRow={props.initialCase} onPaymentConfirmed={addPayment} />
-      {canAccessContract ? <ContractPaymentsTab mode="payments" caseRow={props.initialCase} initialContracts={contracts} initialPayments={payments} initialFiscal={fiscal} onContractsChange={setContracts} onPaymentsChange={setPayments} onFiscalChange={setFiscal} /> : null}
+      {canAccessContract ? <ContractPaymentsTab mode="payments" caseRow={props.initialCase} initialContracts={contracts} initialLegalDocuments={legalDocuments} initialPayments={payments} initialFiscal={fiscal} onContractsChange={setContracts} onPaymentsChange={setPayments} onFiscalChange={setFiscal} /> : null}
     </ProcessStage>
 
     <ProcessStage number={5} id="legales" title="Entrega de documentación legal" description="Prepara el correo con contrato firmado, documentación fiscal, condiciones generales e información normalizada; después registra el envío." done={legalSent} active={firstPending === 5}>
-      <LegalDeliveryPanel caseRow={props.initialCase} templates={props.initialLegalTemplates || {}} signed={signedContract} fullyPaid={fullyPaid} sent={legalSent} onSent={(event) => setTimeline((current) => [event, ...current.filter((item) => item.id !== event.id)])} />
+      <LegalDeliveryPanel caseRow={props.initialCase} contracts={contracts} legalDocuments={legalDocuments} signed={signedContract} fullyPaid={fullyPaid} sent={legalSent} onSent={(event) => setTimeline((current) => [event, ...current.filter((item) => item.id !== event.id)])} />
     </ProcessStage>
 
     <ProcessStage number={6} id="operativa" title="Compras de proveedores y entrega de tickets" description="Concilia cada compra y sube bonos, reservas y tickets que quedarán disponibles para el cliente." done={operationComplete} active={firstPending === 6}>

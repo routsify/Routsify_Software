@@ -6,7 +6,7 @@ Plataforma operativa de Routsify construida con Next.js, TypeScript y Supabase. 
 
 - **Hoy**: prioridades, tareas y estado operativo.
 - **Solicitudes**: revisión de leads de Fillout, resultado comercial y archivo reversible.
-- **Expedientes**: viaje, viajeros, documentos, contrato, pagos, tareas y cronología.
+- **Expedientes**: viaje, viajeros, documentos, contrato con PDF legal versionado, pagos, tareas y cronología.
 - **Presupuestos**: escenarios, líneas, versiones, aceptación y enlaces públicos firmados.
 - **Compras**: costes previstos, facturas privadas, conciliación y coste real.
 - **Clientes y proveedores**: fichas 360, importación y relaciones operativas.
@@ -53,7 +53,8 @@ npm run build
 npm run test:e2e
 ```
 
-`validate:platform` comprueba los contratos funcionales, la seguridad, Holded v2, Booking, los controles de UI y las 106 migraciones ordenadas. El validador de UI rechaza botones sin tipo o acción, formularios desconectados y elementos no semánticos clicables. Knip bloquea archivos o dependencias sin uso.
+`validate:platform` comprueba los contratos funcionales, la seguridad, Holded v2, Booking, los controles de UI y las 108 migraciones ordenadas. El validador de UI rechaza botones sin tipo o acción, formularios desconectados y elementos no semánticos clicables. Knip bloquea archivos o dependencias sin uso.
+La documentación legal se adjunta desde `Ajustes → Documentación legal`. Los PDFs se almacenan en el bucket privado `legal-documents`, se versionan sin sobrescrituras y solo se abren mediante URLs firmadas temporales. Al enviar un contrato, Routsify bloquea la versión del PDF principal y la relación de documentos complementarios vigentes dentro de la evidencia contractual; tras firma y pago, el paquete legal se entrega como adjuntos PDF y queda auditado sin depender de URLs externas.
 
 Las pruebas E2E ejecutan Chromium de escritorio y móvil contra un despliegue de Vercel. Las credenciales y el bypass de automatización se configuran como secretos de GitHub, nunca en el repositorio.
 

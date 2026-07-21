@@ -5,6 +5,7 @@ export const CASE_DOCUMENTS_BUCKET = "case-documents";
 export const TRAVEL_DOCUMENTS_BUCKET = "travel-documents";
 export const INVOICES_BUCKET = "invoices";
 export const PROPOSAL_ASSETS_BUCKET = "proposal-assets";
+export const LEGAL_DOCUMENTS_BUCKET = "legal-documents";
 
 export function bucketForOwner(ownerType: PrivateDocumentOwner) {
   if (ownerType === "traveler") return TRAVEL_DOCUMENTS_BUCKET;
@@ -49,7 +50,7 @@ export async function createPrivateDocumentUploadUrl(input: { organizationId: st
 }
 
 export async function createPrivateDocumentReadUrl(bucket: string, path: string, expiresInSeconds = 300, input?: { organizationId?: string; actorId?: string; purpose?: string }) {
-  const allowedBuckets = new Set([CASE_DOCUMENTS_BUCKET, TRAVEL_DOCUMENTS_BUCKET, INVOICES_BUCKET, PROPOSAL_ASSETS_BUCKET]);
+  const allowedBuckets = new Set([CASE_DOCUMENTS_BUCKET, TRAVEL_DOCUMENTS_BUCKET, INVOICES_BUCKET, PROPOSAL_ASSETS_BUCKET, LEGAL_DOCUMENTS_BUCKET]);
   if (!allowedBuckets.has(bucket)) return { ok: false, mode: "real" as const, error: "invalid_private_bucket", path };
   const expiresAt = new Date(Date.now() + expiresInSeconds * 1000).toISOString();
   if (!hasSupabaseAdminEnv()) return { ok: false, mode: "real" as const, error: "supabase_admin_not_configured", path };

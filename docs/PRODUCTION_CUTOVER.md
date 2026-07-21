@@ -61,5 +61,6 @@ La versión final debe funcionar sin datos demo, con Supabase Auth, base de dato
 - No publicar sin usuario administrador creado.
 - No activar Holded automático sin outbox validado.
 - No considerar firmado un contrato sin versión bloqueada y evidencia de firma.
+- Adjuntar los PDFs reales desde `Ajustes → Documentación legal`, comprobar que el contrato de viaje correcto figure como vigente y no usar URLs externas como documento contractual.
 - No ejecutar cargos reales durante una certificación: los cobros de prueba se registran como referencias manuales inequívocas.
 - No ejecutar deploy manual si Vercel ya está conectado a GitHub.

@@ -53,7 +53,7 @@ export const settingsModules: SettingsModule[] = [
   { id: "purchases", label: "Compras / Proveedores", description: "Compras esperadas, matching y tolerancias.", icon: "🛒", eventName: "purchase_settings.updated" },
   { id: "documents", label: "Documentación", description: "Retención y revisión de documentos.", icon: "📁", eventName: "document_settings.updated" },
   { id: "contracts", label: "Contrato y pago", description: "Firma, pago externo, bloqueo y evidencia.", icon: "✍", eventName: "contract_payment_settings.updated" },
-  { id: "legal", label: "Plantillas legales", description: "Contrato, condiciones generales e información normalizada que se entregan al cliente.", icon: "§", eventName: "legal_templates.updated" },
+  { id: "legal", label: "Documentación legal", description: "PDFs privados, versiones vigentes e histórico contractual.", icon: "§", eventName: "legal_documents.updated" },
   { id: "reports", label: "Informes y KPIs", description: "KPIs visibles, objetivos y exportación.", icon: "📊", eventName: "report_config.updated" },
   { id: "integrations", label: "Integraciones", description: "Holded, Fillout, Booking, pagos y OCR.", icon: "🔌", eventName: "integration.updated" },
   { id: "fiscal", label: "Fiscal y contabilidad", description: "Modo fiscal, documentos y revisión de asesoría.", icon: "€", eventName: "fiscal_mode.updated" },
@@ -94,10 +94,6 @@ export const defaultSettings: AppSetting[] = [
   { id: "document_retention", key: "documents.retention", module: "documents", label: "Retención documentos sensibles", value: "5 años", defaultValue: "5 años", valueType: "select", options: ["5 años"], scope: "global", editable: false, affectedModules: ["documents", "security"] },
   { id: "contract_block_fiscal", key: "contracts.block_missing_fiscal", module: "contracts", label: "Bloquear contrato sin datos fiscales", value: true, defaultValue: true, valueType: "boolean", scope: "global", editable: true, affectedModules: ["contracts", "clients"] },
   { id: "payment_provider", key: "payments.provider", module: "contracts", label: "Proveedor de pago", value: "Teya manual", defaultValue: "Teya manual", valueType: "select", options: ["Teya manual"], scope: "global", editable: false, affectedModules: ["contracts", "fiscal"] },
-  { id: "legal_contract_template", key: "legal.contract_template_url", module: "legal", label: "Plantilla maestra del contrato", description: "URL HTTPS del documento base que se utilizará para redactar cada contrato.", value: "", defaultValue: "", valueType: "string", scope: "global", editable: true, validationRules: { allowEmpty: true }, affectedModules: ["contracts", "cases"] },
-  { id: "legal_general_conditions", key: "legal.general_conditions_url", module: "legal", label: "Condiciones generales", description: "URL HTTPS de la versión vigente que se adjuntará o enlazará al cliente.", value: "", defaultValue: "", valueType: "string", scope: "global", editable: true, validationRules: { allowEmpty: true }, affectedModules: ["contracts", "cases"] },
-  { id: "legal_standard_information", key: "legal.standard_information_url", module: "legal", label: "Formulario de información normalizada", description: "URL HTTPS del formulario oficial vigente para viajes combinados.", value: "", defaultValue: "", valueType: "string", scope: "global", editable: true, validationRules: { allowEmpty: true }, affectedModules: ["contracts", "cases"] },
-
   { id: "fillout_enabled", key: "integrations.fillout.enabled", module: "integrations", label: "Activar Fillout", description: "Acepta solicitudes firmadas desde el webhook de Fillout.", value: true, defaultValue: true, valueType: "boolean", scope: "global", editable: true, eventName: "integration.updated", affectedModules: ["clients", "leads"] },
   { id: "fillout_form_id", key: "integrations.fillout.form_id", module: "integrations", label: "ID del formulario Fillout", description: "Opcional hasta configurar el formulario definitivo.", value: "", defaultValue: "", valueType: "string", scope: "global", editable: true, validationRules: { allowEmpty: true }, eventName: "integration.updated", affectedModules: ["clients", "leads"] },
   { id: "fillout_public_url", key: "integrations.fillout.public_url", module: "integrations", label: "URL pública del formulario Fillout", description: "Enlace que aparece en la tarea y en los mensajes de recordatorio tras reservar una llamada.", value: "", defaultValue: "", valueType: "string", scope: "global", editable: true, validationRules: { allowEmpty: true }, eventName: "integration.updated", affectedModules: ["clients", "bookings", "tasks"] },
@@ -141,13 +137,6 @@ export function validateSetting(setting: AppSetting) {
   if (setting.valueType === "string" && !allowEmpty && String(setting.value).trim().length === 0) return `${setting.label} no puede estar vacío`;
   if (setting.valueType === "color" && !/^#[0-9a-f]{6}$/i.test(String(setting.value))) return `${setting.label} debe ser un color hexadecimal válido`;
   if (setting.valueType === "select" && setting.options?.length && !setting.options.includes(String(setting.value))) return `${setting.label} contiene una opción no válida`;
-  if (setting.key.startsWith("legal.") && String(setting.value).trim()) {
-    try {
-      if (new URL(String(setting.value)).protocol !== "https:") return `${setting.label} debe usar una URL HTTPS`;
-    } catch {
-      return `${setting.label} debe contener una URL HTTPS válida`;
-    }
-  }
   if (setting.key === "fiscal.mode" && setting.value !== "proforma_on_payment_final_after_trip") return "El modo fiscal debe coincidir con la política validada por asesoría";
   return null;
 }
