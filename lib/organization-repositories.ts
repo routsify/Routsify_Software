@@ -1,6 +1,7 @@
 import { loadEffectiveSettings } from "@/lib/effective-settings-server";
 import { PROPOSAL_WITH_VERSIONS_SELECT, PURCHASE_WITH_RELATIONS_SELECT } from "@/lib/query-selects";
 import { getSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase-admin";
+import { attachSupplierDefaultMargins } from "@/lib/supplier-margin-server";
 import type { GlobalSearchResult as BaseGlobalSearchResult, RepositoryResult } from "@/lib/server-repositories";
 
 type GlobalSearchResult = Omit<BaseGlobalSearchResult, "type"> & {
@@ -228,7 +229,7 @@ export async function listOrganizationSuppliersPage(
     bySupplierInvoices.set(supplierId, [...(bySupplierInvoices.get(supplierId) || []), invoice]);
   }
 
-  const items = suppliers.map((supplier) => {
+  const items = await attachSupplierDefaultMargins(organizationId, suppliers.map((supplier) => {
     const supplierId = String(supplier.id || "");
     const relatedPurchases = bySupplierPurchases.get(supplierId) || [];
     const relatedInvoices = bySupplierInvoices.get(supplierId) || [];
@@ -240,7 +241,7 @@ export async function listOrganizationSuppliersPage(
       approved_total: relatedPurchases.reduce((sum, item) => sum + Number(item.approved_cost || 0), 0),
       invoiced_total: relatedInvoices.reduce((sum, item) => sum + Number(item.total_amount || 0), 0),
     };
-  });
+  }));
 
   return {
     ok: true,
@@ -316,7 +317,12 @@ export async function listOrganizationSuppliers(organizationId: string): Promise
     .order("active", { ascending: false })
     .order("name", { ascending: true })
     .limit(500);
-  return error ? { ok: false, mode: "supabase", error: error.message } : { ok: true, mode: "supabase", data: data || [] };
+  if (error) return { ok: false, mode: "supabase", error: error.message };
+  try {
+    return { ok: true, mode: "supabase", data: await attachSupplierDefaultMargins(organizationId, data || []) };
+  } catch (caught) {
+    return { ok: false, mode: "supabase", error: caught instanceof Error ? caught.message : "supplier_margin_load_failed" };
+  }
 }
 
 export async function searchOrganization(organizationId: string, query: string): Promise<RepositoryResult<GlobalSearchResult[]>> {

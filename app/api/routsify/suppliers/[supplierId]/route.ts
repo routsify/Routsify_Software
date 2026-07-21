@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { jsonAccessDenied, requireInternalAccess } from "@/lib/api-security";
 import { getRequestUserId } from "@/lib/request-context";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
+import { attachSupplierDefaultMargins, saveSupplierDefaultMargin } from "@/lib/supplier-margin-server";
 
 function text(value: unknown, max = 240) {
   const result = String(value ?? "").trim();
@@ -27,6 +28,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== "object") return NextResponse.json({ ok: false, error: "invalid_body" }, { status: 400 });
   const source = body as Record<string, unknown>;
+  const marginValue = source.default_margin_pct;
+  const margin = marginValue === null || marginValue === undefined || marginValue === "" ? null : Number(String(marginValue).replace(",", "."));
+  if ("default_margin_pct" in source && margin !== null && (!Number.isFinite(margin) || margin < 0 || margin >= 100)) return NextResponse.json({ ok: false, error: "invalid_supplier_margin" }, { status: 400 });
   const db = getSupabaseAdminClient();
   const { data: existing, error: existingError } = await db.from("suppliers").select(select).eq("id", supplierId).eq("organization_id", access.organizationId).maybeSingle();
   if (existingError) return NextResponse.json({ ok: false, error: existingError.message }, { status: 400 });
@@ -86,7 +90,14 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (error?.code === "23505") return NextResponse.json({ ok: false, error: "supplier_already_exists" }, { status: 409 });
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
 
+  try {
+    if ("default_margin_pct" in source) await saveSupplierDefaultMargin({ organizationId: access.organizationId, supplierId, supplierName: String(data.name), value: margin });
+  } catch (caught) {
+    return NextResponse.json({ ok: false, error: caught instanceof Error ? caught.message : "supplier_margin_save_failed" }, { status: 400 });
+  }
+  const [enriched] = await attachSupplierDefaultMargins(access.organizationId, [data]);
+
   const actorId = await getRequestUserId(request);
-  await db.from("audit_log").insert({ organization_id: access.organizationId, actor_id: actorId, entity_type: "supplier", entity_id: supplierId, action: "supplier.updated", before_data: existing, after_data: data });
-  return NextResponse.json({ ok: true, data });
+  await db.from("audit_log").insert({ organization_id: access.organizationId, actor_id: actorId, entity_type: "supplier", entity_id: supplierId, action: "supplier.updated", before_data: existing, after_data: enriched });
+  return NextResponse.json({ ok: true, data: enriched });
 }

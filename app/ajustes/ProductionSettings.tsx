@@ -7,14 +7,15 @@ import { enforceProtectedSettingValue, isProtectedSetting, protectedSettingDescr
 import { IntegrationSecretsPanel, type IntegrationSecretStatus } from "./IntegrationSecretsPanel";
 import { UserManagementPanel } from "./UserManagementPanel";
 
-type TabId = "general" | "appearance" | "users" | "integrations" | "operations" | "security";
+type TabId = "general" | "appearance" | "users" | "integrations" | "operations" | "legal" | "security";
 
 const tabs: Array<{ id: TabId; label: string; description: string; modules: string[] }> = [
   { id: "general", label: "General", description: "Empresa, moneda, fechas y menú visible.", modules: ["general", "navigation"] },
   { id: "appearance", label: "Apariencia", description: "Colores, tipografía, densidad y composición.", modules: ["appearance"] },
   { id: "users", label: "Usuarios", description: "Altas, invitaciones, roles y permisos.", modules: [] },
   { id: "integrations", label: "Integraciones", description: "Activa y conecta cada herramienta desde una tarjeta sencilla.", modules: ["integrations"] },
-  { id: "operations", label: "Operativa", description: "Clientes, expedientes, presupuestos, márgenes y compras.", modules: ["clients", "cases", "budgets", "margins", "purchases", "contracts", "fiscal"] },
+  { id: "operations", label: "Operativa", description: "Clientes, expedientes, presupuestos, márgenes y compras.", modules: ["clients", "cases", "budgets", "margins", "purchases"] },
+  { id: "legal", label: "Plantillas legales", description: "Documentos vigentes para contrato, condiciones generales e información normalizada.", modules: ["contracts", "legal", "fiscal"] },
   { id: "security", label: "Seguridad y sistema", description: "Webhooks, logs, caché y políticas técnicas.", modules: ["security", "logs", "system"] },
 ];
 

@@ -21,11 +21,17 @@ type LeadReviewFields = Pick<
   | "review_note"
   | "reviewed_at"
   | "archived_at"
+  | "form_submission_id"
+  | "form_received_at"
+  | "call_booked_at"
+  | "booking_id"
+  | "form_reminder_sent_at"
+  | "booking_invite_sent_at"
   | "created_at"
   | "updated_at"
 >;
 
-export const leadReviewFilters = ["active", "archived", "converted", "won", "lost", "all"] as const;
+export const leadReviewFilters = ["active", "complete", "call_only", "form_only", "archived", "converted", "won", "lost", "all"] as const;
 export type LeadReviewFilter = (typeof leadReviewFilters)[number];
 
 export type LeadReviewRow = LeadReviewFields & {
@@ -42,6 +48,9 @@ export type LeadReviewPage = {
   query: string;
   stats: {
     active: number;
+    complete: number;
+    callOnly: number;
+    formOnly: number;
     archived: number;
     converted: number;
     won: number;
@@ -74,13 +83,16 @@ export async function listLeadReviewPage(
   let rowsQuery = db
     .from("leads")
     .select(
-      "id,client_id,client_name,email,phone,destination,travel_start,travel_end,travelers,budget_hint,source,status,review_status,outcome,review_note,reviewed_at,archived_at,created_at,updated_at,clients:clients!leads_client_id_fkey(id,display_name,email,phone)",
+      "id,client_id,client_name,email,phone,destination,travel_start,travel_end,travelers,budget_hint,source,status,review_status,outcome,review_note,reviewed_at,archived_at,form_submission_id,form_received_at,call_booked_at,booking_id,form_reminder_sent_at,booking_invite_sent_at,created_at,updated_at,clients:clients!leads_client_id_fkey(id,display_name,email,phone)",
       { count: "exact" },
     )
     .eq("organization_id", organizationId)
     .order("updated_at", { ascending: false });
 
   if (filter === "active") rowsQuery = rowsQuery.eq("review_status", "pending");
+  if (filter === "complete") rowsQuery = rowsQuery.eq("review_status", "pending").not("form_received_at", "is", null).not("call_booked_at", "is", null);
+  if (filter === "call_only") rowsQuery = rowsQuery.eq("review_status", "pending").is("form_received_at", null).not("call_booked_at", "is", null);
+  if (filter === "form_only") rowsQuery = rowsQuery.eq("review_status", "pending").not("form_received_at", "is", null).is("call_booked_at", null);
   if (filter === "archived") rowsQuery = rowsQuery.eq("status", "archived");
   if (filter === "converted") rowsQuery = rowsQuery.eq("status", "converted");
   if (filter === "won") rowsQuery = rowsQuery.eq("outcome", "won");
@@ -95,7 +107,7 @@ export async function listLeadReviewPage(
     rowsQuery.range(offset, offset + pageSize - 1),
     db
       .from("leads")
-      .select("status,review_status,outcome")
+      .select("status,review_status,outcome,form_received_at,call_booked_at")
       .eq("organization_id", organizationId),
   ]);
 
@@ -116,6 +128,9 @@ export async function listLeadReviewPage(
     query,
     stats: {
       active: statsRows.filter((row) => row.review_status === "pending").length,
+      complete: statsRows.filter((row) => row.review_status === "pending" && row.form_received_at && row.call_booked_at).length,
+      callOnly: statsRows.filter((row) => row.review_status === "pending" && !row.form_received_at && row.call_booked_at).length,
+      formOnly: statsRows.filter((row) => row.review_status === "pending" && row.form_received_at && !row.call_booked_at).length,
       archived: statsRows.filter((row) => row.status === "archived").length,
       converted: statsRows.filter((row) => row.status === "converted").length,
       won: statsRows.filter((row) => row.outcome === "won").length,

@@ -7,6 +7,7 @@ import { listOrganizationCases, listOrganizationSuppliers } from "@/lib/organiza
 import { PROPOSAL_WITH_VERSIONS_SELECT } from "@/lib/query-selects";
 import { hasPermission } from "@/lib/rbac";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
+import { loadEffectiveSettings } from "@/lib/effective-settings-server";
 import { BudgetManager } from "../../BudgetManager";
 import { BudgetReadOnlyWorkspace } from "../../BudgetReadOnlyWorkspace";
 import { ProposalScenariosPanel } from "./ProposalScenariosPanel";
@@ -19,11 +20,12 @@ export default async function ProposalWorkspacePage({ params }: { params: Promis
   const { proposalId } = await params;
   const canManage = hasPermission(session.role, "budgets.manage");
   const db = getSupabaseAdminClient();
-  const [proposalResult, caseResult, supplierResult, scenarioResult] = await Promise.all([
+  const [proposalResult, caseResult, supplierResult, scenarioResult, settings] = await Promise.all([
     db.from("proposals").select(PROPOSAL_WITH_VERSIONS_SELECT).eq("id", proposalId).eq("organization_id", session.organizationId).maybeSingle(),
     canManage ? listOrganizationCases(session.organizationId) : Promise.resolve({ ok: true as const, mode: "supabase" as const, data: [] }),
     canManage ? listOrganizationSuppliers(session.organizationId) : Promise.resolve({ ok: true as const, mode: "supabase" as const, data: [] }),
     db.from("proposal_scenarios").select("id,proposal_id,source_version_id,name,scenario_type,description,target_margin_pct,total_cost,total_sale,profit,margin_pct,status,applied_at,created_at,updated_at").eq("organization_id", session.organizationId).eq("proposal_id", proposalId).neq("status", "archived").order("created_at", { ascending: false }),
+    loadEffectiveSettings(session.organizationId),
   ]);
   if (proposalResult.error || !proposalResult.data) notFound();
   const cases = caseResult.ok ? caseResult.data : [];
@@ -49,7 +51,7 @@ export default async function ProposalWorkspacePage({ params }: { params: Promis
     />
     {sourceVersionId ? <ProposalScenariosPanel proposalId={proposalId} sourceVersionId={sourceVersionId} currency={currency} initialScenarios={scenarios} currentEditable={currentEditable} /> : null}
     {canManage
-      ? <BudgetManager initialProposals={[proposalResult.data]} initialCases={cases} initialSuppliers={suppliers} initialCaseId={caseId} />
+      ? <BudgetManager initialProposals={[proposalResult.data]} initialCases={cases} initialSuppliers={suppliers} initialCaseId={caseId} initialGlobalMargin={settings.number("margins.minimum", 12)} />
       : <BudgetReadOnlyWorkspace proposalInput={proposalResult.data} />}
   </AppShell>;
 }

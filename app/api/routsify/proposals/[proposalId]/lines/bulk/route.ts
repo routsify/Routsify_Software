@@ -146,3 +146,70 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   return NextResponse.json({ ok: true, data: data || [], imported: inserts.length, imported_cost: importedCost, imported_sale: importedSale, suppliers_created: createdSupplierCount }, { status: 201 });
 }
+
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ proposalId: string }> }) {
+  const access = await requireInternalAccess(request);
+  if (!access.ok) return jsonAccessDenied(access);
+  const { proposalId } = await params;
+  const body = await request.json().catch(() => null);
+  const versionId = String(body?.proposal_version_id || "").trim();
+  const margin = numeric(body?.margin_percentage, Number.NaN);
+  if (!versionId) return NextResponse.json({ ok: false, error: "proposal_version_required" }, { status: 400 });
+  if (!Number.isFinite(margin) || margin < 0 || margin >= 100) return NextResponse.json({ ok: false, error: "invalid_margin" }, { status: 400 });
+
+  const organizationId = await resolveOrganizationId(request, access.organizationId);
+  const db = getSupabaseAdminClient();
+  const { data: version, error: versionError } = await db.from("proposal_versions")
+    .select("id,locked,status")
+    .eq("id", versionId)
+    .eq("proposal_id", proposalId)
+    .eq("organization_id", organizationId)
+    .maybeSingle();
+  if (versionError || !version) return NextResponse.json({ ok: false, error: versionError?.message || "proposal_version_not_found" }, { status: versionError ? 400 : 404 });
+  if (version.locked || version.status === "accepted") return NextResponse.json({ ok: false, error: "proposal_version_locked" }, { status: 409 });
+
+  const { data: lines, error: linesError } = await db.from("budget_lines")
+    .select("*")
+    .eq("organization_id", organizationId)
+    .eq("proposal_version_id", versionId)
+    .order("sort_order", { ascending: true })
+    .limit(500);
+  if (linesError) return NextResponse.json({ ok: false, error: linesError.message }, { status: 400 });
+  if (!lines?.length) return NextResponse.json({ ok: true, data: [], updated: 0 });
+
+  const now = new Date().toISOString();
+  const results = await Promise.all(lines.map((line) => {
+    const cost = numeric(line.cost_budget);
+    const salePrice = calculateSalePrice(cost, margin, "margin_on_sale");
+    return db.from("budget_lines").update({
+      margin_applied: margin / 100,
+      margin_rule_id: null,
+      margin_snapshot: { source: "budget_global", percent: margin, formula: "margin_on_sale", applied_at: now },
+      sale_price: salePrice,
+      updated_at: now,
+    }).eq("id", line.id).eq("organization_id", organizationId).select("*").single();
+  }));
+  const updateError = results.find((result) => result.error)?.error;
+  if (updateError) return NextResponse.json({ ok: false, error: updateError.message }, { status: 400 });
+  const updatedLines = results.map((result) => result.data).filter(Boolean);
+
+  const totalCost = updatedLines.reduce((sum, line) => sum + numeric(line?.cost_budget), 0);
+  const totalRealCost = updatedLines.reduce((sum, line) => sum + (line?.cost_real === null || line?.cost_real === undefined ? numeric(line?.cost_budget) : numeric(line.cost_real)), 0);
+  const totalSale = updatedLines.reduce((sum, line) => sum + numeric(line?.sale_price), 0);
+  const budgetedProfit = totalSale - totalCost;
+  const realProfit = totalSale - totalRealCost;
+  const { error: totalsError } = await db.from("proposal_versions").update({
+    total_cost: totalCost,
+    total_cost_budget: totalCost,
+    total_cost_real: totalRealCost,
+    total_sale: totalSale,
+    budgeted_profit: budgetedProfit,
+    real_profit: realProfit,
+    real_margin_pct: totalSale ? realProfit / totalSale : 0,
+    cost_deviation: totalRealCost - totalCost,
+    updated_at: now,
+  }).eq("id", versionId).eq("organization_id", organizationId);
+  if (totalsError) return NextResponse.json({ ok: false, error: totalsError.message, lines_updated: true }, { status: 500 });
+
+  return NextResponse.json({ ok: true, data: updatedLines, updated: updatedLines.length, margin_percentage: margin });
+}

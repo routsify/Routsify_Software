@@ -7,8 +7,10 @@ export type ContractRow = { id: string; title?: string; status?: string; externa
 export type PaymentRow = { id: string; payment_reference?: string; amount?: number | string; currency?: string; method?: string; status?: string; confirmed_at?: string | null };
 export type FiscalRow = { id: string; document_kind?: string; document_number?: string | null; status?: string; amount?: number | string; tax_amount?: number | string; currency?: string; issued_at?: string | null };
 export type PurchaseRow = { id: string; supplier_name?: string | null; service?: string | null; expected_amount?: number | string | null; amount?: number | string | null; status?: string | null };
-export type ProposalRow = { id: string; status?: string | null; proposal_versions?: Array<{ version_number?: number; total_sale?: number | string }> | null };
-export type WorkspaceProps = { initialCase: CaseRow; initialTravelers?: Traveler[]; initialDocuments?: DocumentRow[]; initialTasks?: TaskRow[]; initialTimeline?: TimelineRow[]; initialContracts?: ContractRow[]; initialPayments?: PaymentRow[]; initialFiscal?: FiscalRow[]; initialPurchases?: PurchaseRow[]; initialProposals?: ProposalRow[] };
+export type ProposalBudgetLine = { id: string; service_type_code?: string | null; description_public?: string | null; supplier_name?: string | null; destination_segment?: string | null; start_date?: string | null; end_date?: string | null; sale_price?: number | string | null; sort_order?: number | null };
+export type ProposalRow = { id: string; status?: string | null; current_version_id?: string | null; proposal_versions?: Array<{ id?: string; version_number?: number; status?: string | null; locked?: boolean; total_sale?: number | string; budget_lines?: ProposalBudgetLine[] | null }> | null };
+export type LegalTemplates = { contractTemplateUrl?: string; generalConditionsUrl?: string; standardInformationUrl?: string };
+export type WorkspaceProps = { initialCase: CaseRow; initialTravelers?: Traveler[]; initialDocuments?: DocumentRow[]; initialTasks?: TaskRow[]; initialTimeline?: TimelineRow[]; initialContracts?: ContractRow[]; initialPayments?: PaymentRow[]; initialFiscal?: FiscalRow[]; initialPurchases?: PurchaseRow[]; initialProposals?: ProposalRow[]; initialLegalTemplates?: LegalTemplates };
 
 export function numberValue(value: unknown) { const parsed = Number(value || 0); return Number.isFinite(parsed) ? parsed : 0; }
 export function money(value: unknown, currency = "EUR") { return new Intl.NumberFormat("es-ES", { style: "currency", currency }).format(numberValue(value)); }

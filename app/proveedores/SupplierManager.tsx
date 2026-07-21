@@ -15,6 +15,7 @@ export type SupplierDirectoryRow = {
   notes?: string | null;
   active?: boolean;
   holded_contact_id?: string | null;
+  default_margin_pct?: number | null;
   purchase_count?: number;
   pending_count?: number;
   expected_total?: number;
@@ -33,6 +34,7 @@ type Draft = {
   country: string;
   billing_address: string;
   notes: string;
+  default_margin_pct: string;
   active: boolean;
 };
 
@@ -66,7 +68,7 @@ type ImportSummary = {
   errors: Array<{ row: number; message: string }>;
 };
 
-const emptyDraft: Draft = { name: "", category: "", email: "", phone: "", tax_id: "", country: "ES", billing_address: "", notes: "", active: true };
+const emptyDraft: Draft = { name: "", category: "", email: "", phone: "", tax_id: "", country: "ES", billing_address: "", notes: "", default_margin_pct: "", active: true };
 const pageSizes = [50, 100, 150, 200];
 
 function normalize(input: unknown): SupplierDirectoryRow {
@@ -83,6 +85,7 @@ function normalize(input: unknown): SupplierDirectoryRow {
     notes: row.notes ? String(row.notes) : null,
     active: row.active !== false,
     holded_contact_id: row.holded_contact_id ? String(row.holded_contact_id) : null,
+    default_margin_pct: row.default_margin_pct === null || row.default_margin_pct === undefined ? null : Number(row.default_margin_pct),
     purchase_count: Number(row.purchase_count || 0),
     pending_count: Number(row.pending_count || 0),
     expected_total: Number(row.expected_total || 0),
@@ -114,6 +117,7 @@ function draftFromSupplier(supplier: SupplierDirectoryRow): Draft {
     country: supplier.country || "ES",
     billing_address: billingAddressText(supplier.billing_address) === "—" ? "" : billingAddressText(supplier.billing_address),
     notes: supplier.notes || "",
+    default_margin_pct: supplier.default_margin_pct === null || supplier.default_margin_pct === undefined ? "" : String(supplier.default_margin_pct),
     active: supplier.active !== false,
   };
 }
@@ -230,6 +234,7 @@ export function SupplierManager({ initialPage, initialSupplierId = "" }: { initi
         country: source.country.trim().toUpperCase() || "ES",
         billing_address: source.billing_address.trim() ? { address: source.billing_address.trim() } : {},
         notes: source.notes.trim() || null,
+        default_margin_pct: source.default_margin_pct === "" ? null : Number(source.default_margin_pct.replace(",", ".")),
         active: source.active,
       }),
     });
@@ -285,6 +290,7 @@ export function SupplierManager({ initialPage, initialSupplierId = "" }: { initi
     <div className="grid grid-2"><label>Nombre comercial *<input className="input" required value={value.name} onChange={(event) => update("name", event.target.value)} /></label><label>Categoría<input className="input" placeholder="Hotel, aerolínea, DMC, seguro..." value={value.category} onChange={(event) => update("category", event.target.value)} /></label></div>
     <div className="grid grid-2"><label>Email<input className="input" type="email" value={value.email} onChange={(event) => update("email", event.target.value)} /></label><label>Teléfono<input className="input" type="tel" value={value.phone} onChange={(event) => update("phone", event.target.value)} /></label></div>
     <div className="grid grid-2"><label>NIF / ID fiscal<input className="input" value={value.tax_id} onChange={(event) => update("tax_id", event.target.value)} /></label><label>País<input className="input" maxLength={2} value={value.country} onChange={(event) => update("country", event.target.value)} /></label></div>
+    <label>Margen predeterminado (%)<input className="input" type="number" min="0" max="99" step="0.1" value={value.default_margin_pct} onChange={(event) => update("default_margin_pct", event.target.value)} placeholder="Usar margen global" /><small>Se aplicará automáticamente a las nuevas líneas de este proveedor, salvo que indiques otro margen en el presupuesto.</small></label>
     <label>Dirección fiscal<input className="input" value={value.billing_address} onChange={(event) => update("billing_address", event.target.value)} /></label>
     <label>Notas internas<textarea className="input" rows={4} value={value.notes} onChange={(event) => update("notes", event.target.value)} /></label>
     <label><input type="checkbox" checked={value.active} onChange={(event) => update("active", event.target.checked)} /> Proveedor activo y seleccionable</label>
@@ -333,7 +339,7 @@ export function SupplierManager({ initialPage, initialSupplierId = "" }: { initi
       </div>
 
       <aside className="client-side card" id="proveedor-panel">
-        {selected ? <>{showEdit && canManage ? <section className="side-section"><div className="section-heading"><h3>Editar proveedor</h3><button className="link-button" type="button" onClick={() => setShowEdit(false)}>Cerrar</button></div><form className="form" onSubmit={(event) => saveSupplier(event, true)}>{supplierForm(editDraft, changeEditDraft)}<div className="form-actions"><button className="btn secondary" type="button" onClick={() => setShowEdit(false)} disabled={saving}>Cancelar</button><button className="btn" type="submit" disabled={saving}>{saving ? "Guardando..." : "Guardar cambios"}</button></div></form></section> : <><div className="client-side-header"><span className="client-avatar">{supplierInitials(selected)}</span><div><h2>{selected.name}</h2><p>{selected.category || "Sin categoría"}<br />{selected.active === false ? "Inactivo" : "Activo"}</p></div></div><div className="client-badges"><span className="badge">Proveedor</span><span className="badge">{selected.holded_contact_id ? "Holded vinculado" : "Holded pendiente"}</span></div><section className="side-section"><div className="section-heading"><h3>Contacto y fiscal</h3>{canManage ? <button className="link-button" type="button" onClick={startEdit}>Editar</button> : null}</div><table><tbody><tr><th>Email</th><td>{selected.email || "—"}</td></tr><tr><th>Teléfono</th><td>{selected.phone || "—"}</td></tr><tr><th>País</th><td>{selected.country || "—"}</td></tr><tr><th>NIF / ID fiscal</th><td>{selected.tax_id || "Pendiente"}</td></tr><tr><th>Dirección fiscal</th><td>{billingAddressText(selected.billing_address)}</td></tr></tbody></table></section><section className="side-section"><h3>Histórico económico</h3><table><tbody><tr><th>Compras</th><td>{selected.purchase_count || 0}</td></tr><tr><th>Pendientes</th><td>{selected.pending_count || 0}</td></tr><tr><th>Coste presupuestado</th><td>{money(selected.expected_total)}</td></tr><tr><th>Coste real aprobado</th><td>{money(selected.approved_total)}</td></tr><tr><th>Facturado registrado</th><td>{money(selected.invoiced_total)}</td></tr></tbody></table></section><section className="side-section"><h3>Notas</h3><p>{selected.notes || "Sin notas internas."}</p></section><section className="side-actions"><h3>Acciones</h3><a className="quick-action primary" href={`/compras?supplierId=${encodeURIComponent(selected.id)}`}>Ver compras y facturas <span>→</span></a>{canManage ? <button className="quick-action" type="button" onClick={startEdit}>Editar proveedor <span>→</span></button> : null}{canManage ? <button className="quick-action" type="button" disabled={saving} onClick={() => void toggleActive()}>{selected.active === false ? "Reactivar proveedor" : "Desactivar proveedor"} <span>→</span></button> : null}</section></>}</> : <div className="empty-state"><h2>Sin proveedor seleccionado</h2><p>Selecciona un proveedor.</p></div>}
+        {selected ? <>{showEdit && canManage ? <section className="side-section"><div className="section-heading"><h3>Editar proveedor</h3><button className="link-button" type="button" onClick={() => setShowEdit(false)}>Cerrar</button></div><form className="form" onSubmit={(event) => saveSupplier(event, true)}>{supplierForm(editDraft, changeEditDraft)}<div className="form-actions"><button className="btn secondary" type="button" onClick={() => setShowEdit(false)} disabled={saving}>Cancelar</button><button className="btn" type="submit" disabled={saving}>{saving ? "Guardando..." : "Guardar cambios"}</button></div></form></section> : <><div className="client-side-header"><span className="client-avatar">{supplierInitials(selected)}</span><div><h2>{selected.name}</h2><p>{selected.category || "Sin categoría"}<br />{selected.active === false ? "Inactivo" : "Activo"}</p></div></div><div className="client-badges"><span className="badge">Proveedor</span><span className="badge">{selected.holded_contact_id ? "Holded vinculado" : "Holded pendiente"}</span></div><section className="side-section"><div className="section-heading"><h3>Contacto y fiscal</h3>{canManage ? <button className="link-button" type="button" onClick={startEdit}>Editar</button> : null}</div><table><tbody><tr><th>Email</th><td>{selected.email || "—"}</td></tr><tr><th>Teléfono</th><td>{selected.phone || "—"}</td></tr><tr><th>País</th><td>{selected.country || "—"}</td></tr><tr><th>NIF / ID fiscal</th><td>{selected.tax_id || "Pendiente"}</td></tr><tr><th>Dirección fiscal</th><td>{billingAddressText(selected.billing_address)}</td></tr><tr><th>Margen predeterminado</th><td>{selected.default_margin_pct === null || selected.default_margin_pct === undefined ? "Global" : `${selected.default_margin_pct}%`}</td></tr></tbody></table></section><section className="side-section"><h3>Histórico económico</h3><table><tbody><tr><th>Compras</th><td>{selected.purchase_count || 0}</td></tr><tr><th>Pendientes</th><td>{selected.pending_count || 0}</td></tr><tr><th>Coste presupuestado</th><td>{money(selected.expected_total)}</td></tr><tr><th>Coste real aprobado</th><td>{money(selected.approved_total)}</td></tr><tr><th>Facturado registrado</th><td>{money(selected.invoiced_total)}</td></tr></tbody></table></section><section className="side-section"><h3>Notas</h3><p>{selected.notes || "Sin notas internas."}</p></section><section className="side-actions"><h3>Acciones</h3><a className="quick-action primary" href={`/compras?supplierId=${encodeURIComponent(selected.id)}`}>Ver compras y facturas <span>→</span></a>{canManage ? <button className="quick-action" type="button" onClick={startEdit}>Editar proveedor <span>→</span></button> : null}{canManage ? <button className="quick-action" type="button" disabled={saving} onClick={() => void toggleActive()}>{selected.active === false ? "Reactivar proveedor" : "Desactivar proveedor"} <span>→</span></button> : null}</section></>}</> : <div className="empty-state"><h2>Sin proveedor seleccionado</h2><p>Selecciona un proveedor.</p></div>}
       </aside>
     </section>
   </div>;

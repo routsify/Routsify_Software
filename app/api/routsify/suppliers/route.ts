@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { jsonAccessDenied, requireInternalAccess } from "@/lib/api-security";
 import { listOrganizationSuppliers, listOrganizationSuppliersPage } from "@/lib/organization-repositories";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
+import { attachSupplierDefaultMargins, saveSupplierDefaultMargin } from "@/lib/supplier-margin-server";
 
 function text(value: unknown, max = 240) {
   const result = String(value ?? "").trim();
@@ -40,6 +41,9 @@ export async function POST(request: NextRequest) {
   const source = body as Record<string, unknown>;
   const name = text(source.name, 160);
   if (!name || name.length < 2) return NextResponse.json({ ok: false, error: "supplier_name_required" }, { status: 400 });
+  const marginValue = source.default_margin_pct;
+  const margin = marginValue === null || marginValue === undefined || marginValue === "" ? null : Number(String(marginValue).replace(",", "."));
+  if (margin !== null && (!Number.isFinite(margin) || margin < 0 || margin >= 100)) return NextResponse.json({ ok: false, error: "invalid_supplier_margin" }, { status: 400 });
 
   const payload = {
     organization_id: access.organizationId,
@@ -61,5 +65,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: "supplier_already_exists", existing: existing || null }, { status: 409 });
   }
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
-  return NextResponse.json({ ok: true, data }, { status: 201 });
+  try {
+    await saveSupplierDefaultMargin({ organizationId: access.organizationId, supplierId: String(data.id), supplierName: name, value: margin });
+    const [enriched] = await attachSupplierDefaultMargins(access.organizationId, [data]);
+    return NextResponse.json({ ok: true, data: enriched }, { status: 201 });
+  } catch (caught) {
+    await db.from("suppliers").delete().eq("id", data.id).eq("organization_id", access.organizationId);
+    return NextResponse.json({ ok: false, error: caught instanceof Error ? caught.message : "supplier_margin_save_failed" }, { status: 400 });
+  }
 }

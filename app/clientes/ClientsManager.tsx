@@ -135,7 +135,7 @@ export function ClientsManager({ initialPage }: { initialPage: ClientPage }) {
   function updateDraft<K extends keyof Draft>(key: K, value: Draft[K]) { setDraft((current) => ({ ...current, [key]: value })); }
   function updateEditDraft<K extends keyof Draft>(key: K, value: Draft[K]) { setEditDraft((current) => ({ ...current, [key]: value })); }
   function closeCreate() { if (!saving) { setShowCreate(false); setDraft(emptyDraft); } }
-  function startEdit() { if (canManage && selected) { setEditDraft(draftFromClient(selected)); setShowEdit(true); setMessage(null); } }
+  function startEdit(client = selected) { if (canManage && client) { setSelectedId(client.id); setEditDraft(draftFromClient(client)); setShowEdit(true); setMessage(null); } }
 
   async function loadPage(nextPage: number, nextPageSize = pageSize, nextQuery = query) {
     setLoading(true);
@@ -235,6 +235,39 @@ export function ClientsManager({ initialPage }: { initialPage: ClientPage }) {
     setSelectedId(updated.id); setShowEdit(false); setMessage("Cliente actualizado correctamente.");
   }
 
+  async function deleteClient(client: ClientRow) {
+    if (!canManage || saving) return;
+    if (!window.confirm(`¿Eliminar definitivamente a “${client.display_name}”?\n\nSolo se permitirá si no tiene expedientes, documentos, cobros ni documentación fiscal. Esta acción no se puede deshacer.`)) return;
+    setSaving(true); setMessage(null);
+    const response = await fetch(`/api/routsify/clients/${encodeURIComponent(client.id)}`, { method: "DELETE" });
+    const result = await response.json().catch(() => null);
+    setSaving(false);
+    if (!response.ok || !result?.ok) {
+      if (result?.error === "client_has_protected_history") {
+        const blockers = result.blockers || {};
+        const details = [
+          Number(blockers.cases || 0) ? `${blockers.cases} expediente(s)` : "",
+          Number(blockers.documents || 0) ? `${blockers.documents} documento(s)` : "",
+          Number(blockers.fiscal_documents || 0) ? `${blockers.fiscal_documents} documento(s) fiscal(es)` : "",
+        ].filter(Boolean).join(", ");
+        return setMessage(`No se puede eliminar porque conserva historial protegido${details ? `: ${details}` : ""}.`);
+      }
+      return setMessage(String(result?.error || "No se pudo eliminar el cliente."));
+    }
+    const remaining = clients.filter((item) => item.id !== client.id);
+    setClients(remaining);
+    setSelectedId(remaining[0]?.id || null);
+    setTotal((value) => Math.max(0, value - 1));
+    setStats((value) => ({
+      total: Math.max(0, value.total - 1),
+      withEmail: Math.max(0, value.withEmail - (client.email ? 1 : 0)),
+      withPhone: Math.max(0, value.withPhone - (client.phone ? 1 : 0)),
+      fiscalComplete: Math.max(0, value.fiscalComplete - (client.tax_id && billingAddressText(client.billing_address) !== "—" ? 1 : 0)),
+    }));
+    setShowEdit(false);
+    setMessage(`Cliente “${client.display_name}” eliminado correctamente.`);
+  }
+
   async function importClients(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!canManage) return setMessage("Tu rol tiene acceso de consulta a clientes.");
@@ -290,7 +323,7 @@ export function ClientsManager({ initialPage }: { initialPage: ClientPage }) {
         {message ? <p className="client-message" role="status">{message}</p> : null}
         {loading ? <p className="client-message" role="status">Cargando clientes...</p> : null}
 
-        {clients.length === 0 ? <div className="empty-state"><h2>{query ? "No hay coincidencias" : "Todavía no hay clientes"}</h2><p>{query ? "Cambia la búsqueda o límpiala." : canManage ? "Crea o importa tu primer cliente para empezar." : "No hay clientes disponibles para consultar."}</p></div> : <div className="table-scroll"><table><thead><tr><th>Cliente</th><th>Email</th><th>Teléfono</th><th>País</th><th>Fiscal</th><th></th></tr></thead><tbody>{clients.map((client) => <tr key={client.id} className={client.id === selected?.id ? "selected-row" : ""}><td><button className="table-link" type="button" onClick={() => { setSelectedId(client.id); setShowEdit(false); }}><strong>{client.display_name}</strong></button></td><td>{client.email || "—"}</td><td>{client.phone || "—"}</td><td>{client.country || "—"}</td><td>{client.tax_id && billingAddressText(client.billing_address) !== "—" ? "Completo" : "Pendiente"}</td><td><a className="btn secondary" href={`/clientes/${encodeURIComponent(client.id)}`}>Ficha 360</a></td></tr>)}</tbody></table></div>}
+        {clients.length === 0 ? <div className="empty-state"><h2>{query ? "No hay coincidencias" : "Todavía no hay clientes"}</h2><p>{query ? "Cambia la búsqueda o límpiala." : canManage ? "Crea o importa tu primer cliente para empezar." : "No hay clientes disponibles para consultar."}</p></div> : <div className="table-scroll"><table><thead><tr><th>Cliente</th><th>Email</th><th>Teléfono</th><th>País</th><th>Fiscal</th><th><span className="sr-only">Acciones</span></th></tr></thead><tbody>{clients.map((client) => <tr key={client.id} className={client.id === selected?.id ? "selected-row" : ""}><td><button className="table-link" type="button" onClick={() => { setSelectedId(client.id); setShowEdit(false); }}><strong>{client.display_name}</strong></button></td><td>{client.email || "—"}</td><td>{client.phone || "—"}</td><td>{client.country || "—"}</td><td>{client.tax_id && billingAddressText(client.billing_address) !== "—" ? "Completo" : "Pendiente"}</td><td><details className="row-action-menu"><summary aria-label={`Acciones para ${client.display_name}`}>•••</summary><div><a href={`/clientes/${encodeURIComponent(client.id)}`}>Abrir ficha</a>{canManage ? <button type="button" onClick={() => startEdit(client)}>Editar</button> : null}{canManage ? <button className="danger-text" type="button" disabled={saving} onClick={() => void deleteClient(client)}>Eliminar</button> : null}</div></details></td></tr>)}</tbody></table></div>}
 
         <div className="form-actions" aria-label="Paginación de clientes">
           <span>Mostrando {rangeStart}-{rangeEnd} de {total}{query ? " coincidencias" : " clientes"}</span>
@@ -303,7 +336,7 @@ export function ClientsManager({ initialPage }: { initialPage: ClientPage }) {
       </div>
 
       <aside className="client-side card" id="cliente-panel">
-        {selected ? <>{showEdit && canManage ? <section className="side-section"><div className="section-heading"><h3>Editar cliente</h3><button className="link-button" type="button" onClick={() => setShowEdit(false)}>Cerrar</button></div><form className="form" onSubmit={saveClient}>{clientForm(editDraft, updateEditDraft)}<div className="form-actions"><button className="btn secondary" type="button" onClick={() => setShowEdit(false)} disabled={saving}>Cancelar</button><button className="btn" type="submit" disabled={saving}>{saving ? "Guardando..." : "Guardar cambios"}</button></div></form></section> : <><div className="client-side-header"><span className="client-avatar">{clientInitials(selected)}</span><div><h2>{selected.display_name}</h2><p>{selected.email || "Sin email"}<br />{selected.phone || "Sin teléfono"}</p></div></div><div className="client-badges"><span className="badge">Cliente</span><span className="badge">{selected.client_type === "company" ? "Empresa" : "Persona"}</span></div><section className="side-section"><div className="section-heading"><h3>Datos fiscales</h3>{canManage ? <button className="link-button" type="button" onClick={startEdit}>Editar</button> : null}</div><table><tbody><tr><th>NIF/DNI/CIF</th><td>{selected.tax_id || "Pendiente"}</td></tr><tr><th>Dirección fiscal</th><td>{billingAddressText(selected.billing_address)}</td></tr><tr><th>País</th><td>{selected.country || "—"}</td></tr></tbody></table></section><section className="side-section"><h3>Notas</h3><p>{selected.notes || "Sin notas internas."}</p></section><section className="side-actions"><h3>Acciones</h3><a className="quick-action primary" href={`/clientes/${encodeURIComponent(selected.id)}`}>Abrir ficha 360 <span>→</span></a>{canManage ? <button className="quick-action" type="button" onClick={startEdit}>Editar cliente <span>→</span></button> : null}{canManageCases ? <a className="quick-action" href={`/expedientes/gestionar?clientId=${encodeURIComponent(selected.id)}`}>Crear expediente <span>→</span></a> : null}<a className="quick-action" href={`/propuestas?clientId=${encodeURIComponent(selected.id)}`}>Ver presupuestos <span>→</span></a></section></>}</> : <div className="empty-state"><h2>Sin cliente seleccionado</h2><p>Selecciona un cliente.</p></div>}
+        {selected ? <>{showEdit && canManage ? <section className="side-section"><div className="section-heading"><h3>Editar cliente</h3><button className="link-button" type="button" onClick={() => setShowEdit(false)}>Cerrar</button></div><form className="form" onSubmit={saveClient}>{clientForm(editDraft, updateEditDraft)}<div className="form-actions"><button className="btn secondary" type="button" onClick={() => setShowEdit(false)} disabled={saving}>Cancelar</button><button className="btn" type="submit" disabled={saving}>{saving ? "Guardando..." : "Guardar cambios"}</button></div></form></section> : <><div className="client-side-header"><span className="client-avatar">{clientInitials(selected)}</span><div><h2>{selected.display_name}</h2><p>{selected.email || "Sin email"}<br />{selected.phone || "Sin teléfono"}</p></div></div><div className="client-badges"><span className="badge">Cliente</span><span className="badge">{selected.client_type === "company" ? "Empresa" : "Persona"}</span></div><section className="side-section"><div className="section-heading"><h3>Datos fiscales</h3>{canManage ? <button className="link-button" type="button" onClick={() => startEdit()}>Editar</button> : null}</div><table><tbody><tr><th>NIF/DNI/CIF</th><td>{selected.tax_id || "Pendiente"}</td></tr><tr><th>Dirección fiscal</th><td>{billingAddressText(selected.billing_address)}</td></tr><tr><th>País</th><td>{selected.country || "—"}</td></tr></tbody></table></section><section className="side-section"><h3>Notas</h3><p>{selected.notes || "Sin notas internas."}</p></section><section className="side-actions"><h3>Acciones</h3><a className="quick-action primary" href={`/clientes/${encodeURIComponent(selected.id)}`}>Abrir ficha 360 <span>→</span></a>{canManage ? <button className="quick-action" type="button" onClick={() => startEdit()}>Editar cliente <span>→</span></button> : null}{canManageCases ? <a className="quick-action" href={`/expedientes/gestionar?clientId=${encodeURIComponent(selected.id)}`}>Crear expediente <span>→</span></a> : null}<a className="quick-action" href={`/propuestas?clientId=${encodeURIComponent(selected.id)}`}>Ver presupuestos <span>→</span></a></section></>}</> : <div className="empty-state"><h2>Sin cliente seleccionado</h2><p>Selecciona un cliente.</p></div>}
       </aside>
     </section>
   </div>;

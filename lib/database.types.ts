@@ -2091,7 +2091,10 @@ export type Database = {
       leads: {
         Row: {
           archived_at: string | null
+          booking_id: string | null
+          booking_invite_sent_at: string | null
           budget_hint: number | null
+          call_booked_at: string | null
           campaign: string | null
           client_id: string | null
           client_name: string | null
@@ -2099,6 +2102,9 @@ export type Database = {
           destination: string | null
           email: string | null
           email_normalized: string | null
+          form_received_at: string | null
+          form_reminder_sent_at: string | null
+          form_submission_id: string | null
           id: string
           organization_id: string
           outcome: string
@@ -2121,7 +2127,10 @@ export type Database = {
         }
         Insert: {
           archived_at?: string | null
+          booking_id?: string | null
+          booking_invite_sent_at?: string | null
           budget_hint?: number | null
+          call_booked_at?: string | null
           campaign?: string | null
           client_id?: string | null
           client_name?: string | null
@@ -2129,6 +2138,9 @@ export type Database = {
           destination?: string | null
           email?: string | null
           email_normalized?: string | null
+          form_received_at?: string | null
+          form_reminder_sent_at?: string | null
+          form_submission_id?: string | null
           id?: string
           organization_id: string
           outcome?: string
@@ -2151,7 +2163,10 @@ export type Database = {
         }
         Update: {
           archived_at?: string | null
+          booking_id?: string | null
+          booking_invite_sent_at?: string | null
           budget_hint?: number | null
+          call_booked_at?: string | null
           campaign?: string | null
           client_id?: string | null
           client_name?: string | null
@@ -2159,6 +2174,9 @@ export type Database = {
           destination?: string | null
           email?: string | null
           email_normalized?: string | null
+          form_received_at?: string | null
+          form_reminder_sent_at?: string | null
+          form_submission_id?: string | null
           id?: string
           organization_id?: string
           outcome?: string
@@ -2180,6 +2198,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "leads_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "leads_client_id_fkey"
             columns: ["client_id"]
@@ -4590,4 +4615,3 @@ export const Constants = {
     },
   },
 } as const
-

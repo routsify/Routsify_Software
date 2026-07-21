@@ -1,1 +1,36 @@
 .payment-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:12px 0 16px}.payment-summary div{display:grid;gap:4px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--soft)}.payment-summary span{color:var(--muted);font-size:11px;font-weight:850;text-transform:uppercase}.payment-summary strong{color:var(--ink);font-size:18px}@media(max-width:700px){.payment-summary{grid-template-columns:1fr}}
+.case-process { display: grid; gap: 0; }
+.case-process-overview { display: grid; gap: 18px; margin-bottom: 22px; padding: 22px; }
+.case-process-overview h2 { margin: 5px 0; }
+.case-process-overview p { margin: 0; color: var(--muted); }
+.case-process-overview nav { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
+.case-process-overview nav button { display: grid; place-items: center; gap: 6px; min-height: 80px; padding: 10px 6px; border: 1px solid var(--line); border-radius: 12px; background: var(--soft); color: var(--muted); cursor: pointer; }
+.case-process-overview nav button span { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--surface, #fff); color: var(--ink); font-weight: 900; }
+.case-process-overview nav button small { font-size: 10px; font-weight: 800; text-align: center; }
+.case-process-overview nav button.complete { border-color: color-mix(in srgb, var(--brand) 36%, var(--line)); color: var(--brand); }
+.case-process-overview nav button.complete span { background: var(--brand); color: #fff; }
+.case-process-overview nav button.active { border-color: #d49725; background: color-mix(in srgb, #f0a528 9%, var(--surface, #fff)); color: #8b5d00; }
+.case-process-stage { display: grid; grid-template-columns: 46px minmax(0, 1fr); scroll-margin-top: 24px; }
+.case-process-marker { display: grid; grid-template-rows: 42px 1fr; justify-items: center; }
+.case-process-marker span { display: grid; place-items: center; width: 38px; height: 38px; border: 2px solid var(--line); border-radius: 50%; background: var(--surface, #fff); color: var(--muted); font-weight: 900; }
+.case-process-marker i { width: 2px; min-height: 34px; background: var(--line); }
+.case-process-stage.complete .case-process-marker span { border-color: var(--brand); background: var(--brand); color: #fff; }
+.case-process-stage.active .case-process-marker span { border-color: #d49725; color: #a16800; }
+.case-process-body { min-width: 0; padding: 0 0 30px 12px; }
+.case-process-body > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 14px; padding: 4px 2px 0; }
+.case-process-body > header h2 { margin: 4px 0; font-size: 22px; }
+.case-process-body > header p { max-width: 820px; margin: 0; color: var(--muted); }
+.case-process-body > .workspace-grid, .case-process-body > .card { margin-bottom: 12px; }
+.case-process-activity { margin-left: 58px; scroll-margin-top: 24px; }
+.legal-template-list { display: grid; gap: 8px; margin: 14px 0; }
+.legal-template-list a { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--soft); }
+.legal-template-list a.configured { border-color: color-mix(in srgb, var(--brand) 28%, var(--line)); }
+.legal-template-list a.missing { color: var(--muted); }
+.legal-checklist { display: grid; gap: 8px; padding: 0; list-style: none; }
+.legal-checklist li { position: relative; padding: 10px 12px 10px 36px; border-radius: 10px; background: var(--soft); color: var(--muted); }
+.legal-checklist li::before { position: absolute; left: 12px; content: "○"; font-weight: 900; }
+.legal-checklist li.done { color: var(--ink); }
+.legal-checklist li.done::before { content: "✓"; color: var(--brand); }
+
+@media(max-width:1000px){.case-process-overview nav{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:700px){.case-process-overview nav{grid-template-columns:repeat(2,minmax(0,1fr))}.case-process-stage{grid-template-columns:32px minmax(0,1fr)}.case-process-marker span{width:30px;height:30px}.case-process-body{padding-left:8px}.case-process-body>header{align-items:stretch;flex-direction:column}.case-process-activity{margin-left:40px}}

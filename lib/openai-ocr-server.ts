@@ -206,16 +206,24 @@ export async function reviewOcrRun(input: { organizationId: string; runId: strin
     const { error: updateError } = await supabase.from("ocr_fields").update({ corrected_value: corrected, review_status: input.approve ? "approved" : "reviewed", reviewed_by: input.actorId, reviewed_at: new Date().toISOString() }).eq("id", field.id);
     if (updateError) throw new Error(updateError.message);
   }
+  let traveler: Record<string, unknown> | null = null;
   if (input.approve && run.traveler_id) {
     const value = (name: string) => Object.prototype.hasOwnProperty.call(input.fields, name) ? input.fields[name] : (existing || []).find((field) => field.field_name === name)?.extracted_value;
     const patch: Record<string, unknown> = { ocr_status: "approved", review_status: "approved", reviewed_by: input.actorId, reviewed_at: new Date().toISOString(), updated_at: new Date().toISOString() };
     const mapping: Record<string, string> = { first_name: "first_name", last_name: "last_name", birth_date: "birth_date", nationality: "nationality", document_number: "document_number", document_country: "document_country", document_expires_at: "document_expires_at", document_type: "document_type", mrz: "mrz" };
     for (const [source, target] of Object.entries(mapping)) { const item = value(source); if (item) patch[target] = item; }
-    await supabase.from("travelers").update(patch).eq("id", run.traveler_id).eq("organization_id", input.organizationId);
+    const { data: updatedTraveler, error: travelerError } = await supabase.from("travelers")
+      .update(patch)
+      .eq("id", run.traveler_id)
+      .eq("organization_id", input.organizationId)
+      .select("id,traveler_type,first_name,last_name,birth_date,nationality,document_country,document_number,document_expires_at,review_status,ocr_status,ocr_confidence")
+      .single();
+    if (travelerError) throw new Error(travelerError.message);
+    traveler = updatedTraveler as Record<string, unknown>;
   }
   const status = input.approve ? "approved" : "reviewed";
   await supabase.from("ocr_runs").update({ status, reviewed_at: new Date().toISOString(), reviewed_by: input.actorId }).eq("id", run.id);
   await supabase.from("documents").update({ ocr_status: status, updated_at: new Date().toISOString() }).eq("id", run.document_id);
   await supabase.from("timeline_events").insert({ organization_id: input.organizationId, case_id: run.case_id, event_type: `document.ocr_${status}`, title: input.approve ? "Datos OCR aprobados" : "Datos OCR revisados", payload: { document_id: run.document_id, ocr_run_id: run.id }, created_by: input.actorId });
-  return { runId: run.id, status };
+  return { runId: run.id, status, traveler };
 }

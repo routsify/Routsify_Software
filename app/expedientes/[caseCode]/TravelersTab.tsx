@@ -1,24 +1,26 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import type { Traveler } from "./workspace-types";
 import { formatDate } from "./workspace-types";
 
 const reviewOptions = [["pending", "Pendiente"], ["reviewed", "Revisado"], ["approved", "Aprobado"], ["rejected", "Rechazado"]];
 const emptyDraft = { traveler_type: "adult", first_name: "", last_name: "", birth_date: "", nationality: "", document_country: "", document_number: "", document_expires_at: "" };
 
-export function TravelersTab({ caseId, initialTravelers }: { caseId: string; initialTravelers: Traveler[] }) {
+export function TravelersTab({ caseId, initialTravelers, onChange }: { caseId: string; initialTravelers: Traveler[]; onChange?: (travelers: Traveler[]) => void }) {
   const [items, setItems] = useState(initialTravelers);
   const [draft, setDraft] = useState(emptyDraft);
   const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => { setItems(initialTravelers); }, [initialTravelers]);
 
   async function createTraveler(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setSaving(true); setMessage(null);
     const response = await fetch(`/api/routsify/cases/${caseId}/travelers`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(draft) });
     const result = await response.json().catch(() => null); setSaving(false);
     if (!response.ok || !result?.ok) return setMessage(String(result?.error || "No se pudo añadir el viajero."));
-    setItems((current) => [...current, result.data]); setDraft(emptyDraft); setMessage("Viajero añadido correctamente.");
+    setItems((current) => { const next = [...current, result.data]; onChange?.(next); return next; }); setDraft(emptyDraft); setMessage("Viajero añadido correctamente.");
   }
 
   async function updateStatus(item: Traveler, reviewStatus: string) {
@@ -26,7 +28,7 @@ export function TravelersTab({ caseId, initialTravelers }: { caseId: string; ini
     const response = await fetch(`/api/routsify/cases/${caseId}/travelers`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: item.id, review_status: reviewStatus }) });
     const result = await response.json().catch(() => null); setSaving(false);
     if (!response.ok || !result?.ok) return setMessage(String(result?.error || "No se pudo actualizar el viajero."));
-    setItems((current) => current.map((traveler) => traveler.id === item.id ? result.data : traveler)); setMessage("Estado actualizado.");
+    setItems((current) => { const next = current.map((traveler) => traveler.id === item.id ? result.data : traveler); onChange?.(next); return next; }); setMessage("Estado actualizado.");
   }
 
   return <section className="workspace-grid">

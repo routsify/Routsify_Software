@@ -5,6 +5,7 @@ import { requireAppPermission } from "@/lib/app-auth";
 import { CASE_SUMMARY_PROPOSALS_SELECT } from "@/lib/query-selects";
 import { hasPermission } from "@/lib/rbac";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
+import { loadEffectiveSettings } from "@/lib/effective-settings-server";
 import { CaseWorkspace } from "./CaseWorkspace";
 import "./contract.css";
 
@@ -24,7 +25,7 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ cas
   const canViewPurchases = hasPermission(session.role, "purchases.view");
   const emptyResult = Promise.resolve({ data: [], error: null });
 
-  const [paymentsResult, purchasesResult, proposalsResult] = await Promise.all([
+  const [paymentsResult, purchasesResult, proposalsResult, settings] = await Promise.all([
     canViewPayments
       ? supabase.from("payments").select("id,amount,currency,status,confirmed_at").eq("case_id", caseRow.id).eq("organization_id", session.organizationId).order("created_at", { ascending: false })
       : emptyResult,
@@ -32,6 +33,7 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ cas
       ? supabase.from("expected_purchases").select("id,supplier_name,service,expected_amount,amount,status").eq("case_id", caseRow.id).eq("organization_id", session.organizationId).order("created_at", { ascending: false })
       : emptyResult,
     supabase.from("proposals").select(CASE_SUMMARY_PROPOSALS_SELECT).eq("case_id", caseRow.id).eq("organization_id", session.organizationId).order("created_at", { ascending: false }),
+    loadEffectiveSettings(session.organizationId),
   ]);
   const firstError = paymentsResult.error || purchasesResult.error || proposalsResult.error;
   if (firstError) throw new Error(firstError.message);
@@ -46,6 +48,11 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ cas
       initialPayments={paymentsResult.data || []}
       initialPurchases={purchasesResult.data || []}
       initialProposals={proposalsResult.data || []}
+      initialLegalTemplates={{
+        contractTemplateUrl: settings.string("legal.contract_template_url", ""),
+        generalConditionsUrl: settings.string("legal.general_conditions_url", ""),
+        standardInformationUrl: settings.string("legal.standard_information_url", ""),
+      }}
     />
   </AppShell>;
 }

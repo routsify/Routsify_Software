@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { CaseRow, ContractRow, FiscalRow, PaymentRow } from "./workspace-types";
 import { formatDateTime, money, numberValue } from "./workspace-types";
 
@@ -9,11 +9,15 @@ const emptyPayment = { amount: "", reference: "", method: "transfer", receivedAt
 const contractLabels: Record<string, string> = { draft: "Borrador", sent: "Enviado", signed: "Firmado", cancelled: "Cancelado" };
 const paymentLabels: Record<string, string> = { confirmed: "Confirmado", paid: "Pagado", received: "Recibido", pending: "Pendiente" };
 
-export function ContractPaymentsTab({ caseRow, initialContracts = [], initialPayments = [], initialFiscal = [] }: {
+export function ContractPaymentsTab({ caseRow, initialContracts = [], initialPayments = [], initialFiscal = [], mode = "all", onContractsChange, onPaymentsChange, onFiscalChange }: {
   caseRow: CaseRow;
   initialContracts?: ContractRow[];
   initialPayments?: PaymentRow[];
   initialFiscal?: FiscalRow[];
+  mode?: "all" | "contracts" | "payments";
+  onContractsChange?: (contracts: ContractRow[]) => void;
+  onPaymentsChange?: (payments: PaymentRow[]) => void;
+  onFiscalChange?: (documents: FiscalRow[]) => void;
 }) {
   const [contracts, setContracts] = useState(initialContracts);
   const [payments, setPayments] = useState(initialPayments);
@@ -28,6 +32,10 @@ export function ContractPaymentsTab({ caseRow, initialContracts = [], initialPay
   const paid = useMemo(() => payments.filter((item) => ["confirmed", "paid", "received"].includes(String(item.status))).reduce((sum, item) => sum + numberValue(item.amount), 0), [payments]);
   const pending = Math.max(acceptedValue - paid, 0);
   const signedContract = contracts.some((item) => item.status === "signed");
+
+  useEffect(() => { setContracts(initialContracts); }, [initialContracts]);
+  useEffect(() => { setPayments(initialPayments); }, [initialPayments]);
+  useEffect(() => { setFiscal(initialFiscal); }, [initialFiscal]);
 
   function startEdit(item: ContractRow) {
     setEditingContractId(item.id);
@@ -51,7 +59,7 @@ export function ContractPaymentsTab({ caseRow, initialContracts = [], initialPay
     setSaving(false);
     if (!response.ok || !result?.ok) return setMessage(String(result?.error || "No se pudo guardar el contrato."));
     const updated = result.data as ContractRow;
-    setContracts((current) => editingContractId ? current.map((item) => item.id === editingContractId ? updated : item) : [updated, ...current]);
+    setContracts((current) => { const next = editingContractId ? current.map((item) => item.id === editingContractId ? updated : item) : [updated, ...current]; onContractsChange?.(next); return next; });
     setEditingContractId(null); setContractDraft(defaultContract);
     setMessage(updated.status === "signed" ? "Contrato firmado y expediente actualizado." : "Contrato guardado correctamente.");
   }
@@ -75,14 +83,15 @@ export function ContractPaymentsTab({ caseRow, initialContracts = [], initialPay
     if (!response.ok || !result?.ok) return setMessage(String(result?.error || "No se pudo confirmar el pago."));
     const rawPayment = result.data;
     const payment = rawPayment && typeof rawPayment === "object" && !Array.isArray(rawPayment) ? rawPayment as PaymentRow : null;
-    if (payment?.id) setPayments((current) => [payment, ...current.filter((item) => item.id !== payment.id)]);
+    if (payment?.id) setPayments((current) => { const next = [payment, ...current.filter((item) => item.id !== payment.id)]; onPaymentsChange?.(next); return next; });
     const document = result.proforma?.document as FiscalRow | undefined;
-    if (document?.id) setFiscal((current) => [document, ...current.filter((item) => item.id !== document.id)]);
+    if (document?.id) setFiscal((current) => { const next = [document, ...current.filter((item) => item.id !== document.id)]; onFiscalChange?.(next); return next; });
     setPaymentDraft(emptyPayment);
     setMessage(result.proforma?.outbox?.ok === false ? "Pago confirmado. La proforma queda preparada, pendiente de configurar Holded." : "Pago confirmado y proforma preparada.");
   }
 
   return <section className="workspace-grid">
+    {mode !== "payments" ? <>
     <div className="card">
       <div className="panel-head"><div><h2>{editingContractId ? "Editar contrato" : "Crear contrato"}</h2><p>Al enviarlo se fija una versión; al firmarlo se conserva la evidencia.</p></div>{editingContractId ? <button className="link-button" type="button" onClick={() => { setEditingContractId(null); setContractDraft(defaultContract); }}>Cancelar edición</button> : null}</div>
       <form className="form" onSubmit={saveContract}>
@@ -93,13 +102,16 @@ export function ContractPaymentsTab({ caseRow, initialContracts = [], initialPay
         <label>Notas<textarea className="input" rows={3} value={contractDraft.notes} onChange={(event) => setContractDraft((current) => ({ ...current, notes: event.target.value }))} /></label>
         <button className="btn" type="submit" disabled={saving}>{saving ? "Guardando..." : contractDraft.status === "signed" ? "Registrar firma" : editingContractId ? "Guardar cambios" : "Crear contrato"}</button>
       </form>
+      {message ? <p className="client-message" role="status">{message}</p> : null}
     </div>
 
     <div className="card workspace-wide">
       <h2>Contratos</h2>
       {contracts.length ? <div className="table-scroll"><table><thead><tr><th>Contrato</th><th>Estado</th><th>Firma</th><th>Enlace</th><th></th></tr></thead><tbody>{contracts.map((item) => <tr key={item.id}><td><strong>{item.title || "Contrato"}</strong><br/><small>{item.notes || "Sin notas"}</small></td><td><span className={`status-pill ${item.status === "signed" ? "status-success" : item.status === "cancelled" ? "status-danger" : "status-warning"}`}>{contractLabels[item.status || "draft"] || item.status}</span></td><td>{formatDateTime(item.signed_at)}</td><td>{item.external_url ? <a href={item.external_url} target="_blank" rel="noreferrer">Abrir</a> : "—"}</td><td>{item.status === "signed" ? "—" : <button className="link-button" type="button" onClick={() => startEdit(item)}>Editar</button>}</td></tr>)}</tbody></table></div> : <p>No hay contratos registrados.</p>}
     </div>
+    </> : null}
 
+    {mode !== "contracts" ? <>
     <div className="card">
       <h2>Confirmar pago manual</h2>
       <div className="payment-summary"><div><span>Viaje aceptado</span><strong>{money(acceptedValue, caseRow.currency || "EUR")}</strong></div><div><span>Cobrado</span><strong>{money(paid, caseRow.currency || "EUR")}</strong></div><div><span>Pendiente</span><strong>{money(pending, caseRow.currency || "EUR")}</strong></div></div>
@@ -119,5 +131,6 @@ export function ContractPaymentsTab({ caseRow, initialContracts = [], initialPay
       {fiscal.length ? <div className="table-scroll"><table><thead><tr><th>Documento</th><th>Estado</th><th>Importe</th><th>Emisión</th></tr></thead><tbody>{fiscal.map((item) => <tr key={item.id}><td>{item.document_kind || (item as { document_type?: string }).document_type || "Documento"} {item.document_number || ""}</td><td>{item.status || "—"}</td><td>{money(item.amount, item.currency || caseRow.currency || "EUR")}</td><td>{formatDateTime(item.issued_at)}</td></tr>)}</tbody></table></div> : <p>La proforma se prepara con el primer pago. La factura final requiere viaje finalizado, cinco días de espera y compras completas.</p>}
       {message ? <p className="client-message" role="status">{message}</p> : null}
     </div>
+    </> : null}
   </section>;
 }

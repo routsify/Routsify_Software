@@ -168,7 +168,7 @@ test.describe("certificación operativa de producción", () => {
     const clientEmail = taggedEmail(process.env.E2E_EMAIL, runTag);
     const tripStart = dateOffset(10);
     const tripEnd = dateOffset(13);
-    const certification = { runTag, clientId: null, supplierId: null, caseId: null, caseCode: null, proposalId: null, purchaseId: null, documentId: null, ocrRunId: null, bookingId: null, communicationId: null };
+    const certification = { runTag, clientId: null, supplierId: null, caseId: null, caseCode: null, proposalId: null, purchaseId: null, documentId: null, ticketDocumentId: null, ocrRunId: null, paymentLinkId: null, bookingId: null, communicationId: null };
 
     await test.step("verificar conexiones configuradas", async () => {
       const health = await api(request, "GET", "/api/routsify/settings/integrations/health");
@@ -177,6 +177,9 @@ test.describe("certificación operativa de producción", () => {
         const result = await api(request, "POST", `/api/routsify/settings/integrations/${integration}/test`, {});
         expect(result.integration).toBe(integration);
       }
+      const filloutSync = await api(request, "POST", "/api/routsify/leads/sync-fillout", { maxPages: 2 }, { timeout: 120_000 });
+      expect(filloutSync.data.skipped).toBe(false);
+      expect(Number(filloutSync.data.failed || 0)).toBe(0);
       const whatsapp = health.data.integrations.find((item) => item.id === "whatsapp");
       expect(whatsapp).toBeTruthy();
       expect(["inactive", "setup_required", "disabled", "not_configured"]).toContain(whatsapp.state);
@@ -206,6 +209,7 @@ test.describe("certificación operativa de producción", () => {
         name: `[PRUEBA E2E ${runTag}] Hotel Certificación`,
         category: "accommodation",
         email: process.env.E2E_EMAIL,
+        default_margin_pct: 33.3333,
         tax_id: `TEST-SUP-${runTag}`,
         country: "ES",
         billing_address: { address: "Avenida Prueba 2", city: "Lisboa", postal_code: "1000-001", country: "PT" },
@@ -213,6 +217,18 @@ test.describe("certificación operativa de producción", () => {
       });
       certification.supplierId = text(supplier.data.id);
       expect(certification.supplierId).toBeTruthy();
+      expect(Number(supplier.data.default_margin_pct)).toBeCloseTo(33.3333, 3);
+
+      const disposable = await api(request, "POST", "/api/routsify/clients", {
+        display_name: `[PRUEBA E2E ${runTag}] Cliente eliminable`,
+        email: taggedEmail(process.env.E2E_EMAIL, `${runTag}-delete`),
+        client_type: "person",
+        country: "ES",
+        source: "production_certification",
+      });
+      await api(request, "DELETE", `/api/routsify/clients/${encodeURIComponent(disposable.data.id)}`);
+      const deleted = await api(request, "GET", `/api/routsify/clients/${encodeURIComponent(disposable.data.id)}`, undefined, { acceptedStatuses: [404] });
+      expect(deleted._responseStatus).toBe(404);
 
       const createdCase = await api(request, "POST", "/api/routsify/cases", {
         client_id: certification.clientId,
@@ -293,6 +309,31 @@ test.describe("certificación operativa de producción", () => {
       });
       const travelers = await api(request, "GET", `/api/routsify/cases/${certification.caseId}/workspace?section=travelers`);
       expect(travelers.data.travelers.find((item) => item.id === travelerId)?.review_status).toBe("approved");
+
+      const ticketUpload = await api(request, "POST", "/api/documentos/upload-url", {
+        caseCode: certification.caseCode,
+        fileName: `TICKET-PRUEBA-${runTag}.pdf`,
+        sizeBytes: pdf.length,
+        mimeType: "application/pdf",
+        ownerType: "case",
+      });
+      const ticketPut = await request.put(ticketUpload.signedUrl, { data: pdf, headers: { "content-type": "application/pdf" } });
+      expect(ticketPut.ok(), `La subida del ticket devolvió ${ticketPut.status()}`).toBeTruthy();
+      const ticket = await api(request, "POST", "/api/documentos/confirm-upload", {
+        caseId: certification.caseId,
+        ownerType: "case",
+        title: "Ticket sintético · NO VÁLIDO",
+        type: "ticket_cliente",
+        bucket: ticketUpload.bucket,
+        storagePath: ticketUpload.path,
+        fileName: `TICKET-PRUEBA-${runTag}.pdf`,
+        mimeType: "application/pdf",
+        sizeBytes: pdf.length,
+        sensitivity: "private",
+        retentionDays: 30,
+      });
+      certification.ticketDocumentId = text(ticket.data.id);
+      expect(certification.ticketDocumentId).toBeTruthy();
     });
 
     await test.step("crear, enviar y aceptar una propuesta con margen", async () => {
@@ -300,20 +341,35 @@ test.describe("certificación operativa de producción", () => {
       certification.proposalId = text(proposal.data.id);
       const version = Array.isArray(proposal.data.proposal_versions) ? proposal.data.proposal_versions[0] : null;
       expect(version?.id).toBeTruthy();
-      await api(request, "POST", `/api/routsify/proposals/${certification.proposalId}/lines`, {
+      const budgetLine = await api(request, "POST", `/api/routsify/proposals/${certification.proposalId}/lines`, {
         proposal_version_id: version.id,
         service_type_code: "accommodation",
         description_public: `[PRUEBA E2E ${runTag}] Hotel sintético Lisboa`,
         description_internal: "Coste 10 €, venta 15 €, beneficio esperado 5 €.",
         supplier_id: certification.supplierId,
         cost_budget: 10,
-        sale_price: 15,
-        margin_applied: 33.3333,
         creates_expected_purchase: true,
         start_date: tripStart,
         end_date: tripEnd,
         destination_segment: "Lisboa",
       });
+      expect(Number(budgetLine.data.margin_applied)).toBeCloseTo(0.333333, 5);
+      expect(Number(budgetLine.data.sale_price)).toBeCloseTo(15, 2);
+
+      const globalMargin = await api(request, "PATCH", `/api/routsify/proposals/${certification.proposalId}/lines/bulk`, {
+        proposal_version_id: version.id,
+        margin_percentage: 33.3333,
+      });
+      expect(globalMargin.updated).toBe(1);
+      expect(Number(globalMargin.data[0].margin_applied)).toBeCloseTo(0.333333, 5);
+
+      await page.goto(`/propuestas?caseId=${encodeURIComponent(certification.caseId)}`);
+      await expect(page.getByLabel("Margen global %")).toBeVisible();
+      await expect(page.getByRole("button", { name: "+ Nuevo", exact: true })).toBeVisible();
+      await page.getByRole("button", { name: "+ Nuevo", exact: true }).click();
+      await expect(page.getByRole("heading", { name: "Nuevo proveedor", exact: true })).toBeVisible();
+      await page.getByRole("button", { name: "Cerrar", exact: true }).click();
+
       const sent = await api(request, "POST", `/api/routsify/proposals/${certification.proposalId}/send`, { validity_days: 15 });
       expect(sent.data.holded_status).toBe("queued");
       await processOutbox(request);
@@ -387,20 +443,36 @@ test.describe("certificación operativa de producción", () => {
     });
 
     await test.step("registrar cobro, proforma y pago en Holded", async () => {
-      const payment = await api(request, "POST", "/api/payments/manual", {
-        caseId: certification.caseId,
+      const paymentLink = await api(request, "POST", `/api/routsify/proposals/${certification.proposalId}/payment-link`, {
+        external_url: `https://example.com/teya-certification/${runTag}`,
         amount: 15,
+      });
+      certification.paymentLinkId = text(paymentLink.data.id);
+      expect(certification.paymentLinkId).toBeTruthy();
+
+      const payment = await api(request, "POST", `/api/routsify/payment-links/${certification.paymentLinkId}/confirm`, {
         reference: `E2E-${runTag}`,
-        currency: "EUR",
-        method: "teya_manual_test",
-        receivedAt: new Date().toISOString(),
+        amount: 15,
+        received_at: new Date().toISOString(),
         notes: "Cobro sintético. No se ha realizado ningún cargo real.",
       });
-      expect(payment.payment_confirmed).toBe(true);
+      expect(payment.data.payment.payment_reference).toBe(`E2E-${runTag}`);
+      expect(Number(payment.data.payment.amount)).toBe(15);
+      expect(payment.data.payment.payment_link_id).toBe(certification.paymentLinkId);
       await processOutbox(request);
       const workspace = await api(request, "GET", `/api/routsify/cases/${certification.caseId}/workspace?section=contract`);
       expect(workspace.data.payments.some((item) => item.payment_reference === `E2E-${runTag}` && Number(item.amount) === 15)).toBe(true);
       expect(workspace.data.fiscal_documents.some((item) => item.document_type === "proforma" && item.status === "issued")).toBe(true);
+
+      const settings = await api(request, "GET", "/api/routsify/settings");
+      const setting = (key) => text(settings.data.find((item) => item.key === key)?.value);
+      const legalReady = Boolean(setting("legal.general_conditions_url") && setting("legal.standard_information_url"));
+      const legal = await api(request, "POST", `/api/routsify/cases/${certification.caseId}/legal-delivery`, {}, { acceptedStatuses: [409] });
+      if (legalReady) expect(legal.data.event_type).toBe("legal_pack.sent");
+      else {
+        expect(legal._responseStatus).toBe(409);
+        expect(legal.error).toBe("legal_templates_incomplete");
+      }
     });
 
     await test.step("crear, modificar y cancelar una reserva real de prueba", async () => {
@@ -488,6 +560,12 @@ test.describe("certificación operativa de producción", () => {
         await expect(page.getByRole("heading", { name: "Algo ha fallado", exact: true }), `${path} mostró la pantalla de error`).toHaveCount(0);
         await expect(page.locator("h1").first()).toBeVisible();
         await expect(page.locator("nextjs-portal")).toHaveCount(0);
+        if (path.startsWith("/expedientes/")) {
+          await expect(page.getByRole("heading", { name: "Del presupuesto aceptado a la entrega del viaje", exact: true })).toBeVisible();
+          for (const heading of ["Información precontractual aceptada", "Datos de viajeros y documentación", "Redacción, enlace privado y firma del contrato", "Enlace de pago y confirmación del cobro", "Entrega de documentación legal", "Compras de proveedores y entrega de tickets"]) {
+            await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
+          }
+        }
       }
     });
 

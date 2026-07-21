@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { usePermission } from "@/components/PermissionProvider";
 import type { TaskRow, TimelineRow } from "./workspace-types";
 import { formatDateTime } from "./workspace-types";
@@ -12,6 +12,8 @@ export function ActivityTab({ caseId, initialTasks = [], timeline = [] }: { case
   const [tasks, setTasks] = useState(initialTasks);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => { setTasks(initialTasks); }, [initialTasks]);
 
   async function updateTask(taskId: string, status: string) {
     if (!canManageTasks) return setMessage("Tu rol tiene acceso de consulta a las tareas.");
