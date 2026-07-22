@@ -100,7 +100,7 @@ export function LoginForm() {
 
     setLoading(true);
     const supabase = getSupabaseBrowserClient();
-    const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, { redirectTo: `${window.location.origin}/login` });
+    const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, { redirectTo: `${window.location.origin}/auth/set-password` });
     setLoading(false);
 
     if (error) {

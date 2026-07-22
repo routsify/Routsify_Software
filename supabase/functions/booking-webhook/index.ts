@@ -11,7 +11,8 @@ Deno.serve(async (req: Request) => {
 
   const configuredSecret = Deno.env.get("WEBHOOK_SECRET");
   const receivedSecret = req.headers.get("x-routsify-secret");
-  if (configuredSecret && receivedSecret !== configuredSecret) {
+  if (!configuredSecret) return json({ error: "webhook_secret_not_configured" }, 503);
+  if (!receivedSecret || receivedSecret !== configuredSecret) {
     return json({ error: "unauthorized" }, 401);
   }
 
@@ -23,7 +24,8 @@ Deno.serve(async (req: Request) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
 
-  const orgSlug = payload.organization_slug ?? "routsify-demo";
+  const orgSlug = String(payload.organization_slug ?? "").trim();
+  if (!orgSlug) return json({ error: "organization_slug_required" }, 400);
   const { data: org, error: orgError } = await supabase
     .from("organizations")
     .select("id")
