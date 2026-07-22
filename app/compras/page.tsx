@@ -21,8 +21,8 @@ export default async function PurchasesPage({ searchParams }: { searchParams: Pr
     <AppShell>
       <PageHeader
         eyebrow="Compras / Proveedores"
-        title="Compras y proveedores"
-        description="Controla cada compra prevista, su proveedor maestro, factura, coste real y desviación respecto al presupuesto."
+        title="Facturas de proveedor"
+        description="Controla las facturas esperadas por proveedor. Holded recibe y lee las facturas; Routsify las sincroniza, concilia y muestra lo que falta."
         action={<Link className="btn secondary" href="/proveedores" prefetch={false}>Directorio de proveedores</Link>}
       />
       <PurchasesManagerOperational initialPurchases={purchases} initialCases={cases} initialSuppliers={suppliers} initialCaseId={caseId || ""} initialSupplierId={supplierId || ""} />

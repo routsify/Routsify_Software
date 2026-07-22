@@ -1,4 +1,5 @@
 import { PURCHASE_WITH_RELATIONS_SELECT } from "@/lib/query-selects";
+import { syncHoldedPurchaseCandidates } from "@/lib/holded-outbox-handlers-v2";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 
 const ACTIVE_STATUSES = new Set(["expected", "requested", "uploaded", "holded_candidate", "matched", "review_needed"]);
@@ -84,20 +85,22 @@ export async function transitionExpectedPurchase(input: {
 }
 
 export async function enqueuePurchaseHoldedSync(input: { organizationId: string; purchaseId: string; actorId: string }) {
-  const supabase = getSupabaseAdminClient();
   const { data: purchase, error } = await getExpectedPurchase(input.organizationId, input.purchaseId);
   if (error) return { ok: false as const, error: error.message };
   if (!purchase) return { ok: false as const, error: "purchase_not_found" };
-  const idempotencyKey = `holded-purchase:${purchase.id}:${purchase.updated_at || purchase.created_at}`;
-  const { data, error: outboxError } = await supabase.rpc("enqueue_integration_event", {
-    target_org: input.organizationId,
-    channel_name: "holded",
-    event_name: "purchase.sync",
-    idem_key: idempotencyKey,
-    event_payload: { expected_purchase_id: purchase.id, case_id: purchase.case_id, actor_id: input.actorId },
-    event_risk: "medium",
-    rule: "Sincronizar compra de proveedor de forma idempotente.",
-    action: "Revisar el resultado en Compras / Proveedores.",
-  });
-  return outboxError ? { ok: false as const, error: outboxError.message } : { ok: true as const, data: { outbox_id: data, idempotency_key: idempotencyKey } };
+  try {
+    const data = await syncHoldedPurchaseCandidates(input.organizationId, { targetPurchaseId: input.purchaseId });
+    return { ok: true as const, data: { ...data, mode: "holded_import_only" } };
+  } catch (caught) {
+    return { ok: false as const, error: caught instanceof Error ? caught.message : "holded_sync_failed" };
+  }
+}
+
+export async function syncExpectedPurchasesFromHolded(input: { organizationId: string }) {
+  try {
+    const data = await syncHoldedPurchaseCandidates(input.organizationId);
+    return { ok: true as const, data };
+  } catch (caught) {
+    return { ok: false as const, error: caught instanceof Error ? caught.message : "holded_sync_failed" };
+  }
 }
