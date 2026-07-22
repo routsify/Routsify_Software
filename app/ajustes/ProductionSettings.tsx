@@ -9,13 +9,14 @@ import { LegalDocumentsPanel, type LegalDocumentRow } from "./LegalDocumentsPane
 import { UserManagementPanel } from "./UserManagementPanel";
 import { BrandLogoPanel } from "./BrandLogoPanel";
 
-type TabId = "general" | "appearance" | "users" | "legal" | "integrations" | "operations" | "security";
+type TabId = "general" | "appearance" | "users" | "legal" | "integrations" | "ai" | "operations" | "security";
 
 const tabs: Array<{ id: TabId; label: string; description: string; modules: string[] }> = [
   { id: "general", label: "General", description: "Empresa, moneda, fechas y menú visible.", modules: ["general", "navigation"] },
   { id: "appearance", label: "Apariencia", description: "Colores, tipografía, densidad y composición.", modules: ["appearance"] },
   { id: "users", label: "Usuarios", description: "Altas, invitaciones, roles y permisos.", modules: [] },
   { id: "integrations", label: "Integraciones", description: "Activa y conecta cada herramienta desde una tarjeta sencilla.", modules: ["integrations"] },
+  { id: "ai", label: "AI", description: "Modelos y prompts que utiliza OpenAI. Los cambios se aplican a las siguientes ejecuciones.", modules: ["ai"] },
   { id: "operations", label: "Operativa", description: "Clientes, expedientes, presupuestos, márgenes, compras, contratos y fiscalidad.", modules: ["clients", "cases", "budgets", "margins", "purchases", "contracts", "fiscal"] },
   { id: "legal", label: "Documentación legal", description: "PDFs privados, versiones vigentes e histórico contractual.", modules: [] },
   { id: "security", label: "Seguridad y sistema", description: "Webhooks, logs, caché y políticas técnicas.", modules: ["security", "logs", "system"] },
@@ -127,6 +128,8 @@ export function ProductionSettings({ storedRows = [], secretStatuses = [], legal
       control = <div className="setting-multi">{(setting.options || []).map((option) => <label key={option}><input type="checkbox" checked={selected.includes(option)} disabled={disabled} onChange={(event) => setValue(setting.key, event.target.checked ? [...selected, option] : selected.filter((item) => item !== option))} /><span>{option}</span></label>)}</div>;
     } else if (setting.valueType === "number") {
       control = <input className="input" type="number" value={Number(value)} min={Number(setting.validationRules?.min) || undefined} max={Number(setting.validationRules?.max) || undefined} onChange={(event) => setValue(setting.key, Number(event.target.value))} disabled={disabled} />;
+    } else if (setting.key.endsWith(".prompt")) {
+      control = <textarea className="input setting-prompt" rows={12} value={String(value)} onChange={(event) => setValue(setting.key, event.target.value)} disabled={disabled} />;
     } else {
       control = <input className="input" type={setting.key.includes("url") ? "url" : "text"} value={String(value)} onChange={(event) => setValue(setting.key, event.target.value)} disabled={disabled} placeholder={setting.validationRules?.allowEmpty ? "Pendiente de configurar" : undefined} />;
     }

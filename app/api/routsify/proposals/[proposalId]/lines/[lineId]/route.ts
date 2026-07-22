@@ -35,7 +35,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const organizationId = await resolveOrganizationId(request, access.organizationId);
   const context = await lineContext(organizationId, proposalId, lineId);
   if (!context) return NextResponse.json({ ok: false, error: "line_not_found" }, { status: 404 });
-  if (context.version.locked || context.version.status === "accepted") return NextResponse.json({ ok: false, error: "accepted_version_locked" }, { status: 409 });
+  if (context.version.locked || !["draft", "internal_review"].includes(String(context.version.status))) return NextResponse.json({ ok: false, error: "accepted_version_locked" }, { status: 409 });
 
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== "object") return NextResponse.json({ ok: false, error: "invalid_body" }, { status: 400 });
@@ -43,6 +43,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const description = String(source.description_public || "").trim();
   const cost = numeric(source.cost_budget);
   const explicitMargin = source.margin_applied === undefined || source.margin_applied === null || source.margin_applied === "" ? null : Number(source.margin_applied);
+  const requirementLevel = ["required", "conditional", "optional"].includes(String(source.requirement_level || "required")) ? String(source.requirement_level || "required") : "required";
   if (description.length < 2) return NextResponse.json({ ok: false, error: "description_required" }, { status: 400 });
   if (cost < 0) return NextResponse.json({ ok: false, error: "invalid_cost" }, { status: 400 });
   if (explicitMargin !== null && (!Number.isFinite(explicitMargin) || explicitMargin < 0 || explicitMargin >= 100)) return NextResponse.json({ ok: false, error: "invalid_margin" }, { status: 400 });
@@ -79,6 +80,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       origin_margin: rule.source,
       sale_price: sale,
       creates_expected_purchase: source.creates_expected_purchase === undefined ? Boolean(supplierId) : Boolean(source.creates_expected_purchase),
+      included: source.included !== false,
+      requirement_level: requirementLevel,
+      source_reference: source.source_reference ? String(source.source_reference).trim().slice(0, 500) || null : null,
+      ai_generated: source.ai_generated === true,
+      ai_confidence: source.ai_generated === true ? Math.max(0, Math.min(Number(source.ai_confidence || 0), 1)) : null,
       updated_at: new Date().toISOString(),
     })
     .eq("id", lineId)
@@ -99,7 +105,7 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
   const organizationId = await resolveOrganizationId(request, access.organizationId);
   const context = await lineContext(organizationId, proposalId, lineId);
   if (!context) return NextResponse.json({ ok: false, error: "line_not_found" }, { status: 404 });
-  if (context.version.locked || context.version.status === "accepted") return NextResponse.json({ ok: false, error: "accepted_version_locked" }, { status: 409 });
+  if (context.version.locked || !["draft", "internal_review"].includes(String(context.version.status))) return NextResponse.json({ ok: false, error: "accepted_version_locked" }, { status: 409 });
 
   const { error } = await getSupabaseAdminClient().from("budget_lines").delete().eq("id", lineId).eq("organization_id", organizationId);
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 400 });

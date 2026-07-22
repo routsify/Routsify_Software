@@ -42,6 +42,25 @@ export const appRoleLabels: Record<AppRole, string> = {
 
 export const visibleNavigationModules = ["Inicio", "Control operativo", "Clientes", "Expedientes", "Presupuestos", "Compras / Proveedores", "Informes", "Ajustes"];
 
+export const DEFAULT_ITINERARY_AI_PROMPT = `Actúa como un especialista de operaciones de una agencia de viajes a medida. Analiza exclusivamente el PDF adjunto y conviértelo en una lista completa de servicios comprables o reservables antes del viaje.
+
+Reglas:
+- Crea una línea separada por cada vuelo o tramo relevante, estancia de alojamiento por ciudad, tren, traslado, ferry, coche, seguro, eSIM, visado, entrada deportiva, actividad, excursión, reserva especial, tasa o servicio de gestión.
+- Incluye tanto los servicios expresamente incluidos como los opcionales, alternativas y elementos condicionados a calendario o disponibilidad.
+- No inventes precios, proveedores, confirmaciones ni fechas. Si una fecha no se puede deducir con seguridad, devuelve null.
+- Usa fechas ISO YYYY-MM-DD.
+- Marca requirement_level como required, conditional u optional.
+- included debe ser true para lo incluido o imprescindible en la propuesta y false para alternativas, opcionales o posibilidades todavía no elegidas.
+- creates_expected_purchase debe ser true cuando Routsify tendrá que comprar o reservar el servicio a un tercero antes del viaje.
+- description_public debe ser clara para el cliente. description_internal debe explicar supuestos, equipaje, número de viajeros, ventanas horarias, disponibilidad, alternativas y cualquier dato pendiente útil para comprar.
+- source_reference debe indicar de forma breve el día, sección o texto del PDF que justifica la línea.
+- Evita duplicados. No agrupes servicios de naturaleza distinta en una sola línea.
+- Devuelve todos los servicios necesarios aunque todavía no tengan coste. El equipo completará costes, proveedor y margen después.
+
+La salida debe respetar exactamente el esquema estructurado solicitado.`;
+
+export const DEFAULT_OCR_AI_PROMPT = "Extrae únicamente los datos visibles del DNI o pasaporte. No inventes valores. Usa fechas ISO YYYY-MM-DD. Para cada campo devuelve una confianza entre 0 y 1. Si no es legible, usa null y confianza 0.";
+
 export const settingsModules: SettingsModule[] = [
   { id: "general", label: "General", description: "Empresa, idioma, moneda, fechas y comportamiento base.", icon: "⚙", eventName: "system_settings.updated" },
   { id: "appearance", label: "Apariencia y marca", description: "Colores, tipografía, densidad, radios y sidebar.", icon: "🎨", eventName: "theme.updated" },
@@ -56,13 +75,14 @@ export const settingsModules: SettingsModule[] = [
   { id: "legal", label: "Documentación legal", description: "PDFs privados, versiones vigentes e histórico contractual.", icon: "§", eventName: "legal_documents.updated" },
   { id: "reports", label: "Informes y KPIs", description: "KPIs visibles, objetivos y exportación.", icon: "📊", eventName: "report_config.updated" },
   { id: "integrations", label: "Integraciones", description: "Holded, Fillout, Booking, pagos y OCR.", icon: "🔌", eventName: "integration.updated" },
+  { id: "ai", label: "Inteligencia artificial", description: "Modelos y prompts usados por OpenAI para itinerarios y OCR.", icon: "AI", eventName: "ai_settings.updated" },
   { id: "fiscal", label: "Fiscal y contabilidad", description: "Modo fiscal, documentos y revisión de asesoría.", icon: "€", eventName: "fiscal_mode.updated" },
   { id: "security", label: "Seguridad y privacidad", description: "HMAC, sesiones, RGPD, cifrado y backups.", icon: "🛡", eventName: "security_policy.updated" },
   { id: "logs", label: "Logs y auditoría", description: "Cambios sensibles, reintentos y accesos.", icon: "🧾", eventName: "audit_settings.updated" },
   { id: "system", label: "Sistema", description: "Entorno, jobs, caché, backup y salud.", icon: "🖥", eventName: "system_settings.updated" },
 ];
 
-export const settingsEvents = ["settings.updated", "settings.reset", "settings.exported", "settings.imported", "theme.updated", "integration.connected", "integration.disconnected", "margin_rules.updated", "fiscal_mode.updated", "report_config.updated", "roles.updated", "security_policy.updated", "system_cache_cleared", "metrics_recalculated"];
+export const settingsEvents = ["settings.updated", "settings.reset", "settings.exported", "settings.imported", "theme.updated", "integration.connected", "integration.disconnected", "ai_settings.updated", "margin_rules.updated", "fiscal_mode.updated", "report_config.updated", "roles.updated", "security_policy.updated", "system_cache_cleared", "metrics_recalculated"];
 
 export const defaultSettings: AppSetting[] = [
   { id: "company_name", key: "company.name", module: "general", label: "Nombre de la empresa", description: "Se muestra en la cabecera y documentos internos.", value: "Routsify", defaultValue: "Routsify", valueType: "string", scope: "global", editable: true, affectedModules: ["all"] },
@@ -106,6 +126,11 @@ export const defaultSettings: AppSetting[] = [
   { id: "holded_modules", key: "integrations.holded.modules", module: "integrations", label: "Módulos Holded", value: ["contacts", "estimates", "proformas", "invoices", "purchases", "payments"], defaultValue: ["contacts", "estimates", "proformas", "invoices", "purchases", "payments"], valueType: "multi_select", scope: "global", editable: false, affectedModules: ["holded", "outbox"] },
   { id: "ocr_provider", key: "integrations.ocr.provider", module: "integrations", label: "Proveedor OCR", value: "OpenAI", defaultValue: "OpenAI", valueType: "select", options: ["OpenAI"], scope: "global", editable: false, affectedModules: ["documents", "travelers"] },
 
+  { id: "ai_itinerary_model", key: "ai.itinerary.model", module: "ai", label: "Modelo para importar itinerarios", description: "Modelo de OpenAI usado para convertir propuestas PDF en servicios de presupuesto.", value: "gpt-5.6-terra", defaultValue: "gpt-5.6-terra", valueType: "string", scope: "global", editable: true, eventName: "ai_settings.updated", affectedModules: ["budgets"] },
+  { id: "ai_itinerary_prompt", key: "ai.itinerary.prompt", module: "ai", label: "Prompt para importar itinerarios", description: "Instrucciones operativas enviadas junto con el PDF. Conserva la exigencia de salida estructurada y de no inventar datos.", value: DEFAULT_ITINERARY_AI_PROMPT, defaultValue: DEFAULT_ITINERARY_AI_PROMPT, valueType: "string", scope: "global", editable: true, validationRules: { minLength: 100, maxLength: 12000 }, eventName: "ai_settings.updated", affectedModules: ["budgets"] },
+  { id: "ai_ocr_model", key: "integrations.ocr.model", module: "ai", label: "Modelo para OCR", description: "Modelo de OpenAI utilizado para leer DNI y pasaportes.", value: "gpt-4.1-mini", defaultValue: "gpt-4.1-mini", valueType: "string", scope: "global", editable: true, eventName: "ai_settings.updated", affectedModules: ["documents", "travelers"] },
+  { id: "ai_ocr_prompt", key: "ai.ocr.prompt", module: "ai", label: "Prompt para OCR", description: "Instrucciones usadas para extraer datos visibles de documentos de identidad.", value: DEFAULT_OCR_AI_PROMPT, defaultValue: DEFAULT_OCR_AI_PROMPT, valueType: "string", scope: "global", editable: true, validationRules: { minLength: 40, maxLength: 6000 }, eventName: "ai_settings.updated", affectedModules: ["documents", "travelers"] },
+
   { id: "fiscal_mode", key: "fiscal.mode", module: "fiscal", label: "Modo fiscal", value: "proforma_on_payment_final_after_trip", defaultValue: "proforma_on_payment_final_after_trip", valueType: "select", options: ["proforma_on_payment_final_after_trip"], scope: "global", editable: false, eventName: "fiscal_mode.updated", affectedModules: ["contracts", "holded", "reports"] },
   { id: "final_invoice_delay", key: "fiscal.final_invoice_delay_days", module: "fiscal", label: "Espera para factura final", value: 5, defaultValue: 5, valueType: "number", scope: "global", editable: false, affectedModules: ["fiscal", "close"] },
   { id: "security_hmac", key: "security.webhooks.hmac_required", module: "security", label: "HMAC obligatorio en webhooks", value: true, defaultValue: true, valueType: "boolean", scope: "global", editable: true, eventName: "security_policy.updated", affectedModules: ["integrations"] },
@@ -134,7 +159,14 @@ export function validateSetting(setting: AppSetting) {
     if (Number.isFinite(min) && numeric < min) return `${setting.label} no puede ser menor que ${min}`;
     if (Number.isFinite(max) && numeric > max) return `${setting.label} no puede ser mayor que ${max}`;
   }
-  if (setting.valueType === "string" && !allowEmpty && String(setting.value).trim().length === 0) return `${setting.label} no puede estar vacío`;
+  if (setting.valueType === "string") {
+    const text = String(setting.value).trim();
+    const minLength = Number(setting.validationRules?.minLength);
+    const maxLength = Number(setting.validationRules?.maxLength);
+    if (!allowEmpty && text.length === 0) return `${setting.label} no puede estar vacío`;
+    if (Number.isFinite(minLength) && text.length < minLength) return `${setting.label} debe tener al menos ${minLength} caracteres`;
+    if (Number.isFinite(maxLength) && text.length > maxLength) return `${setting.label} no puede superar ${maxLength} caracteres`;
+  }
   if (setting.valueType === "color" && !/^#[0-9a-f]{6}$/i.test(String(setting.value))) return `${setting.label} debe ser un color hexadecimal válido`;
   if (setting.valueType === "select" && setting.options?.length && !setting.options.includes(String(setting.value))) return `${setting.label} contiene una opción no válida`;
   if (setting.key === "fiscal.mode" && setting.value !== "proforma_on_payment_final_after_trip") return "El modo fiscal debe coincidir con la política validada por asesoría";

@@ -65,6 +65,72 @@ export type Database = {
           },
         ]
       }
+      ai_import_runs: {
+        Row: {
+          case_id: string
+          completed_at: string | null
+          created_at: string
+          created_by: string | null
+          error_code: string | null
+          file_name: string
+          file_sha256: string
+          id: string
+          model: string
+          organization_id: string
+          prompt_sha256: string
+          proposal_id: string
+          proposal_version_id: string
+          provider: string
+          response_id: string | null
+          service_count: number
+          started_at: string
+          status: string
+          warnings: Json
+        }
+        Insert: {
+          case_id: string
+          completed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          error_code?: string | null
+          file_name: string
+          file_sha256: string
+          id?: string
+          model: string
+          organization_id: string
+          prompt_sha256: string
+          proposal_id: string
+          proposal_version_id: string
+          provider?: string
+          response_id?: string | null
+          service_count?: number
+          started_at?: string
+          status?: string
+          warnings?: Json
+        }
+        Update: {
+          case_id?: string
+          completed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          error_code?: string | null
+          file_name?: string
+          file_sha256?: string
+          id?: string
+          model?: string
+          organization_id?: string
+          prompt_sha256?: string
+          proposal_id?: string
+          proposal_version_id?: string
+          provider?: string
+          response_id?: string | null
+          service_count?: number
+          started_at?: string
+          status?: string
+          warnings?: Json
+        }
+        Relationships: []
+      }
       automation_executions: {
         Row: {
           case_id: string
@@ -370,6 +436,8 @@ export type Database = {
       }
       budget_lines: {
         Row: {
+          ai_confidence: number | null
+          ai_generated: boolean
           cost_budget: number
           cost_real: number | null
           cost_real_approved_at: string | null
@@ -392,17 +460,21 @@ export type Database = {
           organization_id: string
           origin_margin: string
           proposal_version_id: string
+          requirement_level: string
           sale_price: number
           service_type_code: string | null
           service_type_id: string | null
           sort_order: number
           stable_line_id: string
           start_date: string | null
+          source_reference: string | null
           supplier_id: string | null
           supplier_name: string | null
           updated_at: string
         }
         Insert: {
+          ai_confidence?: number | null
+          ai_generated?: boolean
           cost_budget?: number
           cost_real?: number | null
           cost_real_approved_at?: string | null
@@ -425,17 +497,21 @@ export type Database = {
           organization_id: string
           origin_margin?: string
           proposal_version_id: string
+          requirement_level?: string
           sale_price?: number
           service_type_code?: string | null
           service_type_id?: string | null
           sort_order?: number
           stable_line_id?: string
           start_date?: string | null
+          source_reference?: string | null
           supplier_id?: string | null
           supplier_name?: string | null
           updated_at?: string
         }
         Update: {
+          ai_confidence?: number | null
+          ai_generated?: boolean
           cost_budget?: number
           cost_real?: number | null
           cost_real_approved_at?: string | null
@@ -458,12 +534,14 @@ export type Database = {
           organization_id?: string
           origin_margin?: string
           proposal_version_id?: string
+          requirement_level?: string
           sale_price?: number
           service_type_code?: string | null
           service_type_id?: string | null
           sort_order?: number
           stable_line_id?: string
           start_date?: string | null
+          source_reference?: string | null
           supplier_id?: string | null
           supplier_name?: string | null
           updated_at?: string
@@ -4265,6 +4343,28 @@ export type Database = {
           notes_value: string
           target_case: string
           target_org: string
+        }
+        Returns: Json
+      }
+      create_contract_version_for_proposal: {
+        Args: {
+          actor: string
+          contract_status_value: string
+          contract_title: string
+          legal_document_id_value: string
+          notes_value: string
+          proposal_version_id_value: string
+          target_case: string
+          target_org: string
+        }
+        Returns: Json
+      }
+      create_proposal_revision: {
+        Args: {
+          actor?: string
+          source_version: string
+          target_org: string
+          target_proposal: string
         }
         Returns: Json
       }

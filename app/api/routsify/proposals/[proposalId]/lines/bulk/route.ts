@@ -31,7 +31,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     .eq("organization_id", organizationId)
     .maybeSingle();
   if (versionError || !version) return NextResponse.json({ ok: false, error: versionError?.message || "proposal_version_not_found" }, { status: versionError ? 400 : 404 });
-  if (version.locked || version.status === "accepted") return NextResponse.json({ ok: false, error: "proposal_version_locked" }, { status: 409 });
+  if (version.locked || !["draft", "internal_review"].includes(String(version.status))) return NextResponse.json({ ok: false, error: "proposal_version_locked" }, { status: 409 });
 
   let marginContext;
   try { marginContext = await loadMarginResolutionContext(organizationId); }
@@ -44,15 +44,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   const { data: existingLines, error: existingLinesError } = await db
     .from("budget_lines")
-    .select("cost_budget,sale_price,sort_order")
+    .select("cost_budget,sale_price,sort_order,included")
     .eq("organization_id", organizationId)
     .eq("proposal_version_id", versionId);
   if (existingLinesError) return NextResponse.json({ ok: false, error: existingLinesError.message }, { status: 400 });
 
   const currentLines = existingLines || [];
   const nextSortOrder = currentLines.reduce((max, line) => Math.max(max, Number(line.sort_order || 0) + 1), 0);
-  const existingCost = currentLines.reduce((sum, item) => sum + numeric(item.cost_budget), 0);
-  const existingSale = currentLines.reduce((sum, item) => sum + numeric(item.sale_price), 0);
+  const existingCost = currentLines.reduce((sum, item) => sum + (item.included === false ? 0 : numeric(item.cost_budget)), 0);
+  const existingSale = currentLines.reduce((sum, item) => sum + (item.included === false ? 0 : numeric(item.sale_price)), 0);
   const inserts: Record<string, unknown>[] = [];
   const validationErrors: Array<{ row: number; error: string }> = [];
 
@@ -67,6 +67,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const serviceTypeCode = String(source.service_type_code || source.type || "custom").trim() || "custom";
     const startDate = optionalText(source.start_date);
     const endDate = optionalText(source.end_date);
+    const requirementLevel = ["required", "conditional", "optional"].includes(String(source.requirement_level || "required")) ? String(source.requirement_level || "required") : "required";
+    const included = source.included !== false;
 
     if (description.length < 2) validationErrors.push({ row: index + 1, error: "description_required" });
     if (!Number.isFinite(cost) || cost < 0) validationErrors.push({ row: index + 1, error: "invalid_cost" });
@@ -110,6 +112,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       origin_margin: rule.source,
       sale_price: salePrice,
       creates_expected_purchase: createsExpectedPurchase,
+      included,
+      requirement_level: requirementLevel,
+      source_reference: optionalText(source.source_reference)?.slice(0, 500) || null,
+      ai_generated: source.ai_generated === true,
+      ai_confidence: source.ai_generated === true ? Math.max(0, Math.min(numeric(source.ai_confidence), 1)) : null,
       sort_order: nextSortOrder + index,
     });
   }
@@ -119,8 +126,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const { data, error } = await db.from("budget_lines").insert(inserts).select("*");
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
 
-  const importedCost = inserts.reduce((sum, item) => sum + numeric(item.cost_budget), 0);
-  const importedSale = inserts.reduce((sum, item) => sum + numeric(item.sale_price), 0);
+  const importedCost = inserts.reduce((sum, item) => sum + (item.included === false ? 0 : numeric(item.cost_budget)), 0);
+  const importedSale = inserts.reduce((sum, item) => sum + (item.included === false ? 0 : numeric(item.sale_price)), 0);
   const recalculatedCost = existingCost + importedCost;
   const recalculatedSale = existingSale + importedSale;
   const { error: totalsError } = await db.from("proposal_versions")
@@ -151,7 +158,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     .eq("organization_id", organizationId)
     .maybeSingle();
   if (versionError || !version) return NextResponse.json({ ok: false, error: versionError?.message || "proposal_version_not_found" }, { status: versionError ? 400 : 404 });
-  if (version.locked || version.status === "accepted") return NextResponse.json({ ok: false, error: "proposal_version_locked" }, { status: 409 });
+  if (version.locked || !["draft", "internal_review"].includes(String(version.status))) return NextResponse.json({ ok: false, error: "proposal_version_locked" }, { status: 409 });
 
   const { data: lines, error: linesError } = await db.from("budget_lines")
     .select("*")
@@ -179,9 +186,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (updateError) return NextResponse.json({ ok: false, error: updateError.message }, { status: 400 });
   const updatedLines = results.map((result) => result.data).filter(Boolean);
 
-  const totalCost = updatedLines.reduce((sum, line) => sum + numeric(line?.cost_budget), 0);
-  const totalRealCost = updatedLines.reduce((sum, line) => sum + (line?.cost_real === null || line?.cost_real === undefined ? numeric(line?.cost_budget) : numeric(line.cost_real)), 0);
-  const totalSale = updatedLines.reduce((sum, line) => sum + numeric(line?.sale_price), 0);
+  const includedLines = updatedLines.filter((line) => line?.included !== false);
+  const totalCost = includedLines.reduce((sum, line) => sum + numeric(line?.cost_budget), 0);
+  const totalRealCost = includedLines.reduce((sum, line) => sum + (line?.cost_real === null || line?.cost_real === undefined ? numeric(line?.cost_budget) : numeric(line.cost_real)), 0);
+  const totalSale = includedLines.reduce((sum, line) => sum + numeric(line?.sale_price), 0);
   const budgetedProfit = totalSale - totalCost;
   const realProfit = totalSale - totalRealCost;
   const { error: totalsError } = await db.from("proposal_versions").update({

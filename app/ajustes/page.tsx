@@ -6,8 +6,8 @@ import { listOrganizationSecretStatuses } from "@/lib/organization-secrets-serve
 import type { LegalDocumentRow } from "./LegalDocumentsPanel";
 import { ProductionSettings } from "./ProductionSettings";
 
-type SettingsTab = "general" | "appearance" | "users" | "legal" | "integrations" | "operations" | "security";
-const validTabs = new Set<SettingsTab>(["general", "appearance", "users", "legal", "integrations", "operations", "security"]);
+type SettingsTab = "general" | "appearance" | "users" | "legal" | "integrations" | "ai" | "operations" | "security";
+const validTabs = new Set<SettingsTab>(["general", "appearance", "users", "legal", "integrations", "ai", "operations", "security"]);
 
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ tab?: string | string[] }> }) {
   const session = await requireAppPermission("settings.view");

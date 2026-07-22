@@ -85,7 +85,7 @@ export async function resolvePublicProposal(token: string): Promise<PublicPropos
     if (!["sent", "accepted", "internal_review"].includes(String(versionRow.status))) return { ok: false, reason: "not_sent" };
 
     const { data: caseRow } = await supabase.from("cases").select("id,title,destination,trip_start,trip_end,accepted_value,clients(display_name,email)").eq("id", proposalRow.case_id).single();
-    const { data: lines } = await supabase.from("budget_lines").select("service_type_code,description_public,sale_price").eq("proposal_version_id", payload.versionId).order("sort_order", { ascending: true }).order("created_at", { ascending: true });
+    const { data: lines } = await supabase.from("budget_lines").select("service_type_code,description_public,sale_price").eq("proposal_version_id", payload.versionId).eq("included", true).order("sort_order", { ascending: true }).order("created_at", { ascending: true });
 
     return { ok: true, mode: "supabase", tokenHash, proposal: mapSupabaseProposal({ caseRow: caseRow || {}, versionRow, lines: lines || [] }), proposalId: payload.proposalId, versionId: payload.versionId, organizationId: String(proposalRow.organization_id), status: String(proposalRow.status), accepted, expiresAt: payload.exp };
   } catch (error) {

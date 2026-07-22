@@ -165,10 +165,13 @@ const payment = read("app/api/payments/manual/route.ts");
 for (const token of ["paymentPreflight", "proposal_not_accepted", "signed_contract_required", "payment_reference_required", "confirm_external_payment"]) assert(payment.includes(token), `Missing payment token: ${token}`);
 
 const contract = read("app/api/routsify/cases/[caseId]/contracts/route.ts");
-for (const token of ["accepted_proposal_required", "create_contract_version_with_legal_document", "legal_pdf_required_before_send", "legal_document_id", "record_contract_signature", "contract_review_confirmation_required", "routsify_admin_manual_confirmation", "contracts.block_missing_fiscal", "clients.fiscal.required", "client_fiscal_data_required"]) assert(contract.includes(token), `Missing contract workflow token: ${token}`);
+for (const token of ["accepted_proposal_required", "create_contract_version_for_proposal", "proposal_version_id", "legal_pdf_required_before_send", "legal_document_id", "record_contract_signature", "contract_review_confirmation_required", "routsify_admin_manual_confirmation", "contracts.block_missing_fiscal", "clients.fiscal.required", "client_fiscal_data_required"]) assert(contract.includes(token), `Missing contract workflow token: ${token}`);
 
 const budget = read("app/propuestas/BudgetManager.tsx");
-for (const token of ["Importar tabla", "service_type_code", "description_public", "margin_applied", "creates_expected_purchase", "Descargar plantilla"]) assert(budget.includes(token), `Missing budget editor token: ${token}`);
+for (const token of ["Importar tabla", "Importar con AI", "service_type_code", "description_public", "margin_applied", "creates_expected_purchase", "Descargar plantilla", "source_version_id"]) assert(budget.includes(token), `Missing budget editor token: ${token}`);
+
+const aiItinerary = read("lib/ai-itinerary-import-server.ts");
+for (const token of ["input_file", "json_schema", "store: false", "ai.itinerary.model", "ai.itinerary.prompt", "AI_ITINERARY_MAX_BYTES", "proposal_version_is_not_selected"]) assert(aiItinerary.includes(token), `Missing AI itinerary token: ${token}`);
 
 const bulkLines = read("app/api/routsify/proposals/[proposalId]/lines/bulk/route.ts");
 for (const token of ["rows_must_be_between_1_and_200", "resolveMarginRule", "proposal_version_locked", "creates_expected_purchase"]) assert(bulkLines.includes(token), `Missing bulk budget token: ${token}`);

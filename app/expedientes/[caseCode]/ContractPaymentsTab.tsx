@@ -1,10 +1,10 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import type { CaseRow, ContractRow, FiscalRow, LegalDocumentRow, PaymentRow } from "./workspace-types";
+import type { CaseRow, ContractRow, FiscalRow, LegalDocumentRow, PaymentRow, ProposalRow } from "./workspace-types";
 import { formatDateTime, money, numberValue } from "./workspace-types";
 
-const emptyContract = { title: "Contrato de viaje", status: "draft", legal_document_id: "", notes: "", signer_name: "", signer_email: "" };
+const emptyContract = { title: "Contrato de viaje", status: "draft", legal_document_id: "", proposal_version_id: "", notes: "", signer_name: "", signer_email: "" };
 const emptyPayment = { amount: "", reference: "", method: "transfer", receivedAt: "", notes: "" };
 const contractLabels: Record<string, string> = { draft: "Borrador", sent: "Enviado", signed: "Firmado", cancelled: "Cancelado" };
 const paymentLabels: Record<string, string> = { confirmed: "Confirmado", paid: "Pagado", received: "Recibido", pending: "Pendiente" };
@@ -13,12 +13,13 @@ function contractLegalDocument(item: ContractRow) {
   return Array.isArray(item.legal_documents) ? item.legal_documents[0] || null : item.legal_documents || null;
 }
 
-export function ContractPaymentsTab({ caseRow, initialContracts = [], initialLegalDocuments = [], initialPayments = [], initialFiscal = [], mode = "all", onContractsChange, onPaymentsChange, onFiscalChange }: {
+export function ContractPaymentsTab({ caseRow, initialContracts = [], initialLegalDocuments = [], initialPayments = [], initialFiscal = [], initialProposals = [], mode = "all", onContractsChange, onPaymentsChange, onFiscalChange }: {
   caseRow: CaseRow;
   initialContracts?: ContractRow[];
   initialLegalDocuments?: LegalDocumentRow[];
   initialPayments?: PaymentRow[];
   initialFiscal?: FiscalRow[];
+  initialProposals?: ProposalRow[];
   mode?: "all" | "contracts" | "payments";
   onContractsChange?: (contracts: ContractRow[]) => void;
   onPaymentsChange?: (payments: PaymentRow[]) => void;
@@ -30,7 +31,12 @@ export function ContractPaymentsTab({ caseRow, initialContracts = [], initialLeg
   const travelContractPdfs = initialLegalDocuments.filter((item) => item.document_type === "travel_contract" && item.status === "ready");
   const supportingLegalPdfs = initialLegalDocuments.filter((item) => item.document_type !== "travel_contract" && item.status === "ready" && item.is_active);
   const defaultLegalDocumentId = travelContractPdfs.find((item) => item.is_active)?.id || travelContractPdfs[0]?.id || "";
-  const defaultContract = { ...emptyContract, legal_document_id: defaultLegalDocumentId, signer_name: caseRow.clients?.display_name || "", signer_email: caseRow.clients?.email || "" };
+  const acceptedVersions = useMemo(() => initialProposals.flatMap((proposal) => (proposal.proposal_versions || [])
+    .filter((version) => version.status === "accepted" && version.locked && version.id)
+    .map((version) => ({ ...version, proposalId: proposal.id, selected: proposal.current_version_id === version.id })))
+    .sort((left, right) => Number(right.version_number || 0) - Number(left.version_number || 0)), [initialProposals]);
+  const defaultProposalVersionId = acceptedVersions.find((version) => version.selected)?.id || acceptedVersions[0]?.id || "";
+  const defaultContract = { ...emptyContract, legal_document_id: defaultLegalDocumentId, proposal_version_id: defaultProposalVersionId, signer_name: caseRow.clients?.display_name || "", signer_email: caseRow.clients?.email || "" };
   const [contractDraft, setContractDraft] = useState(defaultContract);
   const [editingContractId, setEditingContractId] = useState<string | null>(null);
   const [paymentDraft, setPaymentDraft] = useState(emptyPayment);
@@ -52,13 +58,14 @@ export function ContractPaymentsTab({ caseRow, initialContracts = [], initialLeg
 
   function startEdit(item: ContractRow) {
     setEditingContractId(item.id);
-    setContractDraft({ title: item.title || "Contrato de viaje", status: item.status || "draft", legal_document_id: item.legal_document_id || defaultLegalDocumentId, notes: item.notes || "", signer_name: caseRow.clients?.display_name || "", signer_email: caseRow.clients?.email || "" });
+    setContractDraft({ title: item.title || "Contrato de viaje", status: item.status || "draft", legal_document_id: item.legal_document_id || defaultLegalDocumentId, proposal_version_id: item.proposal_version_id || defaultProposalVersionId, notes: item.notes || "", signer_name: caseRow.clients?.display_name || "", signer_email: caseRow.clients?.email || "" });
     setMessage(null);
   }
 
   async function saveContract(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!contractDraft.title.trim()) return setMessage("Indica el título del contrato.");
+    if (["sent", "signed"].includes(contractDraft.status) && !contractDraft.proposal_version_id) return setMessage("Selecciona la versión aceptada que debe incorporarse al contrato.");
     if (["sent", "signed"].includes(contractDraft.status) && !contractDraft.legal_document_id) return setMessage("Selecciona el PDF del contrato antes de enviarlo o registrar su firma.");
     if (contractDraft.status === "signed" && !contractDraft.signer_name.trim()) return setMessage("Indica quién ha firmado el contrato.");
     if (contractDraft.status === "signed" && !window.confirm(`¿Confirmas que ${contractDraft.signer_name.trim()} ha firmado el contrato revisado? Se guardará evidencia inmutable de esta confirmación.`)) return;
@@ -111,6 +118,8 @@ export function ContractPaymentsTab({ caseRow, initialContracts = [], initialLeg
       <form className="form" onSubmit={saveContract}>
         <label>Título<input className="input" required value={contractDraft.title} onChange={(event) => setContractDraft((current) => ({ ...current, title: event.target.value }))} /></label>
         <label>Estado<select value={contractDraft.status} onChange={(event) => setContractDraft((current) => ({ ...current, status: event.target.value }))}><option value="draft">Borrador</option><option value="sent">Enviado</option><option value="signed">Firmado</option><option value="cancelled">Cancelado</option></select></label>
+        <label>Versión final del presupuesto{["sent", "signed"].includes(contractDraft.status) ? " *" : ""}<select required={["sent", "signed"].includes(contractDraft.status)} value={contractDraft.proposal_version_id} onChange={(event) => setContractDraft((current) => ({ ...current, proposal_version_id: event.target.value }))}><option value="">Selecciona una versión aceptada</option>{acceptedVersions.map((version) => <option key={version.id} value={version.id}>Versión {version.version_number || "—"} · {money(version.total_sale, caseRow.currency || "EUR")}{version.selected ? " · seleccionada" : ""}</option>)}</select><small>El contrato conservará una copia inmutable de esta versión, sus servicios y su importe.</small></label>
+        {!acceptedVersions.length ? <p className="form-warning">Acepta primero la versión final del presupuesto.</p> : null}
         <label>PDF del contrato{["sent", "signed"].includes(contractDraft.status) ? " *" : ""}<select required={["sent", "signed"].includes(contractDraft.status)} value={contractDraft.legal_document_id} onChange={(event) => setContractDraft((current) => ({ ...current, legal_document_id: event.target.value }))}><option value="">Selecciona un PDF legal</option>{travelContractPdfs.map((item) => <option key={item.id} value={item.id}>{item.title} · {item.version_label}{item.is_active ? " · vigente" : ""}</option>)}</select></label>
         {travelContractPdfs.length ? <p className="field-help">Documentos complementarios vigentes: {supportingLegalPdfs.length ? supportingLegalPdfs.map((item) => `${item.title} (${item.version_label})`).join(" · ") : "ninguno"}.</p> : <p className="form-warning">Antes de enviar el contrato, adjunta su PDF en <a href="/ajustes?tab=legal">Ajustes → Documentación legal</a>.</p>}
         {contractDraft.status === "signed" ? <div className="grid grid-2"><label>Firmante *<input className="input" required value={contractDraft.signer_name} onChange={(event) => setContractDraft((current) => ({ ...current, signer_name: event.target.value }))} /></label><label>Email del firmante<input className="input" type="email" value={contractDraft.signer_email} onChange={(event) => setContractDraft((current) => ({ ...current, signer_email: event.target.value }))} /></label></div> : null}
