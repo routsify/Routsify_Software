@@ -91,6 +91,10 @@ async function filloutRequest<T>(apiKey: string, path: string): Promise<{ data: 
         ? String((parsed as { message?: unknown }).message || "")
         : typeof parsed === "string" ? parsed : "";
       lastError = message || `fillout_http_${response.status}`;
+      const shouldUseEuOrigin = response.status === 400
+        && !origin.includes("eu-api.fillout.com")
+        && message.toLowerCase().includes("eu-api.fillout.com");
+      if (shouldUseEuOrigin) continue;
       if (![401, 403, 404].includes(response.status)) break;
     } catch (error) {
       lastError = error instanceof Error && error.name === "AbortError" ? "fillout_timeout" : error instanceof Error ? error.message : "fillout_network_error";

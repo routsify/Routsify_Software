@@ -58,13 +58,13 @@ async function ensureClientContact(organizationId: string, clientId: string, upd
 async function ensureSupplierContact(organizationId: string, supplierId: string) {
   const db = getSupabaseAdminClient();
   const { data: supplier, error } = await db.from("suppliers")
-    .select("id,name,email,phone,tax_id,billing_address,country,holded_contact_id")
+    .select("id,name,fiscal_name,email,phone,tax_id,billing_address,country,holded_contact_id")
     .eq("organization_id", organizationId).eq("id", supplierId).maybeSingle();
   if (error || !supplier) throw new Error(error?.message || "supplier_not_found");
   if (supplier.holded_contact_id) return String(supplier.holded_contact_id);
   const { endpoints } = await holdedConfiguration(organizationId);
   const result = await holdedRequest({ organizationId, method: "POST", path: endpoints.contacts, body: buildHoldedContactPayload({
-    name: String(supplier.name), email: supplier.email, phone: supplier.phone, taxId: supplier.tax_id,
+    name: String(supplier.fiscal_name || supplier.name), email: supplier.email, phone: supplier.phone, taxId: supplier.tax_id,
     billingAddress: supplier.billing_address, countryCode: supplier.country, type: "supplier", isPerson: false,
   }) });
   if (!result.ok) throw failure(result);
@@ -174,7 +174,18 @@ async function payment(row: WorkerRow): Promise<WorkerOutcome> {
 }
 
 export async function handleHoldedOutbox(row: WorkerRow): Promise<WorkerOutcome> {
-  if (row.event_type === "contact.sync") return { status: "done", message: "Contacto creado o actualizado en Holded v2.", metadata: { holded_contact_id: await ensureClientContact(row.organization_id, text(row.payload.client_id), true) } };
+  if (row.event_type === "contact.sync") {
+    const clientId = text(row.payload.client_id);
+    if (!clientId) throw new Error("client_id_required");
+    try {
+      return { status: "done", message: "Contacto creado o actualizado en Holded v2.", metadata: { holded_contact_id: await ensureClientContact(row.organization_id, clientId, true) } };
+    } catch (caught) {
+      if (caught instanceof Error && caught.message === "client_not_found") {
+        return { status: "done", message: "Sincronización cancelada: el cliente ya no existe.", metadata: { cancelled: true, client_id: clientId } };
+      }
+      throw caught;
+    }
+  }
   if (["estimate.sync", "estimate.create"].includes(row.event_type)) return estimate(row);
   if (row.event_type === "proforma.create") return billing(row, "proformas");
   if (row.event_type === "invoice.final.create") return billing(row, "invoices");

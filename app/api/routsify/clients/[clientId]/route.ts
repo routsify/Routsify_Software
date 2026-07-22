@@ -88,3 +88,84 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
   return NextResponse.json({ ok: true, data });
 }
+
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ clientId: string }> }) {
+  const access = await requireInternalAccess(request);
+  if (!access.ok) return jsonAccessDenied(access);
+  if (!hasSupabaseAdminEnv()) return NextResponse.json({ ok: false, error: "supabase_admin_not_configured" }, { status: 503 });
+
+  const { clientId } = await params;
+  const organizationId = await resolveOrganizationId(request, access.organizationId);
+  const supabase = getSupabaseAdminClient();
+  const { data: client, error: clientError } = await supabase.from("clients")
+    .select("*")
+    .eq("id", clientId)
+    .eq("organization_id", organizationId)
+    .maybeSingle();
+  if (clientError) return NextResponse.json({ ok: false, error: clientError.message }, { status: 400 });
+  if (!client) return NextResponse.json({ ok: false, error: "client_not_found" }, { status: 404 });
+
+  const [cases, documents, billing, fiscal] = await Promise.all([
+    supabase.from("cases").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("client_id", clientId),
+    supabase.from("documents").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("owner_type", "client").eq("owner_id", clientId),
+    supabase.from("billing_documents").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("client_id", clientId),
+    supabase.from("fiscal_documents").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("client_id", clientId),
+  ]);
+  const dependencyError = [cases.error, documents.error, billing.error, fiscal.error].find(Boolean);
+  if (dependencyError) return NextResponse.json({ ok: false, error: dependencyError.message }, { status: 400 });
+
+  const blockers = {
+    cases: cases.count || 0,
+    documents: documents.count || 0,
+    fiscal_documents: (billing.count || 0) + (fiscal.count || 0),
+  };
+  if (Object.values(blockers).some((count) => count > 0)) {
+    return NextResponse.json({ ok: false, error: "client_has_protected_history", blockers }, { status: 409 });
+  }
+
+  const { error: deleteError } = await supabase.from("clients")
+    .delete()
+    .eq("id", clientId)
+    .eq("organization_id", organizationId);
+  if (deleteError) return NextResponse.json({ ok: false, error: deleteError.message }, { status: 400 });
+
+  const deletedAt = new Date().toISOString();
+  const { data: cancelledOutbox, error: cancelOutboxError } = await supabase
+    .from("integration_outbox")
+    .update({
+      status: "done",
+      sync_status: "synced",
+      processed_at: deletedAt,
+      last_synced_at: deletedAt,
+      last_error: null,
+      next_action: "Sincronización cancelada: el cliente se eliminó antes de procesar el evento.",
+      next_attempt_at: null,
+      locked_at: null,
+      locked_by: null,
+    })
+    .eq("organization_id", organizationId)
+    .eq("event_type", "contact.sync")
+    .in("status", ["pending", "queued", "failed"])
+    .contains("payload", { client_id: clientId })
+    .select("id");
+
+  await supabase.from("audit_log").insert({
+    organization_id: organizationId,
+    actor_id: await getRequestUserId(request),
+    action: "client.deleted",
+    entity_type: "client",
+    entity_id: clientId,
+    before_data: client,
+    after_data: {
+      deleted: true,
+      cancelled_contact_sync_events: cancelledOutbox?.length || 0,
+      contact_sync_cleanup_error: cancelOutboxError?.message || null,
+    },
+  });
+
+  return NextResponse.json({
+    ok: true,
+    deleted: { id: clientId, display_name: client.display_name },
+    cancelled_contact_sync_events: cancelledOutbox?.length || 0,
+  });
+}

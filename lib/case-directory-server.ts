@@ -222,7 +222,10 @@ export async function listCaseDirectoryPage(
     const realCost = realCostFromVersion || purchases.filter((purchase) => text(purchase.status) === "approved").reduce((sum, purchase) => sum + numberValue(purchase.approved_cost || purchase.invoice_total), 0);
     const budgetedProfit = numberValue(version?.budgeted_profit) || Math.max(0, acceptedValue - budgetedCost);
     const realProfit = numberValue(version?.real_profit) || (acceptedValue ? acceptedValue - realCost : 0);
-    const marginPct = numberValue(version?.real_margin_pct) || (acceptedValue > 0 ? realProfit / acceptedValue * 100 : 0);
+    const storedMargin = numberValue(version?.real_margin_pct);
+    const marginPct = storedMargin
+      ? (Math.abs(storedMargin) <= 1 ? storedMargin * 100 : storedMargin)
+      : (acceptedValue > 0 ? realProfit / acceptedValue * 100 : 0);
     const days = daysTo(caseRow.trip_start);
     const healthResult = healthFor({ caseRow, openTasks, pendingPurchases, travelers, documents, contracts, paidTotal, acceptedValue, marginPct, minimumMargin, daysToTrip: days });
     const client = one(caseRow.clients);

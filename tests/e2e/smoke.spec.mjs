@@ -76,7 +76,11 @@ test.describe("authenticated critical-path smoke", () => {
     await signIn(page);
     await page.goto("/solicitudes?status=archived");
     await expect(page.getByRole("heading", { name: "Solicitudes", exact: true })).toBeVisible();
-    await expect(page.getByRole("link", { name: /Archivadas/ }).first()).toBeVisible();
+    await expect(page.getByRole("link", { name: /Formulario \+ llamada/ }).first()).toBeVisible();
+    await expect(page.getByRole("link", { name: /Solo llamada/ }).first()).toBeVisible();
+    await expect(page.getByRole("link", { name: /Solo formulario/ }).first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Actualizar ahora", exact: true })).toBeVisible();
+    await expect(page.getByLabel("Estado")).toHaveValue("archived");
     await expect(page.getByText("Solicitud seleccionada", { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Compró", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "No compró", exact: true })).toBeVisible();
@@ -104,6 +108,11 @@ test.describe("authenticated critical-path smoke", () => {
     expect(searchResponse.ok()).toBeTruthy();
     await expect(page.getByText(/Mostrando \d+-\d+ de \d+ coincidencias/)).toBeVisible();
     await expect(page.getByText("info@routsify.com", { exact: true }).first()).toBeVisible();
+    const actions = page.getByLabel(/Acciones para/).first();
+    await expect(actions).toBeVisible();
+    await actions.click();
+    await expect(page.getByRole("button", { name: "Eliminar", exact: true }).first()).toBeVisible();
+    await actions.click();
     await filters.getByRole("button", { name: "Limpiar", exact: true }).click();
 
     await expect(page.getByRole("link", { name: "Descargar plantilla", exact: true })).toHaveAttribute("href", "/api/routsify/clients/import/template");

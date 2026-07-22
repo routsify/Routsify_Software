@@ -4,7 +4,7 @@ import { jsonAccessDenied, requireInternalAccess } from "@/lib/api-security";
 export async function GET(request: NextRequest) {
   const access = await requireInternalAccess(request);
   if (!access.ok) return jsonAccessDenied(access);
-  const csv = "nombre,categoria,email,telefono,pais,nif,direccion_fiscal,activo,notas\r\n";
+  const csv = "nombre_interno,nombre_fiscal,categoria,email,telefono,pais,nif,direccion_fiscal,activo,notas\r\n";
   return new NextResponse(`\uFEFF${csv}`, {
     status: 200,
     headers: {

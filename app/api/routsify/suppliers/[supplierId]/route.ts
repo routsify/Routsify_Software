@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { jsonAccessDenied, requireInternalAccess } from "@/lib/api-security";
 import { getRequestUserId } from "@/lib/request-context";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
+import { attachSupplierDefaultMargins, saveSupplierDefaultMargin } from "@/lib/supplier-margin-server";
 
 function text(value: unknown, max = 240) {
   const result = String(value ?? "").trim();
@@ -18,7 +19,7 @@ function stringList(value: unknown, maxItems = 30, maxLength = 80) {
   return [...new Set(source.map((item) => String(item ?? "").trim().slice(0, maxLength)).filter(Boolean))].slice(0, maxItems);
 }
 
-const select = "id,name,category,email,phone,tax_id,country,billing_address,notes,active,holded_contact_id,preferred,risk_level,reliability_score,average_rating,payment_terms_days,default_currency,service_regions,cancellation_policy,emergency_contact,profile_updated_at,created_at,updated_at";
+const select = "id,name,fiscal_name,category,email,phone,tax_id,country,billing_address,notes,active,holded_contact_id,preferred,risk_level,reliability_score,average_rating,payment_terms_days,default_currency,service_regions,cancellation_policy,emergency_contact,profile_updated_at,created_at,updated_at";
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ supplierId: string }> }) {
   const access = await requireInternalAccess(request);
@@ -27,6 +28,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== "object") return NextResponse.json({ ok: false, error: "invalid_body" }, { status: 400 });
   const source = body as Record<string, unknown>;
+  const marginValue = source.default_margin_pct;
+  const margin = marginValue === null || marginValue === undefined || marginValue === "" ? null : Number(String(marginValue).replace(",", "."));
+  if ("default_margin_pct" in source && margin !== null && (!Number.isFinite(margin) || margin < 0 || margin >= 100)) return NextResponse.json({ ok: false, error: "invalid_supplier_margin" }, { status: 400 });
   const db = getSupabaseAdminClient();
   const { data: existing, error: existingError } = await db.from("suppliers").select(select).eq("id", supplierId).eq("organization_id", access.organizationId).maybeSingle();
   if (existingError) return NextResponse.json({ ok: false, error: existingError.message }, { status: 400 });
@@ -38,6 +42,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const name = text(source.name, 160);
     if (!name || name.length < 2) return NextResponse.json({ ok: false, error: "supplier_name_required" }, { status: 400 });
     patch.name = name;
+  }
+  if ("fiscal_name" in source) {
+    const fiscalName = text(source.fiscal_name, 180);
+    if (!fiscalName || fiscalName.length < 2) return NextResponse.json({ ok: false, error: "supplier_fiscal_name_required" }, { status: 400 });
+    patch.fiscal_name = fiscalName;
   }
   if ("category" in source) patch.category = text(source.category, 100);
   if ("email" in source) patch.email = text(source.email, 240);
@@ -86,7 +95,60 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if (error?.code === "23505") return NextResponse.json({ ok: false, error: "supplier_already_exists" }, { status: 409 });
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
 
+  try {
+    if ("default_margin_pct" in source) await saveSupplierDefaultMargin({ organizationId: access.organizationId, supplierId, supplierName: String(data.name), value: margin });
+  } catch (caught) {
+    return NextResponse.json({ ok: false, error: caught instanceof Error ? caught.message : "supplier_margin_save_failed" }, { status: 400 });
+  }
+  const [enriched] = await attachSupplierDefaultMargins(access.organizationId, [data]);
+
   const actorId = await getRequestUserId(request);
-  await db.from("audit_log").insert({ organization_id: access.organizationId, actor_id: actorId, entity_type: "supplier", entity_id: supplierId, action: "supplier.updated", before_data: existing, after_data: data });
-  return NextResponse.json({ ok: true, data });
+  await db.from("audit_log").insert({ organization_id: access.organizationId, actor_id: actorId, entity_type: "supplier", entity_id: supplierId, action: "supplier.updated", before_data: existing, after_data: enriched });
+  return NextResponse.json({ ok: true, data: enriched });
+}
+
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ supplierId: string }> }) {
+  const access = await requireInternalAccess(request);
+  if (!access.ok) return jsonAccessDenied(access);
+
+  const { supplierId } = await params;
+  const organizationId = access.organizationId;
+  const db = getSupabaseAdminClient();
+  const { data: supplier, error: supplierError } = await db.from("suppliers")
+    .select("id,name,holded_contact_id,created_at")
+    .eq("id", supplierId)
+    .eq("organization_id", organizationId)
+    .maybeSingle();
+  if (supplierError) return NextResponse.json({ ok: false, error: supplierError.message }, { status: 400 });
+  if (!supplier) return NextResponse.json({ ok: false, error: "supplier_not_found" }, { status: 404 });
+  if (supplier.holded_contact_id) return NextResponse.json({ ok: false, error: "supplier_has_protected_history", blockers: { holded: 1 } }, { status: 409 });
+
+  const [purchases, budgetLines, invoices, communications, services, incidents, outbox] = await Promise.all([
+    db.from("expected_purchases").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("supplier_id", supplierId),
+    db.from("budget_lines").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("supplier_id", supplierId),
+    db.from("supplier_invoices").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("supplier_id", supplierId),
+    db.from("communication_followups").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("supplier_id", supplierId),
+    db.from("supplier_services").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("supplier_id", supplierId),
+    db.from("supplier_incidents").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("supplier_id", supplierId),
+    db.from("integration_outbox").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("entity_id", supplierId),
+  ]);
+  const dependencyError = [purchases, budgetLines, invoices, communications, services, incidents, outbox].find((result) => result.error)?.error;
+  if (dependencyError) return NextResponse.json({ ok: false, error: dependencyError.message }, { status: 400 });
+  const blockers = {
+    purchases: purchases.count || 0,
+    budget_lines: budgetLines.count || 0,
+    invoices: invoices.count || 0,
+    communications: communications.count || 0,
+    services: services.count || 0,
+    incidents: incidents.count || 0,
+    outbox: outbox.count || 0,
+  };
+  if (Object.values(blockers).some((value) => value > 0)) {
+    return NextResponse.json({ ok: false, error: "supplier_has_protected_history", blockers }, { status: 409 });
+  }
+
+  const { error: deleteError } = await db.from("suppliers").delete().eq("id", supplierId).eq("organization_id", organizationId);
+  if (deleteError) return NextResponse.json({ ok: false, error: deleteError.code === "23503" ? "supplier_has_protected_history" : deleteError.message }, { status: deleteError.code === "23503" ? 409 : 400 });
+  await db.from("audit_log").insert({ organization_id: organizationId, actor_id: access.actorId, entity_type: "supplier", entity_id: supplierId, action: "supplier.deleted", before_data: supplier });
+  return NextResponse.json({ ok: true, data: { id: supplierId } });
 }

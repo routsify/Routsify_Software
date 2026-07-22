@@ -13,9 +13,11 @@ export async function GET(request: NextRequest) {
   const access = await requireInternalAccess(request);
   if (!access.ok) return jsonAccessDenied(access);
   const organizationId = await resolveOrganizationId(request, access.organizationId);
-  const period = Number(request.nextUrl.searchParams.get("period") || 365);
+  const range = request.nextUrl.searchParams.get("range") || request.nextUrl.searchParams.get("period") || "30";
+  const from = request.nextUrl.searchParams.get("from") || undefined;
+  const to = request.nextUrl.searchParams.get("to") || undefined;
   try {
-    const report = await loadBusinessIntelligence(organizationId, period);
+    const report = await loadBusinessIntelligence(organizationId, { preset: range, from, to });
     const lines = [
       row(["Informe de dirección Routsify", report.periodLabel]),
       row(["Generado", report.generatedAt]),
@@ -46,7 +48,7 @@ export async function GET(request: NextRequest) {
       row(["PROVEEDORES", "COMPRAS", "PENDIENTES", "PRESUPUESTADO", "REAL", "DESVIACIÓN"]),
       ...report.suppliers.map((item) => row([item.label, item.purchases, item.pending, item.sale, item.cost, item.deviation])),
     ];
-    return new NextResponse(`\uFEFF${lines.join("\r\n")}`, { headers: { "content-type": "text/csv; charset=utf-8", "content-disposition": `attachment; filename="informe_routsify_${report.period || "historico"}.csv"`, "cache-control": "no-store" } });
+    return new NextResponse(`\uFEFF${lines.join("\r\n")}`, { headers: { "content-type": "text/csv; charset=utf-8", "content-disposition": `attachment; filename="informe_routsify_${report.startDate}_${report.endDate}.csv"`, "cache-control": "no-store" } });
   } catch (error) {
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "report_export_failed" }, { status: 400 });
   }

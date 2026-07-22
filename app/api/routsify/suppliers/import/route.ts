@@ -9,7 +9,7 @@ export const maxDuration = 300;
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
 
 function importErrorStatus(message: string) {
-  if (["empty_import_file", "import_file_has_no_rows", "import_name_column_required"].includes(message)) return 400;
+  if (["empty_import_file", "import_file_has_no_rows", "import_name_column_required", "import_fiscal_name_column_required"].includes(message)) return 400;
   if (message === "import_row_limit_exceeded") return 413;
   return 500;
 }

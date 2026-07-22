@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonAccessDenied, requireInternalAccess } from "@/lib/api-security";
-import { hasSupabaseAdminEnv } from "@/lib/supabase-admin";
+import { getSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase-admin";
 import { resolveOrganizationId } from "@/lib/request-context";
 import { getExpectedPurchase, transitionExpectedPurchase } from "@/lib/expected-purchases-server";
 
@@ -38,4 +38,42 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     approvedCost,
   });
   return NextResponse.json(result, { status: result.ok ? 200 : result.error === "purchase_not_found" ? 404 : 400 });
+}
+
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ purchaseId: string }> }) {
+  const access = await requireInternalAccess(request);
+  if (!access.ok) return jsonAccessDenied(access);
+  if (!hasSupabaseAdminEnv()) return NextResponse.json({ ok: false, error: "supabase_admin_not_configured" }, { status: 503 });
+
+  const { purchaseId } = await params;
+  const organizationId = await resolveOrganizationId(request, access.organizationId);
+  const db = getSupabaseAdminClient();
+  const { data: purchase, error: purchaseError } = await db.from("expected_purchases")
+    .select("id,case_id,supplier_id,status,proposal_version_id,budget_line_id,holded_purchase_id,service,supplier_name,created_at")
+    .eq("id", purchaseId)
+    .eq("organization_id", organizationId)
+    .maybeSingle();
+  if (purchaseError) return NextResponse.json({ ok: false, error: purchaseError.message }, { status: 400 });
+  if (!purchase) return NextResponse.json({ ok: false, error: "purchase_not_found" }, { status: 404 });
+  if (purchase.status !== "expected" || purchase.proposal_version_id || purchase.budget_line_id || purchase.holded_purchase_id) {
+    return NextResponse.json({ ok: false, error: "purchase_has_protected_history", blockers: { source_or_status: 1 } }, { status: 409 });
+  }
+
+  const [invoices, communications, matches, outbox] = await Promise.all([
+    db.from("supplier_invoices").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("expected_purchase_id", purchaseId),
+    db.from("communication_followups").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("purchase_id", purchaseId),
+    db.from("purchase_match_candidates").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("expected_purchase_id", purchaseId),
+    db.from("integration_outbox").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("entity_id", purchaseId),
+  ]);
+  const dependencyError = [invoices, communications, matches, outbox].find((result) => result.error)?.error;
+  if (dependencyError) return NextResponse.json({ ok: false, error: dependencyError.message }, { status: 400 });
+  const blockers = { invoices: invoices.count || 0, communications: communications.count || 0, matches: matches.count || 0, outbox: outbox.count || 0 };
+  if (Object.values(blockers).some((value) => value > 0)) {
+    return NextResponse.json({ ok: false, error: "purchase_has_protected_history", blockers }, { status: 409 });
+  }
+
+  const { error: deleteError } = await db.from("expected_purchases").delete().eq("id", purchaseId).eq("organization_id", organizationId);
+  if (deleteError) return NextResponse.json({ ok: false, error: deleteError.code === "23503" ? "purchase_has_protected_history" : deleteError.message }, { status: deleteError.code === "23503" ? 409 : 400 });
+  await db.from("audit_log").insert({ organization_id: organizationId, actor_id: access.actorId, entity_type: "expected_purchase", entity_id: purchaseId, action: "expected_purchase.deleted", before_data: purchase });
+  return NextResponse.json({ ok: true, data: { id: purchaseId } });
 }

@@ -83,8 +83,27 @@ export async function confirmManualPaymentLink(input: {
     payment_payload: { notes: input.notes || null, actor_id: input.actorId, confirmation_mode: "manual", payment_link_id: link.id },
   });
   if (rpcError) throw new Error(rpcError.message);
+  const rpcResult = result && typeof result === "object" && !Array.isArray(result)
+    ? result as Record<string, unknown>
+    : {};
   const now = new Date().toISOString();
-  await supabase.from("payment_links").update({ status: "confirmed", confirmed_at: receivedAt, updated_at: now }).eq("id", link.id).eq("organization_id", input.organizationId);
-  await supabase.from("payments").update({ payment_link_id: link.id, source: "manual", confirmed_by: input.actorId, updated_at: now }).eq("organization_id", input.organizationId).eq("case_id", link.case_id).eq("payment_reference", reference);
-  return { payment: result, paymentLink: { ...link, status: "confirmed", confirmed_at: receivedAt }, duplicate: false };
+  const { error: linkError } = await supabase.from("payment_links")
+    .update({ status: "confirmed", confirmed_at: receivedAt, updated_at: now })
+    .eq("id", link.id)
+    .eq("organization_id", input.organizationId);
+  if (linkError) throw new Error(linkError.message);
+
+  let paymentQuery = supabase.from("payments")
+    .update({ payment_link_id: link.id, source: "manual", confirmed_by: input.actorId, updated_at: now })
+    .eq("organization_id", input.organizationId)
+    .eq("case_id", link.case_id);
+  paymentQuery = rpcResult.payment_id
+    ? paymentQuery.eq("id", String(rpcResult.payment_id))
+    : paymentQuery.eq("payment_reference", reference);
+  const { data: payment, error: paymentError } = await paymentQuery
+    .select("id,payment_reference,amount,currency,method,status,confirmed_at,payment_link_id")
+    .single();
+  if (paymentError) throw new Error(paymentError.message);
+
+  return { payment, paymentLink: { ...link, status: "confirmed", confirmed_at: receivedAt }, duplicate: false };
 }

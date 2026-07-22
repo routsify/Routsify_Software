@@ -1124,6 +1124,7 @@ export type Database = {
           created_by: string | null
           document_id: string | null
           id: string
+          legal_document_id: string | null
           legal_version: string
           locked_at: string | null
           organization_id: string
@@ -1139,6 +1140,7 @@ export type Database = {
           created_by?: string | null
           document_id?: string | null
           id?: string
+          legal_document_id?: string | null
           legal_version: string
           locked_at?: string | null
           organization_id: string
@@ -1154,6 +1156,7 @@ export type Database = {
           created_by?: string | null
           document_id?: string | null
           id?: string
+          legal_document_id?: string | null
           legal_version?: string
           locked_at?: string | null
           organization_id?: string
@@ -1174,6 +1177,13 @@ export type Database = {
             columns: ["contract_id"]
             isOneToOne: false
             referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contract_versions_legal_document_id_fkey"
+            columns: ["legal_document_id"]
+            isOneToOne: false
+            referencedRelation: "legal_documents"
             referencedColumns: ["id"]
           },
           {
@@ -1206,6 +1216,7 @@ export type Database = {
           current_version_id: string | null
           external_url: string | null
           id: string
+          legal_document_id: string | null
           legal_version: string | null
           notes: string | null
           organization_id: string
@@ -1231,6 +1242,7 @@ export type Database = {
           current_version_id?: string | null
           external_url?: string | null
           id?: string
+          legal_document_id?: string | null
           legal_version?: string | null
           notes?: string | null
           organization_id: string
@@ -1256,6 +1268,7 @@ export type Database = {
           current_version_id?: string | null
           external_url?: string | null
           id?: string
+          legal_document_id?: string | null
           legal_version?: string | null
           notes?: string | null
           organization_id?: string
@@ -1288,6 +1301,13 @@ export type Database = {
             columns: ["current_version_id"]
             isOneToOne: false
             referencedRelation: "contract_versions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_legal_document_id_fkey"
+            columns: ["legal_document_id"]
+            isOneToOne: false
+            referencedRelation: "legal_documents"
             referencedColumns: ["id"]
           },
           {
@@ -2088,10 +2108,87 @@ export type Database = {
           },
         ]
       }
+      legal_documents: {
+        Row: {
+          activated_at: string | null
+          archived_at: string | null
+          checksum: string | null
+          created_at: string
+          document_type: string
+          file_name: string
+          id: string
+          is_active: boolean
+          is_test: boolean
+          mime_type: string
+          organization_id: string
+          size_bytes: number
+          status: string
+          storage_bucket: string
+          storage_path: string
+          title: string
+          updated_at: string
+          uploaded_by: string | null
+          version_label: string
+        }
+        Insert: {
+          activated_at?: string | null
+          archived_at?: string | null
+          checksum?: string | null
+          created_at?: string
+          document_type: string
+          file_name: string
+          id?: string
+          is_active?: boolean
+          is_test?: boolean
+          mime_type?: string
+          organization_id: string
+          size_bytes: number
+          status?: string
+          storage_bucket?: string
+          storage_path: string
+          title: string
+          updated_at?: string
+          uploaded_by?: string | null
+          version_label: string
+        }
+        Update: {
+          activated_at?: string | null
+          archived_at?: string | null
+          checksum?: string | null
+          created_at?: string
+          document_type?: string
+          file_name?: string
+          id?: string
+          is_active?: boolean
+          is_test?: boolean
+          mime_type?: string
+          organization_id?: string
+          size_bytes?: number
+          status?: string
+          storage_bucket?: string
+          storage_path?: string
+          title?: string
+          updated_at?: string
+          uploaded_by?: string | null
+          version_label?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "legal_documents_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       leads: {
         Row: {
           archived_at: string | null
+          booking_id: string | null
+          booking_invite_sent_at: string | null
           budget_hint: number | null
+          call_booked_at: string | null
           campaign: string | null
           client_id: string | null
           client_name: string | null
@@ -2099,6 +2196,9 @@ export type Database = {
           destination: string | null
           email: string | null
           email_normalized: string | null
+          form_received_at: string | null
+          form_reminder_sent_at: string | null
+          form_submission_id: string | null
           id: string
           organization_id: string
           outcome: string
@@ -2121,7 +2221,10 @@ export type Database = {
         }
         Insert: {
           archived_at?: string | null
+          booking_id?: string | null
+          booking_invite_sent_at?: string | null
           budget_hint?: number | null
+          call_booked_at?: string | null
           campaign?: string | null
           client_id?: string | null
           client_name?: string | null
@@ -2129,6 +2232,9 @@ export type Database = {
           destination?: string | null
           email?: string | null
           email_normalized?: string | null
+          form_received_at?: string | null
+          form_reminder_sent_at?: string | null
+          form_submission_id?: string | null
           id?: string
           organization_id: string
           outcome?: string
@@ -2151,7 +2257,10 @@ export type Database = {
         }
         Update: {
           archived_at?: string | null
+          booking_id?: string | null
+          booking_invite_sent_at?: string | null
           budget_hint?: number | null
+          call_booked_at?: string | null
           campaign?: string | null
           client_id?: string | null
           client_name?: string | null
@@ -2159,6 +2268,9 @@ export type Database = {
           destination?: string | null
           email?: string | null
           email_normalized?: string | null
+          form_received_at?: string | null
+          form_reminder_sent_at?: string | null
+          form_submission_id?: string | null
           id?: string
           organization_id?: string
           outcome?: string
@@ -2180,6 +2292,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "leads_booking_id_fkey"
+            columns: ["booking_id"]
+            isOneToOne: false
+            referencedRelation: "bookings"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "leads_client_id_fkey"
             columns: ["client_id"]
@@ -2900,94 +3019,6 @@ export type Database = {
             foreignKeyName: "proposal_acceptances_proposal_version_id_fkey"
             columns: ["proposal_version_id"]
             isOneToOne: true
-            referencedRelation: "proposal_versions"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      proposal_scenarios: {
-        Row: {
-          applied_at: string | null
-          applied_by: string | null
-          created_at: string
-          created_by: string | null
-          description: string | null
-          id: string
-          lines_snapshot: Json
-          margin_pct: number
-          name: string
-          organization_id: string
-          profit: number
-          proposal_id: string
-          scenario_type: string
-          source_version_id: string
-          status: string
-          target_margin_pct: number
-          total_cost: number
-          total_sale: number
-          updated_at: string
-        }
-        Insert: {
-          applied_at?: string | null
-          applied_by?: string | null
-          created_at?: string
-          created_by?: string | null
-          description?: string | null
-          id?: string
-          lines_snapshot?: Json
-          margin_pct?: number
-          name: string
-          organization_id: string
-          profit?: number
-          proposal_id: string
-          scenario_type?: string
-          source_version_id: string
-          status?: string
-          target_margin_pct: number
-          total_cost?: number
-          total_sale?: number
-          updated_at?: string
-        }
-        Update: {
-          applied_at?: string | null
-          applied_by?: string | null
-          created_at?: string
-          created_by?: string | null
-          description?: string | null
-          id?: string
-          lines_snapshot?: Json
-          margin_pct?: number
-          name?: string
-          organization_id?: string
-          profit?: number
-          proposal_id?: string
-          scenario_type?: string
-          source_version_id?: string
-          status?: string
-          target_margin_pct?: number
-          total_cost?: number
-          total_sale?: number
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "proposal_scenarios_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "proposal_scenarios_proposal_id_fkey"
-            columns: ["proposal_id"]
-            isOneToOne: false
-            referencedRelation: "proposals"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "proposal_scenarios_source_version_id_fkey"
-            columns: ["source_version_id"]
-            isOneToOne: false
             referencedRelation: "proposal_versions"
             referencedColumns: ["id"]
           },
@@ -3766,6 +3797,7 @@ export type Database = {
           default_currency: string
           email: string | null
           emergency_contact: Json
+          fiscal_name: string
           holded_contact_id: string | null
           id: string
           name: string
@@ -3792,6 +3824,7 @@ export type Database = {
           default_currency?: string
           email?: string | null
           emergency_contact?: Json
+          fiscal_name: string
           holded_contact_id?: string | null
           id?: string
           name: string
@@ -3818,6 +3851,7 @@ export type Database = {
           default_currency?: string
           email?: string | null
           emergency_contact?: Json
+          fiscal_name?: string
           holded_contact_id?: string | null
           id?: string
           name?: string
@@ -4082,12 +4116,8 @@ export type Database = {
         Args: { target_version: string }
         Returns: Json
       }
-      apply_proposal_scenario: {
-        Args: {
-          actor?: string
-          target_organization: string
-          target_scenario: string
-        }
+      delete_unaccepted_proposal: {
+        Args: { actor?: string; target_org: string; target_proposal: string }
         Returns: Json
       }
       approve_expected_purchase: {
@@ -4226,6 +4256,18 @@ export type Database = {
         }
         Returns: Json
       }
+      create_contract_version_with_legal_document: {
+        Args: {
+          actor: string
+          contract_status_value: string
+          contract_title: string
+          legal_document_id_value: string
+          notes_value: string
+          target_case: string
+          target_org: string
+        }
+        Returns: Json
+      }
       create_or_get_case_proposal: {
         Args: { target_actor?: string; target_case: string; target_org: string }
         Returns: {
@@ -4318,6 +4360,22 @@ export type Database = {
         }
         Returns: Json
       }
+      register_legal_document: {
+        Args: {
+          activate_value: boolean
+          actor: string
+          checksum_value: string
+          document_type_value: string
+          file_name_value: string
+          is_test_value: boolean
+          size_bytes_value: number
+          storage_path_value: string
+          target_org: string
+          title_value: string
+          version_label_value: string
+        }
+        Returns: Json
+      }
       record_organization_secret_test: {
         Args: {
           actor?: string
@@ -4335,6 +4393,15 @@ export type Database = {
       routsify_setting_boolean: {
         Args: { fallback: boolean; target_key: string; target_org: string }
         Returns: boolean
+      }
+      set_legal_document_state: {
+        Args: {
+          action_value: string
+          actor: string
+          target_document: string
+          target_org: string
+        }
+        Returns: Json
       }
       set_organization_secret: {
         Args: {
@@ -4590,4 +4657,3 @@ export const Constants = {
     },
   },
 } as const
-

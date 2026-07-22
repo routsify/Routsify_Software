@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { createHash } from "node:crypto";
 
 const enabled = process.env.E2E_OPERATIONAL_CERTIFICATION === "1";
 const hasCredentials = Boolean(process.env.E2E_EMAIL && process.env.E2E_PASSWORD);
@@ -73,15 +74,47 @@ async function processOutbox(request) {
   return summary;
 }
 
+const legacySyntheticBookingIds = [
+  "763de89f-5dd3-45b2-99eb-7b607337469f",
+  "a6f3e095-330a-4e23-b64d-30addf222d7c",
+];
+
+async function bookingMutation(request, method, path, data, { allowNotFound = false } = {}) {
+  const retryableStatuses = [424, 429, 502, 503, 504];
+  const acceptedStatuses = allowNotFound ? [...retryableStatuses, 404] : retryableStatuses;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const result = await api(request, method, path, data, { timeout: 60_000, acceptedStatuses });
+    if (allowNotFound && result._responseStatus === 404) return null;
+    if (!retryableStatuses.includes(result._responseStatus)) return result;
+    if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, attempt * 500));
+  }
+  expect(false, `${method} ${path} agotó los reintentos transitorios`).toBe(true);
+  return null;
+}
+
 async function cleanupSyntheticBookings(request) {
   const clients = await api(request, "GET", "/api/routsify/clients?paginated=1&pageSize=200&q=PRUEBA%20E2E");
   const rows = Array.isArray(clients.data?.items) ? clients.data.items : [];
   let cancelled = 0;
+  let supportsListing = true;
   for (const client of rows.filter((item) => item.source === "production_certification" && text(item.display_name).startsWith("[PRUEBA E2E "))) {
-    const result = await api(request, "GET", `/api/routsify/clients/booking/reservations?clientId=${encodeURIComponent(client.id)}`);
+    const result = await api(request, "GET", `/api/routsify/clients/booking/reservations?clientId=${encodeURIComponent(client.id)}`, undefined, { acceptedStatuses: [404, 405] });
+    if ([404, 405].includes(result._responseStatus)) {
+      supportsListing = false;
+      break;
+    }
     const bookings = Array.isArray(result.data?.bookings) ? result.data.bookings : [];
     for (const booking of bookings.filter((item) => text(item.status).toLowerCase() !== "cancelled" && text(item.external_booking_id || item.external_id))) {
-      const response = await api(request, "DELETE", `/api/routsify/clients/booking/reservations/${encodeURIComponent(booking.id)}`, undefined, { timeout: 60_000 });
+      const response = await bookingMutation(request, "DELETE", `/api/routsify/clients/booking/reservations/${encodeURIComponent(booking.id)}`, undefined, { allowNotFound: true });
+      if (!response) continue;
+      expect(response.data.booking.status).toBe("cancelled");
+      cancelled += 1;
+    }
+  }
+  if (!supportsListing) {
+    for (const bookingId of legacySyntheticBookingIds) {
+      const response = await bookingMutation(request, "DELETE", `/api/routsify/clients/booking/reservations/${bookingId}`, undefined, { allowNotFound: true });
+      if (!response) continue;
       expect(response.data.booking.status).toBe("cancelled");
       cancelled += 1;
     }
@@ -124,6 +157,40 @@ function buildSyntheticPdf() {
   return Buffer.from(pdf, "latin1");
 }
 
+async function ensureSyntheticLegalDocument(request) {
+  const title = "[PRUEBA E2E] Contrato legal sintético · NO VÁLIDO";
+  const listed = await api(request, "GET", "/api/routsify/settings/legal-documents?includeTests=1");
+  const existing = (Array.isArray(listed.data) ? listed.data : []).find((item) => item.title === title && item.document_type === "travel_contract" && item.status === "ready" && item.is_test === true);
+  if (existing?.id) return text(existing.id);
+
+  const pdf = buildSyntheticPdf();
+  const fileName = "PRUEBA-E2E-CONTRATO-NO-VALIDO.pdf";
+  const upload = await api(request, "POST", "/api/routsify/settings/legal-documents/upload-url", {
+    documentType: "travel_contract",
+    fileName,
+    sizeBytes: pdf.length,
+    mimeType: "application/pdf",
+  });
+  const put = await request.put(upload.signedUrl, { data: pdf, headers: { "content-type": "application/pdf" } });
+  expect(put.ok(), `La subida del PDF legal devolvió ${put.status()}`).toBeTruthy();
+  const confirmed = await api(request, "POST", "/api/routsify/settings/legal-documents", {
+    documentType: "travel_contract",
+    title,
+    versionLabel: "CERT-E2E-1",
+    fileName,
+    sizeBytes: pdf.length,
+    mimeType: "application/pdf",
+    checksum: createHash("sha256").update(pdf).digest("hex"),
+    bucket: upload.bucket,
+    storagePath: upload.path,
+    activate: false,
+    isTest: true,
+  });
+  expect(confirmed.data.is_test).toBe(true);
+  expect(confirmed.data.is_active).toBe(false);
+  return text(confirmed.data.id);
+}
+
 test.describe("certificación operativa de producción", () => {
   test.skip(!enabled || !hasCredentials, "Requiere activación explícita y credenciales E2E.");
 
@@ -136,7 +203,7 @@ test.describe("certificación operativa de producción", () => {
     const clientEmail = taggedEmail(process.env.E2E_EMAIL, runTag);
     const tripStart = dateOffset(10);
     const tripEnd = dateOffset(13);
-    const certification = { runTag, clientId: null, supplierId: null, caseId: null, caseCode: null, proposalId: null, purchaseId: null, documentId: null, ocrRunId: null, bookingId: null, communicationId: null };
+    const certification = { runTag, clientId: null, supplierId: null, caseId: null, caseCode: null, proposalId: null, purchaseId: null, documentId: null, ticketDocumentId: null, legalDocumentId: null, ocrRunId: null, paymentLinkId: null, bookingId: null, communicationId: null };
 
     await test.step("verificar conexiones configuradas", async () => {
       const health = await api(request, "GET", "/api/routsify/settings/integrations/health");
@@ -145,6 +212,9 @@ test.describe("certificación operativa de producción", () => {
         const result = await api(request, "POST", `/api/routsify/settings/integrations/${integration}/test`, {});
         expect(result.integration).toBe(integration);
       }
+      const filloutSync = await api(request, "POST", "/api/routsify/leads/sync-fillout", { maxPages: 2 }, { timeout: 120_000 });
+      expect(filloutSync.data.skipped).toBe(false);
+      expect(Number(filloutSync.data.failed || 0)).toBe(0);
       const whatsapp = health.data.integrations.find((item) => item.id === "whatsapp");
       expect(whatsapp).toBeTruthy();
       expect(["inactive", "setup_required", "disabled", "not_configured"]).toContain(whatsapp.state);
@@ -174,6 +244,7 @@ test.describe("certificación operativa de producción", () => {
         name: `[PRUEBA E2E ${runTag}] Hotel Certificación`,
         category: "accommodation",
         email: process.env.E2E_EMAIL,
+        default_margin_pct: 33.3333,
         tax_id: `TEST-SUP-${runTag}`,
         country: "ES",
         billing_address: { address: "Avenida Prueba 2", city: "Lisboa", postal_code: "1000-001", country: "PT" },
@@ -181,6 +252,18 @@ test.describe("certificación operativa de producción", () => {
       });
       certification.supplierId = text(supplier.data.id);
       expect(certification.supplierId).toBeTruthy();
+      expect(Number(supplier.data.default_margin_pct)).toBeCloseTo(33.3333, 3);
+
+      const disposable = await api(request, "POST", "/api/routsify/clients", {
+        display_name: `[PRUEBA E2E ${runTag}] Cliente eliminable`,
+        email: taggedEmail(process.env.E2E_EMAIL, `${runTag}-delete`),
+        client_type: "person",
+        country: "ES",
+        source: "production_certification",
+      });
+      await api(request, "DELETE", `/api/routsify/clients/${encodeURIComponent(disposable.data.id)}`);
+      const deleted = await api(request, "GET", `/api/routsify/clients/${encodeURIComponent(disposable.data.id)}`, undefined, { acceptedStatuses: [404] });
+      expect(deleted._responseStatus).toBe(404);
 
       const createdCase = await api(request, "POST", "/api/routsify/cases", {
         client_id: certification.clientId,
@@ -261,6 +344,31 @@ test.describe("certificación operativa de producción", () => {
       });
       const travelers = await api(request, "GET", `/api/routsify/cases/${certification.caseId}/workspace?section=travelers`);
       expect(travelers.data.travelers.find((item) => item.id === travelerId)?.review_status).toBe("approved");
+
+      const ticketUpload = await api(request, "POST", "/api/documentos/upload-url", {
+        caseCode: certification.caseCode,
+        fileName: `TICKET-PRUEBA-${runTag}.pdf`,
+        sizeBytes: pdf.length,
+        mimeType: "application/pdf",
+        ownerType: "case",
+      });
+      const ticketPut = await request.put(ticketUpload.signedUrl, { data: pdf, headers: { "content-type": "application/pdf" } });
+      expect(ticketPut.ok(), `La subida del ticket devolvió ${ticketPut.status()}`).toBeTruthy();
+      const ticket = await api(request, "POST", "/api/documentos/confirm-upload", {
+        caseId: certification.caseId,
+        ownerType: "case",
+        title: "Ticket sintético · NO VÁLIDO",
+        type: "ticket_cliente",
+        bucket: ticketUpload.bucket,
+        storagePath: ticketUpload.path,
+        fileName: `TICKET-PRUEBA-${runTag}.pdf`,
+        mimeType: "application/pdf",
+        sizeBytes: pdf.length,
+        sensitivity: "private",
+        retentionDays: 30,
+      });
+      certification.ticketDocumentId = text(ticket.data.id);
+      expect(certification.ticketDocumentId).toBeTruthy();
     });
 
     await test.step("crear, enviar y aceptar una propuesta con margen", async () => {
@@ -268,20 +376,36 @@ test.describe("certificación operativa de producción", () => {
       certification.proposalId = text(proposal.data.id);
       const version = Array.isArray(proposal.data.proposal_versions) ? proposal.data.proposal_versions[0] : null;
       expect(version?.id).toBeTruthy();
-      await api(request, "POST", `/api/routsify/proposals/${certification.proposalId}/lines`, {
+      const budgetLine = await api(request, "POST", `/api/routsify/proposals/${certification.proposalId}/lines`, {
         proposal_version_id: version.id,
         service_type_code: "accommodation",
         description_public: `[PRUEBA E2E ${runTag}] Hotel sintético Lisboa`,
         description_internal: "Coste 10 €, venta 15 €, beneficio esperado 5 €.",
         supplier_id: certification.supplierId,
         cost_budget: 10,
-        sale_price: 15,
-        margin_applied: 33.3333,
         creates_expected_purchase: true,
         start_date: tripStart,
         end_date: tripEnd,
         destination_segment: "Lisboa",
       });
+      expect(Number(budgetLine.data.margin_applied)).toBeCloseTo(0.333333, 5);
+      expect(Number(budgetLine.data.sale_price)).toBeCloseTo(15, 2);
+
+      const globalMargin = await api(request, "PATCH", `/api/routsify/proposals/${certification.proposalId}/lines/bulk`, {
+        proposal_version_id: version.id,
+        margin_percentage: 33.3333,
+      });
+      expect(globalMargin.updated).toBe(1);
+      expect(Number(globalMargin.data[0].margin_applied)).toBeCloseTo(0.333333, 5);
+
+      await page.goto(`/propuestas?caseId=${encodeURIComponent(certification.caseId)}`);
+      await expect(page.getByLabel("Margen global %")).toBeVisible();
+      await expect(page.getByRole("button", { name: "Crear proveedor", exact: true })).toBeVisible();
+      await expect(page.getByRole("combobox", { name: "Proveedor", exact: true })).toBeVisible();
+      await page.getByRole("button", { name: "Crear proveedor", exact: true }).click();
+      await expect(page.getByRole("heading", { name: "Nuevo proveedor", exact: true })).toBeVisible();
+      await page.getByRole("button", { name: "Cerrar", exact: true }).click();
+
       const sent = await api(request, "POST", `/api/routsify/proposals/${certification.proposalId}/send`, { validity_days: 15 });
       expect(sent.data.holded_status).toBe("queued");
       await processOutbox(request);
@@ -326,25 +450,25 @@ test.describe("certificación operativa de producción", () => {
 
     let contractId;
     await test.step("versionar, enviar y firmar el contrato con evidencia", async () => {
+      certification.legalDocumentId = await ensureSyntheticLegalDocument(request);
+      expect(certification.legalDocumentId).toBeTruthy();
       const contractWorkspace = await api(request, "GET", `/api/routsify/cases/${certification.caseId}/workspace?section=contract`);
       contractId = text(contractWorkspace.data.contracts[0]?.id);
       expect(contractId).toBeTruthy();
-      const contractUrl = `https://example.com/routsify-certification/${runTag}`;
       const sent = await api(request, "POST", `/api/routsify/cases/${certification.caseId}/contracts`, {
         id: contractId,
         title: "Contrato de viaje · PRUEBA E2E",
         status: "sent",
-        external_url: contractUrl,
-        legal_version: `CERT-${runTag}`,
+        legal_document_id: certification.legalDocumentId,
         notes: "Contrato sintético; no tiene validez comercial.",
       });
       expect(sent.data.status).toBe("sent");
+      expect(sent.data.legal_document_id).toBe(certification.legalDocumentId);
       const signed = await api(request, "POST", `/api/routsify/cases/${certification.caseId}/contracts`, {
         id: contractId,
         title: "Contrato de viaje · PRUEBA E2E",
         status: "signed",
-        external_url: contractUrl,
-        legal_version: `CERT-${runTag}`,
+        legal_document_id: certification.legalDocumentId,
         signer_name: "Ana Prueba",
         signer_email: clientEmail,
         review_confirmed: true,
@@ -352,23 +476,36 @@ test.describe("certificación operativa de producción", () => {
       });
       expect(signed.data.status).toBe("signed");
       expect(text(signed.data.current_version_id)).toBeTruthy();
+      expect(signed.data.legal_document_id).toBe(certification.legalDocumentId);
     });
 
     await test.step("registrar cobro, proforma y pago en Holded", async () => {
-      const payment = await api(request, "POST", "/api/payments/manual", {
-        caseId: certification.caseId,
+      const paymentLink = await api(request, "POST", `/api/routsify/proposals/${certification.proposalId}/payment-link`, {
+        external_url: `https://example.com/teya-certification/${runTag}`,
         amount: 15,
+      });
+      certification.paymentLinkId = text(paymentLink.data.id);
+      expect(certification.paymentLinkId).toBeTruthy();
+
+      const payment = await api(request, "POST", `/api/routsify/payment-links/${certification.paymentLinkId}/confirm`, {
         reference: `E2E-${runTag}`,
-        currency: "EUR",
-        method: "teya_manual_test",
-        receivedAt: new Date().toISOString(),
+        amount: 15,
+        received_at: new Date().toISOString(),
         notes: "Cobro sintético. No se ha realizado ningún cargo real.",
       });
-      expect(payment.payment_confirmed).toBe(true);
+      expect(payment.data.payment.payment_reference).toBe(`E2E-${runTag}`);
+      expect(Number(payment.data.payment.amount)).toBe(15);
+      expect(payment.data.payment.payment_link_id).toBe(certification.paymentLinkId);
       await processOutbox(request);
       const workspace = await api(request, "GET", `/api/routsify/cases/${certification.caseId}/workspace?section=contract`);
       expect(workspace.data.payments.some((item) => item.payment_reference === `E2E-${runTag}` && Number(item.amount) === 15)).toBe(true);
       expect(workspace.data.fiscal_documents.some((item) => item.document_type === "proforma" && item.status === "issued")).toBe(true);
+
+      const legal = await api(request, "POST", `/api/routsify/cases/${certification.caseId}/legal-delivery`, {});
+      expect(legal.data.event_type).toBe("legal_pack.sent");
+      expect(legal.delivery.provider).toBe("hostinger_smtp");
+      expect(legal.delivery.status).toBe("accepted");
+      expect(Number(legal.attachments)).toBeGreaterThanOrEqual(1);
     });
 
     await test.step("crear, modificar y cancelar una reserva real de prueba", async () => {
@@ -411,13 +548,13 @@ test.describe("certificación operativa de producción", () => {
       const expectedEndsAt = new Date(new Date(slot.startsAt).getTime() + bookingDuration * 60_000).toISOString();
       expect(new Date(created.data.booking.starts_at).toISOString()).toBe(expectedStartsAt);
       expect(new Date(created.data.booking.ends_at).toISOString()).toBe(expectedEndsAt);
-      const updated = await api(request, "PATCH", `/api/routsify/clients/booking/reservations/${certification.bookingId}`, {
+      const updated = await bookingMutation(request, "PATCH", `/api/routsify/clients/booking/reservations/${certification.bookingId}`, {
         notes: `[PRUEBA E2E ${runTag}] Reserva verificada; cancelar a continuación`,
-      }, { timeout: 60_000 });
+      });
       expect(text(updated.data.booking.id)).toBe(certification.bookingId);
       expect(new Date(updated.data.booking.starts_at).toISOString()).toBe(expectedStartsAt);
       expect(new Date(updated.data.booking.ends_at).toISOString()).toBe(expectedEndsAt);
-      const cancelled = await api(request, "DELETE", `/api/routsify/clients/booking/reservations/${certification.bookingId}`, undefined, { timeout: 60_000 });
+      const cancelled = await bookingMutation(request, "DELETE", `/api/routsify/clients/booking/reservations/${certification.bookingId}`);
       expect(cancelled.data.booking.status).toBe("cancelled");
       expect(new Date(cancelled.data.booking.starts_at).toISOString()).toBe(expectedStartsAt);
       expect(new Date(cancelled.data.booking.ends_at).toISOString()).toBe(expectedEndsAt);
@@ -449,14 +586,27 @@ test.describe("certificación operativa de producción", () => {
       const health = await api(request, "GET", "/api/routsify/settings/integrations/health");
       expect(health.data.integrations.find((item) => item.id === "holded")?.state).toBe("healthy");
 
-      for (const path of [`/clientes/${certification.clientId}`, `/expedientes/${certification.caseCode}`, "/propuestas", "/compras", "/comunicaciones", "/informes"]) {
+      for (const path of [`/clientes/${certification.clientId}`, `/expedientes/${certification.caseCode}`, "/propuestas", "/compras", "/comunicaciones", "/informes", "/ajustes?tab=legal"]) {
         const response = await page.goto(path, { waitUntil: "domcontentloaded" });
         expect(response?.status(), `${path} no abrió correctamente`).toBeLessThan(500);
         await expect(page).not.toHaveURL(/\/login(?:\?|$)/);
         await expect(page.getByRole("heading", { name: "Algo ha fallado", exact: true }), `${path} mostró la pantalla de error`).toHaveCount(0);
         await expect(page.locator("h1").first()).toBeVisible();
         await expect(page.locator("nextjs-portal")).toHaveCount(0);
+        if (path.startsWith("/expedientes/")) {
+          await expect(page.getByRole("heading", { name: "Del presupuesto aceptado a la entrega del viaje", exact: true })).toBeVisible();
+          for (const heading of ["Información precontractual aceptada", "Datos de viajeros y documentación", "PDF privado y firma del contrato", "Enlace de pago y confirmación del cobro", "Entrega de documentación legal", "Compras de proveedores y entrega de tickets"]) {
+            await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
+          }
+          await expect(page.getByRole("button", { name: /Enviar documentación legal|Documentación enviada/ })).toBeVisible();
+        }
       }
+    });
+
+    await test.step("verificar la retención técnica y de privacidad", async () => {
+      const retention = await api(request, "POST", "/api/routsify/jobs/run", { job: "privacy_retention_review" });
+      expect(retention.data.failed, JSON.stringify(retention.data.results || [])).toBe(0);
+      expect(retention.data.technical_logs.failedOrganizations).toBe(0);
     });
 
     console.log(`ROUTSIFY_OPERATIONAL_CERTIFICATION=${JSON.stringify(certification)}`);

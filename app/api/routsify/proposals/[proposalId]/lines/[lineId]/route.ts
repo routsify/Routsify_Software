@@ -58,7 +58,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   }
   const serviceTypeCode = source.service_type_code ? String(source.service_type_code) : "custom";
   const rule = await resolveMarginRule({ organizationId, explicitMarginPercent: explicitMargin, supplierId, serviceTypeCode, destination: source.destination_segment ? String(source.destination_segment) : null });
-  const sale = source.sale_price === undefined || source.sale_price === null || source.sale_price === "" ? calculateSalePrice(cost, rule.percent, rule.formula) : numeric(source.sale_price);
+  const manualSale = !(source.sale_price === undefined || source.sale_price === null || source.sale_price === "");
+  const sale = manualSale ? numeric(source.sale_price) : calculateSalePrice(cost, rule.percent, rule.formula);
 
   const { data, error } = await db
     .from("budget_lines")
@@ -74,7 +75,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       cost_budget: cost,
       margin_applied: rule.fraction,
       margin_rule_id: rule.ruleId,
-      margin_snapshot: rule.snapshot,
+      margin_snapshot: { ...rule.snapshot, sale_source: manualSale ? "manual" : "calculated" },
+      origin_margin: rule.source,
       sale_price: sale,
       creates_expected_purchase: source.creates_expected_purchase === undefined ? Boolean(supplierId) : Boolean(source.creates_expected_purchase),
       updated_at: new Date().toISOString(),

@@ -54,6 +54,7 @@ function requiredPermission(request: NextRequest): AppPermission {
   if (path.startsWith("/api/routsify/payment-links") || path.includes("/payment-link")) return "payment_links.manage";
   if (path.startsWith("/api/payments") || path.includes("/fiscal")) return "payments.manage";
   if (path.startsWith("/api/routsify/proposals") || path.startsWith("/api/routsify/budgets")) return isRead ? "budgets.view" : "budgets.manage";
+  if (path.startsWith("/api/routsify/legal-documents")) return "operations.sensitive.view";
   if (path.startsWith("/api/routsify/documents") || path.startsWith("/api/routsify/ocr") || path.startsWith("/api/documentos")) return "documents.manage";
   if (path.startsWith("/api/routsify/suppliers")) return isRead ? "suppliers.view" : "suppliers.manage";
   if (path.startsWith("/api/routsify/expected-purchases")) return isRead ? "purchases.view" : "purchases.manage";

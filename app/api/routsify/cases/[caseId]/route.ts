@@ -101,3 +101,62 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   }
   return NextResponse.json(result, { status: result.ok ? 200 : 400 });
 }
+
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ caseId: string }> }) {
+  const access = await requireInternalAccess(request);
+  if (!access.ok) return jsonAccessDenied(access);
+
+  const { caseId } = await params;
+  const organizationId = await resolveOrganizationId(request, access.organizationId);
+  const db = getSupabaseAdminClient();
+  const { data: caseRow, error: caseError } = await db.from("cases")
+    .select("id,case_code,title,status,client_id")
+    .eq("id", caseId)
+    .eq("organization_id", organizationId)
+    .maybeSingle();
+  if (caseError) return NextResponse.json({ ok: false, error: caseError.message }, { status: 400 });
+  if (!caseRow) return NextResponse.json({ ok: false, error: "case_not_found" }, { status: 404 });
+
+  const deletableStatuses = new Set(["new_lead", "call_booked", "call_done", "budget_draft"]);
+  if (!deletableStatuses.has(String(caseRow.status))) return NextResponse.json({ ok: false, error: "case_has_protected_history", blockers: { status: 1 } }, { status: 409 });
+
+  const [proposals, contracts, payments, paymentLinks, purchases, billing, fiscal, travelers, tasks, timeline, communications, incidents, documentsByCase, documentsByOwner, outbox] = await Promise.all([
+    db.from("proposals").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("case_id", caseId),
+    db.from("contracts").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("case_id", caseId),
+    db.from("payments").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("case_id", caseId),
+    db.from("payment_links").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("case_id", caseId),
+    db.from("expected_purchases").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("case_id", caseId),
+    db.from("billing_documents").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("case_id", caseId),
+    db.from("fiscal_documents").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("case_id", caseId),
+    db.from("travelers").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("case_id", caseId),
+    db.from("tasks").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("case_id", caseId),
+    db.from("timeline_events").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("case_id", caseId),
+    db.from("communication_followups").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("case_id", caseId),
+    db.from("supplier_incidents").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("case_id", caseId),
+    db.from("documents").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("case_id", caseId),
+    db.from("documents").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("owner_type", "case").eq("owner_id", caseId),
+    db.from("integration_outbox").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("entity_id", caseId),
+  ]);
+  const dependencyError = [proposals, contracts, payments, paymentLinks, purchases, billing, fiscal, travelers, tasks, timeline, communications, incidents, documentsByCase, documentsByOwner, outbox].find((result) => result.error)?.error;
+  if (dependencyError) return NextResponse.json({ ok: false, error: dependencyError.message }, { status: 400 });
+  const blockers = {
+    proposals: proposals.count || 0,
+    contracts: contracts.count || 0,
+    payments: (payments.count || 0) + (paymentLinks.count || 0),
+    purchases: purchases.count || 0,
+    fiscal_documents: (billing.count || 0) + (fiscal.count || 0),
+    travelers: travelers.count || 0,
+    tasks: tasks.count || 0,
+    timeline: timeline.count || 0,
+    communications: communications.count || 0,
+    incidents: incidents.count || 0,
+    documents: (documentsByCase.count || 0) + (documentsByOwner.count || 0),
+    outbox: outbox.count || 0,
+  };
+  if (Object.values(blockers).some((value) => value > 0)) return NextResponse.json({ ok: false, error: "case_has_protected_history", blockers }, { status: 409 });
+
+  const { error: deleteError } = await db.from("cases").delete().eq("id", caseId).eq("organization_id", organizationId);
+  if (deleteError) return NextResponse.json({ ok: false, error: deleteError.code === "23503" ? "case_has_protected_history" : deleteError.message }, { status: deleteError.code === "23503" ? 409 : 400 });
+  await db.from("audit_log").insert({ organization_id: organizationId, actor_id: access.actorId, entity_type: "case", entity_id: caseId, action: "case.deleted", before_data: caseRow });
+  return NextResponse.json({ ok: true, data: { id: caseId } });
+}

@@ -3,10 +3,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { jsonAccessDenied, requireInternalAccess } from "@/lib/api-security";
 import { loadEffectiveSettings } from "@/lib/effective-settings-server";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
-import { resolveOrganizationId, getRequestUserId } from "@/lib/request-context";
+import { resolveOrganizationId } from "@/lib/request-context";
 
 const statuses = new Set(["draft", "sent", "signed", "cancelled"]);
-const DEFAULT_LEGAL_VERSION = "Routsify-2026.1";
 
 type JsonRow = Record<string, unknown>;
 
@@ -53,14 +52,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (!statuses.has(status)) return NextResponse.json({ ok: false, error: "invalid_contract_status" }, { status: 400 });
 
   const organizationId = await resolveOrganizationId(request, access.organizationId);
-  const [actorId, settings] = await Promise.all([
-    getRequestUserId(request),
-    loadEffectiveSettings(organizationId),
-  ]);
+  const actorId = access.actorId;
+  const settings = await loadEffectiveSettings(organizationId);
   const supabase = getSupabaseAdminClient();
   const { data: caseRow, error: caseError } = await supabase
     .from("cases")
-    .select("id,client_id,accepted_value,status,clients(display_name,email,tax_id,billing_address)")
+    .select("id,client_id,title,accepted_value,status,clients(display_name,email,tax_id,billing_address)")
     .eq("id", caseId)
     .eq("organization_id", organizationId)
     .maybeSingle();
@@ -70,7 +67,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const requestedContractId = text(body.id);
   let existingQuery = supabase
     .from("contracts")
-    .select("id,status,signed_at,legal_version,current_version_id,title,external_url,notes")
+    .select("id,status,signed_at,legal_version,legal_document_id,current_version_id,title,external_url,notes")
     .eq("organization_id", organizationId)
     .eq("case_id", caseId);
   if (requestedContractId) existingQuery = existingQuery.eq("id", requestedContractId);
@@ -82,12 +79,26 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   }
 
   const title = text(body.title || existingContract?.title) || "Contrato de viaje";
-  const externalUrl = text(body.external_url || existingContract?.external_url);
   const notes = text(body.notes || existingContract?.notes);
-  const legalVersion = text(body.legal_version || existingContract?.legal_version) || DEFAULT_LEGAL_VERSION;
+  const legalDocumentId = text(body.legal_document_id || existingContract?.legal_document_id);
+  let legalDocument: JsonRow | null = null;
+  if (legalDocumentId) {
+    const { data, error } = await supabase
+      .from("legal_documents")
+      .select("id,document_type,title,version_label,file_name,status,is_active,is_test,checksum")
+      .eq("id", legalDocumentId)
+      .eq("organization_id", organizationId)
+      .maybeSingle();
+    if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
+    if (!data) return NextResponse.json({ ok: false, error: "legal_document_not_found" }, { status: 404 });
+    if (data.document_type !== "travel_contract") return NextResponse.json({ ok: false, error: "travel_contract_pdf_required" }, { status: 400 });
+    const reusingVersionedPdf = status === "signed" && existingContract?.current_version_id && existingContract.legal_document_id === data.id;
+    if (data.status !== "ready" && !reusingVersionedPdf) return NextResponse.json({ ok: false, error: "archived_legal_document_not_selectable" }, { status: 409 });
+    legalDocument = data as JsonRow;
+  }
 
   if (["sent", "signed"].includes(status)) {
-    if (!externalUrl) return NextResponse.json({ ok: false, error: "contract_url_required_before_send" }, { status: 400 });
+    if (!legalDocumentId || !legalDocument) return NextResponse.json({ ok: false, error: "legal_pdf_required_before_send" }, { status: 400 });
 
     const acceptedValue = Number(caseRow.accepted_value || 0);
     const { data: accepted } = await supabase
@@ -111,13 +122,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     try {
       let contract = existingContract as JsonRow | null;
-      if (status === "sent" || !existingContract?.current_version_id) {
-        const { data: versioned, error: versionError } = await supabase.rpc("create_contract_version", {
+      const documentChanged = existingContract?.legal_document_id !== legalDocumentId;
+      if (status === "sent" || !existingContract?.current_version_id || documentChanged) {
+        const { data: versioned, error: versionError } = await supabase.rpc("create_contract_version_with_legal_document", {
           target_org: organizationId,
           target_case: caseId,
           contract_title: title,
-          legal_version_value: legalVersion,
-          external_url_value: externalUrl,
+          legal_document_id_value: legalDocumentId,
           notes_value: notes,
           contract_status_value: "sent",
           actor: actorId,
@@ -147,8 +158,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           user_agent_value: evidence.userAgent,
           evidence_value: {
             source: "routsify_admin_manual_confirmation",
-            external_url: externalUrl,
-            legal_version: legalVersion,
+            legal_document_id: legalDocumentId,
+            legal_version: legalDocument.version_label,
+            legal_file_name: legalDocument.file_name,
+            legal_checksum: legalDocument.checksum || null,
             confirmation_note: notes || null,
           },
           review_confirmed: true,
@@ -166,7 +179,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       }
 
       if (!contract) throw new Error("contract_workflow_returned_no_contract");
-      return NextResponse.json({ ok: true, data: contract });
+      return NextResponse.json({ ok: true, data: { ...contract, legal_documents: legalDocument } });
     } catch (error) {
       return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "contract_workflow_failed" }, { status: 409 });
     }
@@ -178,8 +191,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     case_id: caseId,
     title,
     status,
-    external_url: externalUrl || null,
-    legal_version: legalVersion,
+    external_url: legalDocumentId ? null : existingContract?.external_url || null,
+    legal_document_id: legalDocumentId || null,
+    legal_version: text(legalDocument?.version_label || existingContract?.legal_version) || null,
     notes: notes || null,
     signed_at: null,
     updated_at: now,
@@ -208,5 +222,5 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       created_by: actorId,
     });
   }
-  return NextResponse.json({ ok: true, data });
+  return NextResponse.json({ ok: true, data: { ...data, legal_documents: legalDocument } });
 }

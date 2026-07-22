@@ -6,6 +6,7 @@ import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { providerIdempotencyKey } from "@/lib/webhook-security";
 
 const FILLOUT_ORIGINS = ["https://api.fillout.com/v1/api", "https://eu-api.fillout.com/v1/api"] as const;
+const REQUEST_TIMEOUT_MS = 15_000;
 const PAGE_SIZE = 150;
 const DEFAULT_MAX_PAGES = 20;
 const ENQUEUE_CONCURRENCY = 20;
@@ -74,19 +75,34 @@ async function loadSettings(organizationId: string): Promise<FilloutSettings> {
 async function filloutRequest<T>(apiKey: string, path: string): Promise<{ data: T; origin: string }> {
   let lastError = "fillout_request_failed";
   for (const origin of FILLOUT_ORIGINS) {
-    const response = await fetch(`${origin}${path}`, {
-      method: "GET",
-      headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
-      cache: "no-store",
-    });
-    const raw = await response.text();
-    let parsed: unknown = null;
-    try { parsed = raw ? JSON.parse(raw) : null; } catch { parsed = raw; }
-    if (response.ok) return { data: parsed as T, origin };
-    lastError = parsed && typeof parsed === "object" && "message" in parsed
-      ? text((parsed as JsonRow).message)
-      : `fillout_http_${response.status}`;
-    if (![401, 403, 404].includes(response.status)) break;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      const response = await fetch(`${origin}${path}`, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      const raw = await response.text();
+      let parsed: unknown = null;
+      try { parsed = raw ? JSON.parse(raw) : null; } catch { parsed = raw; }
+      if (response.ok) return { data: parsed as T, origin };
+      lastError = parsed && typeof parsed === "object" && "message" in parsed
+        ? text((parsed as JsonRow).message)
+        : `fillout_http_${response.status}`;
+      const shouldUseEuOrigin = response.status === 400
+        && !origin.includes("eu-api.fillout.com")
+        && lastError.toLowerCase().includes("eu-api.fillout.com");
+      if (shouldUseEuOrigin) continue;
+      if (![401, 403, 404].includes(response.status)) break;
+    } catch (error) {
+      lastError = error instanceof Error && error.name === "AbortError"
+        ? "fillout_timeout"
+        : error instanceof Error ? error.message : "fillout_network_error";
+    } finally {
+      clearTimeout(timeout);
+    }
   }
   throw new Error(lastError);
 }

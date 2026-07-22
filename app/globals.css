@@ -29,6 +29,11 @@ button, a, input, select, textarea, summary { -webkit-tap-highlight-color: trans
 .sidebar { display: flex; flex-direction: column; background: #2e7d32; color: #fff; padding: 18px 12px; position: sticky; top: 0; height: 100vh; overflow-y: auto; box-shadow: 8px 0 30px rgba(24, 67, 30, .12); }
 .brand { display: flex; align-items: center; gap: 10px; margin: 0 6px 22px; font-weight: 900; font-size: 16px; color: #fff; }
 .logo-mark { display: inline-grid; place-items: center; border-radius: 12px; background: #fff; color: #379237; font-weight: 950; box-shadow: 0 10px 24px rgba(0,0,0,.08); }
+.logo-mark.has-image { overflow: hidden; }
+.logo-mark img { display: block; width: 100%; height: 100%; object-fit: contain; background: #fff; }
+.brand-logo-control { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.brand-logo-preview { display: grid; place-items: center; width: 112px; height: 112px; overflow: hidden; border: 1px solid var(--line); border-radius: 18px; background: #fff; color: var(--brand); font-size: 48px; }
+.brand-logo-preview img { width: 100%; height: 100%; object-fit: contain; }
 .nav { display: grid; gap: 17px; }
 .nav-group { display: grid; gap: 3px; }
 .nav-section { padding: 0 11px 5px; color: rgba(255,255,255,.58); font-size: 10px; font-weight: 900; letter-spacing: .09em; text-transform: uppercase; }
@@ -165,6 +170,21 @@ tr:last-child td { border-bottom: 0; }
 .hero-panel { display:grid; grid-template-columns: 1.1fr .9fr; gap: 28px; align-items: center; padding: 42px; border-radius: 28px; background: #fff; border:1px solid var(--line); box-shadow: var(--shadow); }
 .timeline { display:grid; gap: 14px; }
 .timeline > div { padding: 18px; border-left: 4px solid var(--brand); background: #fff; border-radius: 14px; border:1px solid var(--line); }
+.row-action-menu { position: relative; display: inline-block; }
+.row-action-menu > summary { display: grid; place-items: center; min-width: 38px; min-height: 34px; padding: 0 8px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface, #fff); color: var(--ink); cursor: pointer; font-weight: 900; letter-spacing: .08em; list-style: none; }
+.row-action-menu > summary::-webkit-details-marker { display: none; }
+.row-action-menu[open] > summary { border-color: var(--brand); box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 10%, transparent); }
+.row-action-menu > div { position: absolute; z-index: 30; top: calc(100% + 6px); right: 0; display: grid; min-width: 150px; padding: 6px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface, #fff); box-shadow: 0 14px 38px rgba(20, 50, 20, .16); }
+.row-action-menu > div a, .row-action-menu > div button { width: 100%; padding: 9px 10px; border: 0; border-radius: 7px; background: transparent; color: var(--ink); cursor: pointer; font: inherit; font-size: 12px; font-weight: 750; text-align: left; }
+.row-action-menu > div a:hover, .row-action-menu > div button:hover { background: var(--soft); }
+.row-action-menu > div .danger-text { color: #a52222; }
+tbody tr:last-child .row-action-menu > div { top: auto; bottom: calc(100% + 6px); }
+.row-action-trigger { display: grid; place-items: center; min-width: 38px; min-height: 34px; padding: 0 8px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface, #fff); color: var(--ink); cursor: pointer; font-weight: 900; letter-spacing: .08em; }
+.row-action-trigger[aria-expanded="true"] { border-color: var(--brand); box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 10%, transparent); }
+.row-action-popover { position: fixed; z-index: 1000; display: grid; min-width: 170px; padding: 6px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface, #fff); box-shadow: 0 14px 38px rgba(20, 50, 20, .18); }
+.row-action-popover a, .row-action-popover button { width: 100%; padding: 9px 10px; border: 0; border-radius: 7px; background: transparent; color: var(--ink); cursor: pointer; font: inherit; font-size: 12px; font-weight: 750; text-align: left; }
+.row-action-popover a:hover, .row-action-popover button:hover { background: var(--soft); }
+.row-action-popover .danger-text { color: #a52222; }
 
 @media (max-width: 1300px) { .clients-layout { grid-template-columns: 1fr; } .client-side { position: static; } }
 @media (max-width: 1180px) { .home-kpis, .client-kpis, .workflow-steps { grid-template-columns: repeat(2, minmax(0,1fr)); } .dashboard-panels { grid-template-columns: 1fr; } }

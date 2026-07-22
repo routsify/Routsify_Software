@@ -9,6 +9,9 @@ import "./solicitudes.css";
 
 const filterLabels: Record<LeadReviewFilter, string> = {
   active: "Pendientes",
+  complete: "Formulario + llamada",
+  call_only: "Solo llamada",
+  form_only: "Solo formulario",
   archived: "Archivadas",
   converted: "Convertidas",
   won: "Compraron",
@@ -48,14 +51,14 @@ export default async function RequestsPage({
       <PageHeader
         eyebrow="Entrada comercial"
         title="Solicitudes"
-        description="Revisa únicamente oportunidades activas. El histórico permanece disponible sin generar tareas ni alertas."
+        description="Fillout y las reservas se cruzan en una sola oportunidad. Cada caja muestra qué señal falta y permite registrar el siguiente paso manual."
       />
 
       <section className="lead-summary" aria-label="Resumen de solicitudes">
-        <Summary href="/solicitudes" label="Pendientes" value={data.stats.active} active={data.filter === "active"} />
-        <Summary href="/solicitudes?status=converted" label="Convertidas" value={data.stats.converted} active={data.filter === "converted"} />
-        <Summary href="/solicitudes?status=won" label="Compraron" value={data.stats.won} active={data.filter === "won"} />
-        <Summary href="/solicitudes?status=archived" label="Archivadas" value={data.stats.archived} active={data.filter === "archived"} />
+        <Summary href="/solicitudes?status=complete" label="Formulario + llamada" hint="Listos para convertir" value={data.stats.complete} active={data.filter === "complete"} tone="ready" />
+        <Summary href="/solicitudes?status=call_only" label="Solo llamada" hint="Enviar formulario" value={data.stats.callOnly} active={data.filter === "call_only"} tone="attention" />
+        <Summary href="/solicitudes?status=form_only" label="Solo formulario" hint="Enviar reserva" value={data.stats.formOnly} active={data.filter === "form_only"} tone="attention" />
+        <Summary href="/solicitudes" label="Todas pendientes" hint="Bandeja completa" value={data.stats.active} active={data.filter === "active"} />
       </section>
 
       <form className="card lead-toolbar" action="/solicitudes" method="get">
@@ -86,6 +89,6 @@ export default async function RequestsPage({
   );
 }
 
-function Summary({ href, label, value, active }: { href: string; label: string; value: number; active: boolean }) {
-  return <Link className={active ? "lead-summary-card active" : "lead-summary-card"} href={href}><span>{label}</span><strong>{value}</strong></Link>;
+function Summary({ href, label, hint, value, active, tone = "" }: { href: string; label: string; hint: string; value: number; active: boolean; tone?: string }) {
+  return <Link className={["lead-summary-card", active ? "active" : "", tone ? `tone-${tone}` : ""].filter(Boolean).join(" ")} href={href}><span>{label}</span><strong>{value}</strong><small>{hint}</small></Link>;
 }

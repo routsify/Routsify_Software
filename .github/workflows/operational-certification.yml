@@ -2,12 +2,6 @@ name: Production Operational Certification
 
 on:
   deployment_status:
-  push:
-    branches:
-      - main
-    paths:
-      - "tests/e2e/operational-certification.spec.mjs"
-      - ".github/workflows/operational-certification.yml"
   workflow_dispatch:
     inputs:
       base_url:
@@ -25,9 +19,9 @@ concurrency:
 
 jobs:
   certify:
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push' || (github.event_name == 'deployment_status' && github.event.deployment_status.state == 'success' && github.event.deployment.environment == 'Production' && (contains(github.event.deployment_status.environment_url, 'vercel.app') || contains(github.event.deployment_status.target_url, 'vercel.app')))
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'deployment_status' && github.event.deployment_status.state == 'success' && github.event.deployment.environment == 'Production' && (contains(github.event.deployment_status.environment_url, 'vercel.app') || contains(github.event.deployment_status.target_url, 'vercel.app')))
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 45
     env:
       E2E_BASE_URL: ${{ inputs.base_url || 'https://routsify-software.vercel.app' }}
       E2E_EMAIL: ${{ secrets.E2E_EMAIL }}
@@ -49,9 +43,6 @@ jobs:
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]] || git log -1 --pretty=%B | grep -Fq '[certify-production]'; then
             AUTHORIZED=true
           fi
-          if [[ "${{ github.event_name }}" == "push" ]] && git diff-tree --no-commit-id --name-only -r HEAD | grep -Evq '^(tests/e2e/operational-certification\.spec\.mjs|\.github/workflows/operational-certification\.yml)$'; then
-            AUTHORIZED=false
-          fi
           if [[ "$AUTHORIZED" == "true" ]]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
@@ -72,9 +63,23 @@ jobs:
         if: steps.gate.outputs.run == 'true'
         run: npx playwright install --with-deps chromium
 
+      - name: Run production UX smoke
+        if: steps.gate.outputs.run == 'true'
+        run: npx playwright test tests/e2e/smoke.spec.mjs --project=chromium --project=mobile-chromium --workers=1
+
+      - name: Upload UX smoke evidence
+        if: ${{ !cancelled() && steps.gate.outputs.run == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-ux-smoke-${{ github.run_id }}
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 30
+
       - name: Run production operational certification
         if: steps.gate.outputs.run == 'true'
-        run: npx playwright test tests/e2e/operational-certification.spec.mjs --project=chromium
+        run: npx playwright test tests/e2e/operational-certification.spec.mjs --project=chromium --workers=1
 
       - name: Upload certification evidence
         if: ${{ !cancelled() && steps.gate.outputs.run == 'true' }}

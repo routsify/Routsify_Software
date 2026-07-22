@@ -6,6 +6,7 @@ import { usePermission } from "@/components/PermissionProvider";
 export type SupplierDirectoryRow = {
   id: string;
   name: string;
+  fiscal_name?: string | null;
   category?: string | null;
   email?: string | null;
   phone?: string | null;
@@ -15,6 +16,7 @@ export type SupplierDirectoryRow = {
   notes?: string | null;
   active?: boolean;
   holded_contact_id?: string | null;
+  default_margin_pct?: number | null;
   purchase_count?: number;
   pending_count?: number;
   expected_total?: number;
@@ -26,6 +28,7 @@ export type SupplierDirectoryRow = {
 
 type Draft = {
   name: string;
+  fiscal_name: string;
   category: string;
   email: string;
   phone: string;
@@ -33,6 +36,7 @@ type Draft = {
   country: string;
   billing_address: string;
   notes: string;
+  default_margin_pct: string;
   active: boolean;
 };
 
@@ -66,7 +70,7 @@ type ImportSummary = {
   errors: Array<{ row: number; message: string }>;
 };
 
-const emptyDraft: Draft = { name: "", category: "", email: "", phone: "", tax_id: "", country: "ES", billing_address: "", notes: "", active: true };
+const emptyDraft: Draft = { name: "", fiscal_name: "", category: "", email: "", phone: "", tax_id: "", country: "ES", billing_address: "", notes: "", default_margin_pct: "", active: true };
 const pageSizes = [50, 100, 150, 200];
 
 function normalize(input: unknown): SupplierDirectoryRow {
@@ -74,6 +78,7 @@ function normalize(input: unknown): SupplierDirectoryRow {
   return {
     id: String(row.id || crypto.randomUUID()),
     name: String(row.name || "Proveedor sin nombre"),
+    fiscal_name: row.fiscal_name ? String(row.fiscal_name) : null,
     category: row.category ? String(row.category) : null,
     email: row.email ? String(row.email) : null,
     phone: row.phone ? String(row.phone) : null,
@@ -83,6 +88,7 @@ function normalize(input: unknown): SupplierDirectoryRow {
     notes: row.notes ? String(row.notes) : null,
     active: row.active !== false,
     holded_contact_id: row.holded_contact_id ? String(row.holded_contact_id) : null,
+    default_margin_pct: row.default_margin_pct === null || row.default_margin_pct === undefined ? null : Number(row.default_margin_pct),
     purchase_count: Number(row.purchase_count || 0),
     pending_count: Number(row.pending_count || 0),
     expected_total: Number(row.expected_total || 0),
@@ -107,6 +113,7 @@ function billingAddressText(value: unknown) {
 function draftFromSupplier(supplier: SupplierDirectoryRow): Draft {
   return {
     name: supplier.name,
+    fiscal_name: supplier.fiscal_name || supplier.name,
     category: supplier.category || "",
     email: supplier.email || "",
     phone: supplier.phone || "",
@@ -114,6 +121,7 @@ function draftFromSupplier(supplier: SupplierDirectoryRow): Draft {
     country: supplier.country || "ES",
     billing_address: billingAddressText(supplier.billing_address) === "—" ? "" : billingAddressText(supplier.billing_address),
     notes: supplier.notes || "",
+    default_margin_pct: supplier.default_margin_pct === null || supplier.default_margin_pct === undefined ? "" : String(supplier.default_margin_pct),
     active: supplier.active !== false,
   };
 }
@@ -131,6 +139,7 @@ function importErrorMessage(result: unknown) {
   if (error === "empty_import_file") return "El archivo está vacío.";
   if (error === "import_file_has_no_rows") return "La plantilla no contiene proveedores para importar.";
   if (error === "import_name_column_required") return "No se encuentra la columna nombre en la plantilla.";
+  if (error === "import_fiscal_name_column_required") return "No se encuentra la columna nombre fiscal en la plantilla.";
   if (error === "import_row_limit_exceeded") return "Puedes importar un máximo de 2.000 proveedores por archivo.";
   return "No se pudo completar la importación.";
 }
@@ -216,6 +225,8 @@ export function SupplierManager({ initialPage, initialSupplierId = "" }: { initi
     const source = editing ? editDraft : draft;
     const name = source.name.trim();
     if (name.length < 2) return setMessage("Introduce un nombre de proveedor válido.");
+    const fiscalName = source.fiscal_name.trim();
+    if (fiscalName.length < 2) return setMessage("Introduce el nombre fiscal o comercial del proveedor.");
     setSaving(true); setMessage(null);
     const endpoint = editing && selected ? `/api/routsify/suppliers/${encodeURIComponent(selected.id)}` : "/api/routsify/suppliers";
     const response = await fetch(endpoint, {
@@ -223,6 +234,7 @@ export function SupplierManager({ initialPage, initialSupplierId = "" }: { initi
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         name,
+        fiscal_name: fiscalName,
         category: source.category.trim() || null,
         email: source.email.trim() || null,
         phone: source.phone.trim() || null,
@@ -230,6 +242,7 @@ export function SupplierManager({ initialPage, initialSupplierId = "" }: { initi
         country: source.country.trim().toUpperCase() || "ES",
         billing_address: source.billing_address.trim() ? { address: source.billing_address.trim() } : {},
         notes: source.notes.trim() || null,
+        default_margin_pct: source.default_margin_pct === "" ? null : Number(source.default_margin_pct.replace(",", ".")),
         active: source.active,
       }),
     });
@@ -260,6 +273,18 @@ export function SupplierManager({ initialPage, initialSupplierId = "" }: { initi
     setMessage(selected.active === false ? "Proveedor reactivado." : "Proveedor desactivado. Se conserva todo su historial.");
   }
 
+  async function deleteSupplier(supplier: SupplierDirectoryRow) {
+    if (!canManage || saving) return;
+    if (!window.confirm(`¿Eliminar definitivamente a “${supplier.name}”?\n\nSolo se permitirá si no tiene servicios, presupuestos, compras, facturas ni vinculación con Holded. Esta acción no se puede deshacer.`)) return;
+    setSaving(true); setMessage(null);
+    const response = await fetch(`/api/routsify/suppliers/${encodeURIComponent(supplier.id)}`, { method: "DELETE" });
+    const result = await response.json().catch(() => null);
+    setSaving(false);
+    if (!response.ok || !result?.ok) return setMessage(result?.error === "supplier_has_protected_history" ? "No se puede eliminar porque el proveedor conserva actividad comercial. Puedes desactivarlo para mantener el histórico." : String(result?.error || "No se pudo eliminar el proveedor."));
+    await loadPage(page, pageSize, query, status);
+    setMessage(`Proveedor “${supplier.name}” eliminado correctamente.`);
+  }
+
   async function importSuppliers(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!canManage) return setMessage("Tu rol tiene acceso de consulta a proveedores.");
@@ -276,15 +301,17 @@ export function SupplierManager({ initialPage, initialSupplierId = "" }: { initi
     setMessage(`Importación terminada: ${summary.imported} proveedores creados, ${summary.duplicates} duplicados omitidos y ${summary.invalid} filas con errores.`);
   }
 
-  function startEdit() {
-    if (!selected || !canManage) return;
-    setEditDraft(draftFromSupplier(selected)); setShowEdit(true); setShowCreate(false); setShowImport(false); setMessage(null);
+  function startEdit(supplier = selected) {
+    if (!supplier || !canManage) return;
+    setSelectedId(supplier.id); setEditDraft(draftFromSupplier(supplier)); setShowEdit(true); setShowCreate(false); setShowImport(false); setMessage(null);
   }
 
   const supplierForm = (value: Draft, update: <K extends keyof Draft>(key: K, value: Draft[K]) => void) => <>
-    <div className="grid grid-2"><label>Nombre comercial *<input className="input" required value={value.name} onChange={(event) => update("name", event.target.value)} /></label><label>Categoría<input className="input" placeholder="Hotel, aerolínea, DMC, seguro..." value={value.category} onChange={(event) => update("category", event.target.value)} /></label></div>
+    <div className="grid grid-2"><label>Nombre interno *<input className="input" required value={value.name} onChange={(event) => update("name", event.target.value)} /><small>Nombre corto para encontrarlo en presupuestos.</small></label><label>Nombre fiscal / comercial *<input className="input" required value={value.fiscal_name} onChange={(event) => update("fiscal_name", event.target.value)} /><small>Nombre enviado a Holded y usado fiscalmente.</small></label></div>
+    <label>Categoría<input className="input" placeholder="Hotel, aerolínea, DMC, seguro..." value={value.category} onChange={(event) => update("category", event.target.value)} /></label>
     <div className="grid grid-2"><label>Email<input className="input" type="email" value={value.email} onChange={(event) => update("email", event.target.value)} /></label><label>Teléfono<input className="input" type="tel" value={value.phone} onChange={(event) => update("phone", event.target.value)} /></label></div>
     <div className="grid grid-2"><label>NIF / ID fiscal<input className="input" value={value.tax_id} onChange={(event) => update("tax_id", event.target.value)} /></label><label>País<input className="input" maxLength={2} value={value.country} onChange={(event) => update("country", event.target.value)} /></label></div>
+    <label>Margen predeterminado (%)<input className="input" type="number" min="0" max="99" step="0.1" value={value.default_margin_pct} onChange={(event) => update("default_margin_pct", event.target.value)} placeholder="Usar margen global" /><small>Se aplicará automáticamente a las nuevas líneas de este proveedor, salvo que indiques otro margen en el presupuesto.</small></label>
     <label>Dirección fiscal<input className="input" value={value.billing_address} onChange={(event) => update("billing_address", event.target.value)} /></label>
     <label>Notas internas<textarea className="input" rows={4} value={value.notes} onChange={(event) => update("notes", event.target.value)} /></label>
     <label><input type="checkbox" checked={value.active} onChange={(event) => update("active", event.target.checked)} /> Proveedor activo y seleccionable</label>
@@ -320,7 +347,7 @@ export function SupplierManager({ initialPage, initialSupplierId = "" }: { initi
         {message ? <p className="client-message" role="status">{message}</p> : null}
         {loading ? <p className="client-message" role="status">Cargando proveedores...</p> : null}
 
-        {items.length === 0 ? <div className="empty-state"><h2>{query ? "No hay coincidencias" : "Todavía no hay proveedores"}</h2><p>{query ? "Cambia la búsqueda o límpiala." : canManage ? "Crea o importa tu primer proveedor." : "No hay proveedores disponibles para consultar."}</p></div> : <div className="table-scroll"><table><thead><tr><th>Proveedor</th><th>Categoría</th><th>Contacto</th><th>Compras</th><th>Pendientes</th><th>Coste real</th><th>Holded</th></tr></thead><tbody>{items.map((item) => <tr key={item.id} className={item.id === selected?.id ? "selected-row" : ""}><td><button className="table-link" type="button" onClick={() => { setSelectedId(item.id); setShowEdit(false); }}><strong>{item.name}</strong><br /><small>{item.active === false ? "Inactivo" : item.country || "Sin país"}</small></button></td><td>{item.category || "—"}</td><td>{item.email || item.phone || "—"}</td><td>{item.purchase_count || 0}</td><td>{item.pending_count || 0}</td><td>{money(item.approved_total)}</td><td>{item.holded_contact_id ? "Vinculado" : "Pendiente"}</td></tr>)}</tbody></table></div>}
+        {items.length === 0 ? <div className="empty-state"><h2>{query ? "No hay coincidencias" : "Todavía no hay proveedores"}</h2><p>{query ? "Cambia la búsqueda o límpiala." : canManage ? "Crea o importa tu primer proveedor." : "No hay proveedores disponibles para consultar."}</p></div> : <div className="table-scroll"><table><thead><tr><th>Proveedor</th><th>Categoría</th><th>Contacto</th><th>Compras</th><th>Pendientes</th><th>Coste real</th><th>Holded</th><th><span className="sr-only">Acciones</span></th></tr></thead><tbody>{items.map((item) => <tr key={item.id} className={item.id === selected?.id ? "selected-row" : ""}><td><button className="table-link" type="button" onClick={() => { setSelectedId(item.id); setShowEdit(false); }}><strong>{item.name}</strong><br /><small>{item.active === false ? "Inactivo" : item.country || "Sin país"}</small></button></td><td>{item.category || "—"}</td><td>{item.email || item.phone || "—"}</td><td>{item.purchase_count || 0}</td><td>{item.pending_count || 0}</td><td>{money(item.approved_total)}</td><td>{item.holded_contact_id ? "Vinculado" : "Pendiente"}</td><td><details className="row-action-menu"><summary aria-label={`Acciones para ${item.name}`}>•••</summary><div><a href={`/proveedores/${encodeURIComponent(item.id)}`}>Abrir ficha</a>{canManage ? <button type="button" onClick={() => startEdit(item)}>Editar</button> : null}{canManage ? <button className="danger-text" type="button" disabled={saving} onClick={() => void deleteSupplier(item)}>Eliminar</button> : null}</div></details></td></tr>)}</tbody></table></div>}
 
         <div className="form-actions" aria-label="Paginación de proveedores">
           <span>Mostrando {rangeStart}-{rangeEnd} de {total}{query ? " coincidencias" : " proveedores"}</span>
@@ -333,7 +360,7 @@ export function SupplierManager({ initialPage, initialSupplierId = "" }: { initi
       </div>
 
       <aside className="client-side card" id="proveedor-panel">
-        {selected ? <>{showEdit && canManage ? <section className="side-section"><div className="section-heading"><h3>Editar proveedor</h3><button className="link-button" type="button" onClick={() => setShowEdit(false)}>Cerrar</button></div><form className="form" onSubmit={(event) => saveSupplier(event, true)}>{supplierForm(editDraft, changeEditDraft)}<div className="form-actions"><button className="btn secondary" type="button" onClick={() => setShowEdit(false)} disabled={saving}>Cancelar</button><button className="btn" type="submit" disabled={saving}>{saving ? "Guardando..." : "Guardar cambios"}</button></div></form></section> : <><div className="client-side-header"><span className="client-avatar">{supplierInitials(selected)}</span><div><h2>{selected.name}</h2><p>{selected.category || "Sin categoría"}<br />{selected.active === false ? "Inactivo" : "Activo"}</p></div></div><div className="client-badges"><span className="badge">Proveedor</span><span className="badge">{selected.holded_contact_id ? "Holded vinculado" : "Holded pendiente"}</span></div><section className="side-section"><div className="section-heading"><h3>Contacto y fiscal</h3>{canManage ? <button className="link-button" type="button" onClick={startEdit}>Editar</button> : null}</div><table><tbody><tr><th>Email</th><td>{selected.email || "—"}</td></tr><tr><th>Teléfono</th><td>{selected.phone || "—"}</td></tr><tr><th>País</th><td>{selected.country || "—"}</td></tr><tr><th>NIF / ID fiscal</th><td>{selected.tax_id || "Pendiente"}</td></tr><tr><th>Dirección fiscal</th><td>{billingAddressText(selected.billing_address)}</td></tr></tbody></table></section><section className="side-section"><h3>Histórico económico</h3><table><tbody><tr><th>Compras</th><td>{selected.purchase_count || 0}</td></tr><tr><th>Pendientes</th><td>{selected.pending_count || 0}</td></tr><tr><th>Coste presupuestado</th><td>{money(selected.expected_total)}</td></tr><tr><th>Coste real aprobado</th><td>{money(selected.approved_total)}</td></tr><tr><th>Facturado registrado</th><td>{money(selected.invoiced_total)}</td></tr></tbody></table></section><section className="side-section"><h3>Notas</h3><p>{selected.notes || "Sin notas internas."}</p></section><section className="side-actions"><h3>Acciones</h3><a className="quick-action primary" href={`/compras?supplierId=${encodeURIComponent(selected.id)}`}>Ver compras y facturas <span>→</span></a>{canManage ? <button className="quick-action" type="button" onClick={startEdit}>Editar proveedor <span>→</span></button> : null}{canManage ? <button className="quick-action" type="button" disabled={saving} onClick={() => void toggleActive()}>{selected.active === false ? "Reactivar proveedor" : "Desactivar proveedor"} <span>→</span></button> : null}</section></>}</> : <div className="empty-state"><h2>Sin proveedor seleccionado</h2><p>Selecciona un proveedor.</p></div>}
+        {selected ? <>{showEdit && canManage ? <section className="side-section"><div className="section-heading"><h3>Editar proveedor</h3><button className="link-button" type="button" onClick={() => setShowEdit(false)}>Cerrar</button></div><form className="form" onSubmit={(event) => saveSupplier(event, true)}>{supplierForm(editDraft, changeEditDraft)}<div className="form-actions"><button className="btn secondary" type="button" onClick={() => setShowEdit(false)} disabled={saving}>Cancelar</button><button className="btn" type="submit" disabled={saving}>{saving ? "Guardando..." : "Guardar cambios"}</button></div></form></section> : <><div className="client-side-header"><span className="client-avatar">{supplierInitials(selected)}</span><div><h2>{selected.name}</h2><p>{selected.category || "Sin categoría"}<br />{selected.active === false ? "Inactivo" : "Activo"}</p></div></div><div className="client-badges"><span className="badge">Proveedor</span><span className="badge">{selected.holded_contact_id ? "Holded vinculado" : "Holded pendiente"}</span></div><section className="side-section"><div className="section-heading"><h3>Contacto y fiscal</h3>{canManage ? <button className="link-button" type="button" onClick={() => startEdit()}>Editar</button> : null}</div><table><tbody><tr><th>Email</th><td>{selected.email || "—"}</td></tr><tr><th>Teléfono</th><td>{selected.phone || "—"}</td></tr><tr><th>País</th><td>{selected.country || "—"}</td></tr><tr><th>NIF / ID fiscal</th><td>{selected.tax_id || "Pendiente"}</td></tr><tr><th>Dirección fiscal</th><td>{billingAddressText(selected.billing_address)}</td></tr><tr><th>Margen predeterminado</th><td>{selected.default_margin_pct === null || selected.default_margin_pct === undefined ? "Global" : `${selected.default_margin_pct}%`}</td></tr></tbody></table></section><section className="side-section"><h3>Histórico económico</h3><table><tbody><tr><th>Compras</th><td>{selected.purchase_count || 0}</td></tr><tr><th>Pendientes</th><td>{selected.pending_count || 0}</td></tr><tr><th>Coste presupuestado</th><td>{money(selected.expected_total)}</td></tr><tr><th>Coste real aprobado</th><td>{money(selected.approved_total)}</td></tr><tr><th>Facturado registrado</th><td>{money(selected.invoiced_total)}</td></tr></tbody></table></section><section className="side-section"><h3>Notas</h3><p>{selected.notes || "Sin notas internas."}</p></section><section className="side-actions"><h3>Acciones</h3><a className="quick-action primary" href={`/compras?supplierId=${encodeURIComponent(selected.id)}`}>Ver compras y facturas <span>→</span></a>{canManage ? <button className="quick-action" type="button" onClick={() => startEdit()}>Editar proveedor <span>→</span></button> : null}{canManage ? <button className="quick-action" type="button" disabled={saving} onClick={() => void toggleActive()}>{selected.active === false ? "Reactivar proveedor" : "Desactivar proveedor"} <span>→</span></button> : null}</section></>}</> : <div className="empty-state"><h2>Sin proveedor seleccionado</h2><p>Selecciona un proveedor.</p></div>}
       </aside>
     </section>
   </div>;

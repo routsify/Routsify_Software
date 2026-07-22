@@ -11,6 +11,7 @@ type Draft = {
   average_rating: string;
   payment_terms_days: number;
   default_currency: string;
+  default_margin_pct: string;
   service_regions: string;
   cancellation_policy: string;
   emergency_name: string;
@@ -30,6 +31,7 @@ function draftFromSupplier(supplier: Row): Draft {
     average_rating: supplier.average_rating === null || supplier.average_rating === undefined ? "" : String(supplier.average_rating),
     payment_terms_days: Number(supplier.payment_terms_days || 0),
     default_currency: text(supplier.default_currency) || "EUR",
+    default_margin_pct: supplier.default_margin_pct === null || supplier.default_margin_pct === undefined ? "" : String(supplier.default_margin_pct),
     service_regions: list(supplier.service_regions).join(", "),
     cancellation_policy: text(supplier.cancellation_policy),
     emergency_name: text(emergency.name),
@@ -61,6 +63,7 @@ export function SupplierProfilePanel({ supplier, onSaved }: { supplier: Row; onS
         average_rating: draft.average_rating === "" ? null : Number(draft.average_rating),
         payment_terms_days: draft.payment_terms_days,
         default_currency: draft.default_currency.trim().toUpperCase(),
+        default_margin_pct: draft.default_margin_pct === "" ? null : Number(draft.default_margin_pct.replace(",", ".")),
         service_regions: draft.service_regions.split(",").map((item) => item.trim()).filter(Boolean),
         cancellation_policy: draft.cancellation_policy || null,
         emergency_contact: { name: draft.emergency_name, phone: draft.emergency_phone, email: draft.emergency_email },
@@ -85,6 +88,7 @@ export function SupplierProfilePanel({ supplier, onSaved }: { supplier: Row; onS
         <label>Valoración 0-5<input className="input" type="number" min={0} max={5} step="0.1" value={draft.average_rating} onChange={(event) => update("average_rating", event.target.value)} /></label>
         <label>Plazo de pago (días)<input className="input" type="number" min={0} max={365} value={draft.payment_terms_days} onChange={(event) => update("payment_terms_days", Number(event.target.value))} /></label>
         <label>Moneda<input className="input" maxLength={3} value={draft.default_currency} onChange={(event) => update("default_currency", event.target.value)} /></label>
+        <label>Margen predeterminado (%)<input className="input" type="number" min={0} max={99} step="0.1" value={draft.default_margin_pct} onChange={(event) => update("default_margin_pct", event.target.value)} placeholder="Usar global" /></label>
         <label>Regiones / destinos<input className="input" value={draft.service_regions} onChange={(event) => update("service_regions", event.target.value)} placeholder="Italia, Francia, París..." /></label>
       </div>
       <label><input type="checkbox" checked={draft.preferred} onChange={(event) => update("preferred", event.target.checked)} /> Proveedor preferente para nuevas propuestas</label>
@@ -95,6 +99,7 @@ export function SupplierProfilePanel({ supplier, onSaved }: { supplier: Row; onS
       <div><dt>Preferente</dt><dd>{supplier.preferred ? "Sí" : "No"}</dd></div><div><dt>Riesgo</dt><dd>{text(supplier.risk_level) || "low"}</dd></div>
       <div><dt>Fiabilidad</dt><dd>{Number(supplier.reliability_score || 0)}/100</dd></div><div><dt>Valoración</dt><dd>{supplier.average_rating === null || supplier.average_rating === undefined ? "—" : `${Number(supplier.average_rating).toFixed(1)}/5`}</dd></div>
       <div><dt>Pago</dt><dd>{Number(supplier.payment_terms_days || 0)} días</dd></div><div><dt>Moneda</dt><dd>{text(supplier.default_currency) || "EUR"}</dd></div>
+      <div><dt>Margen predeterminado</dt><dd>{supplier.default_margin_pct === null || supplier.default_margin_pct === undefined ? "Global" : `${Number(supplier.default_margin_pct).toFixed(1)}%`}</dd></div>
       <div><dt>Cobertura</dt><dd>{list(supplier.service_regions).join(", ") || "Sin definir"}</dd></div><div><dt>Emergencias</dt><dd>{text(emergency.name) || text(emergency.phone) || "Sin contacto"}</dd></div>
     </dl>}
     {!editing ? <div className="client360-note"><strong>Política de cancelación</strong><p>{text(supplier.cancellation_policy) || "Sin política registrada."}</p></div> : null}
