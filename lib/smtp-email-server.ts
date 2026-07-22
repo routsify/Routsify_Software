@@ -7,32 +7,69 @@ import { loadThirdPartyIntegrationConfig } from "@/lib/third-party-integration-c
 const HOSTINGER_SMTP_HOST = "smtp.hostinger.com";
 const HOSTINGER_SMTP_PORT = 465;
 const SMTP_TIMEOUT_MS = 15_000;
+const SMTP_TOTAL_TIMEOUT_MS = 45_000;
+
+type SmtpWaiter = {
+  resolve: (line: string) => void;
+  reject: (error: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
+};
 
 class SmtpSession {
   private buffer = "";
   private lines: string[] = [];
-  private waiters: Array<(line: string) => void> = [];
+  private waiters: SmtpWaiter[] = [];
+  private closedError: Error | null = null;
 
   constructor(private readonly socket: TLSSocket) {
     socket.setEncoding("utf8");
     socket.on("data", (chunk: string) => {
+      if (this.closedError) return;
       this.buffer += chunk;
       let index = this.buffer.indexOf("\r\n");
       while (index >= 0) {
         const line = this.buffer.slice(0, index);
         this.buffer = this.buffer.slice(index + 2);
         const waiter = this.waiters.shift();
-        if (waiter) waiter(line);
+        if (waiter) {
+          clearTimeout(waiter.timer);
+          waiter.resolve(line);
+        }
         else this.lines.push(line);
         index = this.buffer.indexOf("\r\n");
       }
     });
+    socket.on("error", (error) => this.rejectPending(error instanceof Error ? error : new Error("smtp_socket_error")));
+    socket.on("close", () => this.rejectPending(new Error("smtp_socket_closed")));
+    socket.on("end", () => this.rejectPending(new Error("smtp_socket_ended")));
+  }
+
+  private rejectPending(error: Error) {
+    if (this.closedError) return;
+    this.closedError = error;
+    const pending = this.waiters.splice(0);
+    for (const waiter of pending) {
+      clearTimeout(waiter.timer);
+      waiter.reject(error);
+    }
   }
 
   private readLine() {
     const line = this.lines.shift();
     if (line !== undefined) return Promise.resolve(line);
-    return new Promise<string>((resolve) => this.waiters.push(resolve));
+    if (this.closedError) return Promise.reject(this.closedError);
+    return new Promise<string>((resolve, reject) => {
+      const waiter: SmtpWaiter = {
+        resolve,
+        reject,
+        timer: setTimeout(() => {
+          const index = this.waiters.indexOf(waiter);
+          if (index >= 0) this.waiters.splice(index, 1);
+          reject(new Error("smtp_command_timeout"));
+        }, SMTP_TIMEOUT_MS),
+      };
+      this.waiters.push(waiter);
+    });
   }
 
   async response(expected: number[]) {
@@ -51,12 +88,12 @@ class SmtpSession {
   }
 
   async command(command: string, expected: number[]) {
-    this.socket.write(`${command}\r\n`);
+    if (!this.socket.write(`${command}\r\n`)) await once(this.socket, "drain");
     return this.response(expected);
   }
 
-  write(value: string) {
-    this.socket.write(value);
+  async write(value: string) {
+    if (!this.socket.write(value)) await once(this.socket, "drain");
   }
 }
 
@@ -99,6 +136,20 @@ async function connect(input: { host: string; port: number; username: string; pa
   await session.command(Buffer.from(input.username, "utf8").toString("base64"), [334]);
   await session.command(Buffer.from(input.password, "utf8").toString("base64"), [235]);
   return { socket, session };
+}
+
+async function withTotalTimeout<T>(operation: Promise<T>) {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<T>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error("smtp_total_timeout")), SMTP_TOTAL_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 export async function smtpConfiguration(organizationId: string) {
@@ -191,9 +242,11 @@ export async function sendTransactionalEmail(input: {
       }),
       `--${boundary}--`,
     ].join("\r\n") : encodedBody;
-    connection.session.write(`${headers}\r\n\r\n${mimeBody}\r\n.\r\n`);
-    await connection.session.response([250]);
-    await connection.session.command("QUIT", [221]);
+    await withTotalTimeout((async () => {
+      await connection.session.write(`${headers}\r\n\r\n${mimeBody}\r\n.\r\n`);
+      await connection.session.response([250]);
+      await connection.session.command("QUIT", [221]);
+    })());
     return { ok: true as const, status: 200, provider: "hostinger_smtp", messageId };
   } catch (error) {
     return { ok: false as const, status: 424, error: error instanceof Error ? error.message : "smtp_send_failed" };
