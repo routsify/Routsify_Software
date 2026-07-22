@@ -187,7 +187,7 @@ export function BudgetManager({ initialProposals = [], initialCases = [], initia
   const activeSuppliers = useMemo(() => suppliers.filter((item) => item.active !== false), [suppliers]);
   const selected = proposals.find((proposal) => proposal.id === selectedId) || filtered[0] || proposals[0] || null;
   const versions = sortedVersions(selected);
-  const selectedVersion = versions.find((version) => version.id === selectedVersionId) || versions[0] || null;
+  const selectedVersion = versions.find((version) => version.id === selectedVersionId) || versions.find((version) => version.id === selected?.current_version_id) || versions[0] || null;
   const latest = versions[0] || null;
   const selectedLines = linesOfVersion(selectedVersion);
   const selectedTotals = totalsFromVersion(selectedVersion);
@@ -326,7 +326,7 @@ export function BudgetManager({ initialProposals = [], initialCases = [], initia
     const result = await response.json().catch(() => null); setSaving(false);
     if (!response.ok || !result?.ok) {
       const error = String(result?.error || "No se pudo crear la versión.");
-      if (error === "editable_version_exists") return setMessage("Ya existe una versión editable. Ábrela para continuar los cambios.");
+      if (error.includes("editable_version_exists")) return setMessage("Ya existe una versión editable. Selecciónala en la barra de versiones para continuar los cambios.");
       if (error === "signed_contract_requires_amendment") return setMessage("Este expediente ya tiene un contrato firmado. Los cambios deben tramitarse mediante una adenda.");
       return setMessage(error);
     }
