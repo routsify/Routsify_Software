@@ -71,8 +71,10 @@ export async function importSuppliersFromCsv(organizationId: string, csv: string
   if (rows.length - 1 > MAX_IMPORT_ROWS) throw new Error("import_row_limit_exceeded");
 
   const headers = rows[0].map(normalizeHeader);
-  const acceptedNameHeaders = ["nombre", "proveedor", "nombre_comercial", "razon_social", "name"];
+  const acceptedNameHeaders = ["nombre", "nombre_interno", "proveedor", "name"];
+  const acceptedFiscalNameHeaders = ["nombre_fiscal", "nombre_comercial", "razon_social", "fiscal_name", "legal_name"];
   if (!headers.some((header) => acceptedNameHeaders.includes(header))) throw new Error("import_name_column_required");
+  if (!headers.some((header) => acceptedFiscalNameHeaders.includes(header))) throw new Error("import_fiscal_name_column_required");
 
   const rawRows = rows.slice(1).map((cells, index) => ({
     rowNumber: index + 2,
@@ -89,6 +91,7 @@ export async function importSuppliersFromCsv(organizationId: string, csv: string
   for (const raw of rawRows) {
     const values = raw.values;
     const name = field(values, acceptedNameHeaders);
+    const fiscalName = field(values, acceptedFiscalNameHeaders);
     const category = field(values, ["categoria", "tipo", "category"]);
     const email = field(values, ["email", "correo", "correo_electronico"]).toLowerCase();
     const phone = field(values, ["telefono", "movil", "phone"]);
@@ -102,6 +105,7 @@ export async function importSuppliersFromCsv(organizationId: string, csv: string
     const emailKey = email;
 
     if (name.length < 2) { errors.push({ row: raw.rowNumber, message: "Falta el nombre del proveedor." }); continue; }
+    if (fiscalName.length < 2) { errors.push({ row: raw.rowNumber, message: "Falta el nombre fiscal o comercial." }); continue; }
     if (email && !EMAIL_PATTERN.test(email)) { errors.push({ row: raw.rowNumber, message: "El email no tiene un formato válido." }); continue; }
     if (!/^[A-Z]{2}$/.test(country)) { errors.push({ row: raw.rowNumber, message: "El país debe tener dos letras, por ejemplo ES." }); continue; }
     if (seenNames.has(nameKey) || (taxKey && seenTaxIds.has(taxKey)) || (emailKey && seenEmails.has(emailKey))) { duplicates += 1; continue; }
@@ -117,6 +121,7 @@ export async function importSuppliersFromCsv(organizationId: string, csv: string
       insert: {
         organization_id: organizationId,
         name,
+        fiscal_name: fiscalName,
         category: category || null,
         email: email || null,
         phone: phone || null,

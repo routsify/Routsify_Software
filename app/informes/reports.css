@@ -19,4 +19,12 @@
 .monthly-bar strong { font-size: 11px; text-transform: capitalize; }
 .monthly-bar small { font-size: 10px; line-height: 1.25; }
 .text-danger { color: var(--danger); font-weight: 850; }
-@media (max-width: 900px) { .monthly-bars { grid-template-columns: repeat(12, 64px); } }
+.report-controls { display: grid; gap: 14px; margin-bottom: 16px; }
+.report-quick-ranges, .report-date-form { display: flex; align-items: end; gap: 8px; flex-wrap: wrap; }
+.report-date-form label { display: grid; gap: 5px; min-width: 150px; font-size: 12px; font-weight: 800; }
+.report-period-label { color: var(--muted); font-size: 13px; }
+.report-module-tabs { display: flex; gap: 6px; margin: 0 0 18px; padding: 5px; overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+.report-module-tabs a { flex: 0 0 auto; padding: 10px 14px; border-radius: 10px; color: var(--muted); font-size: 13px; font-weight: 850; }
+.report-module-tabs a:hover { background: var(--soft); color: var(--ink); }
+.report-module-tabs a.active { background: var(--brand); color: #fff; }
+@media (max-width: 900px) { .monthly-bars { grid-template-columns: repeat(12, 64px); } .report-date-form .btn { width: 100%; } }

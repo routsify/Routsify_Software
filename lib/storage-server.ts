@@ -6,6 +6,7 @@ export const TRAVEL_DOCUMENTS_BUCKET = "travel-documents";
 export const INVOICES_BUCKET = "invoices";
 export const PROPOSAL_ASSETS_BUCKET = "proposal-assets";
 export const LEGAL_DOCUMENTS_BUCKET = "legal-documents";
+export const BRAND_ASSETS_BUCKET = "brand-assets";
 
 export function bucketForOwner(ownerType: PrivateDocumentOwner) {
   if (ownerType === "traveler") return TRAVEL_DOCUMENTS_BUCKET;

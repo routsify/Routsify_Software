@@ -64,7 +64,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
     const destination = source.destination_segment ? String(source.destination_segment).trim() || null : null;
     const rule = await resolveMarginRule({ organizationId, explicitMarginPercent: explicitMargin, supplierId, serviceTypeCode, destination });
-    const salePrice = source.sale_price === undefined || source.sale_price === null || source.sale_price === "" ? calculateSalePrice(cost, rule.percent, rule.formula) : numeric(source.sale_price);
+    const manualSale = !(source.sale_price === undefined || source.sale_price === null || source.sale_price === "");
+    const salePrice = manualSale ? numeric(source.sale_price) : calculateSalePrice(cost, rule.percent, rule.formula);
     if (!Number.isFinite(salePrice) || salePrice < 0) return NextResponse.json({ ok: false, error: "invalid_sale_price" }, { status: 400 });
 
     const { count, error: countError } = await db
@@ -89,7 +90,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       cost_budget: cost,
       margin_applied: rule.fraction,
       margin_rule_id: rule.ruleId,
-      margin_snapshot: rule.snapshot,
+      margin_snapshot: { ...rule.snapshot, sale_source: manualSale ? "manual" : "calculated" },
+      origin_margin: rule.source,
       sale_price: salePrice,
       creates_expected_purchase: source.creates_expected_purchase === undefined ? Boolean(supplierId) : Boolean(source.creates_expected_purchase),
       sort_order: count || 0,

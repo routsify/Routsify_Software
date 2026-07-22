@@ -7,6 +7,7 @@ import { enforceProtectedSettingValue, isProtectedSetting, protectedSettingDescr
 import { IntegrationSecretsPanel, type IntegrationSecretStatus } from "./IntegrationSecretsPanel";
 import { LegalDocumentsPanel, type LegalDocumentRow } from "./LegalDocumentsPanel";
 import { UserManagementPanel } from "./UserManagementPanel";
+import { BrandLogoPanel } from "./BrandLogoPanel";
 
 type TabId = "general" | "appearance" | "users" | "legal" | "integrations" | "operations" | "security";
 
@@ -50,6 +51,8 @@ export function ProductionSettings({ storedRows = [], secretStatuses = [], legal
   const activeSettings = initialSettings.filter((setting) => activeDefinition.modules.includes(setting.module));
   const configuredSecrets = secretStatuses.filter((item) => item.configured).length;
   const activeLegalDocuments = legalDocuments.filter((item) => item.is_active && item.status === "ready").length;
+  const storedLogoUrl = storedRows.find((row) => String(row.key || "") === "company.logo_url")?.value;
+  const storedLogoPath = storedRows.find((row) => String(row.key || "") === "company.logo_path")?.value;
 
   function setValue(key: string, value: AppSetting["value"]) {
     setDraftValues((current) => ({ ...current, [key]: value }));
@@ -160,6 +163,7 @@ export function ProductionSettings({ storedRows = [], secretStatuses = [], legal
     {activeTab !== "users" && activeTab !== "legal" ? <section className="settings-section">
       <div className="settings-section-header"><div><span className="eyebrow">Panel de control</span><h2>{activeDefinition.label}</h2><p>{activeDefinition.description}</p></div>{activeTab !== "integrations" && isAdmin && activeSettings.some((setting) => setting.editable) ? <button className="btn secondary" type="button" onClick={resetActiveTab} disabled={busy}>Restaurar valores de esta sección</button> : null}</div>
       {activeTab === "appearance" ? <div className="settings-preview" style={previewStyle}><aside className="settings-preview-sidebar"><strong>{String(draftValues["company.name"] || "Routsify")}</strong><span>Inicio</span><span>Clientes</span><span>Expedientes</span><span>Presupuestos</span></aside><div className="settings-preview-main"><span className="eyebrow">Vista previa inmediata</span><h2>Así se aplicará el estilo</h2><p>Los cambios visuales se muestran antes de guardar y se propagan al sistema al confirmar.</p><article className="settings-preview-card"><strong>Tarjeta de ejemplo</strong><p>Colores, fondos, radios, densidad y ancho del menú.</p><span className="settings-preview-button">Acción principal</span></article></div></div> : null}
+      {activeTab === "appearance" ? <div className="settings-fields"><BrandLogoPanel initialUrl={typeof storedLogoUrl === "string" ? storedLogoUrl : ""} initialPath={typeof storedLogoPath === "string" ? storedLogoPath : ""} canManage={isAdmin} /></div> : null}
       {activeTab !== "integrations" && activeSettings.length ? <div className="settings-fields">{activeSettings.map(renderField)}</div> : null}
       {activeTab === "integrations" ? <IntegrationSecretsPanel initialStatuses={secretStatuses} initialValues={initialValues} canManage={canManageSecrets} onSettingsSaved={syncIntegrationSettings} /> : null}
     </section> : null}

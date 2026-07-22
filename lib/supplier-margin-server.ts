@@ -72,3 +72,4 @@ export async function saveSupplierDefaultMargin(input: { organizationId: string;
   if (error) throw new Error(error.message);
   return margin;
 }
+

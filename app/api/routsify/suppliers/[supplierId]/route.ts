@@ -19,7 +19,7 @@ function stringList(value: unknown, maxItems = 30, maxLength = 80) {
   return [...new Set(source.map((item) => String(item ?? "").trim().slice(0, maxLength)).filter(Boolean))].slice(0, maxItems);
 }
 
-const select = "id,name,category,email,phone,tax_id,country,billing_address,notes,active,holded_contact_id,preferred,risk_level,reliability_score,average_rating,payment_terms_days,default_currency,service_regions,cancellation_policy,emergency_contact,profile_updated_at,created_at,updated_at";
+const select = "id,name,fiscal_name,category,email,phone,tax_id,country,billing_address,notes,active,holded_contact_id,preferred,risk_level,reliability_score,average_rating,payment_terms_days,default_currency,service_regions,cancellation_policy,emergency_contact,profile_updated_at,created_at,updated_at";
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ supplierId: string }> }) {
   const access = await requireInternalAccess(request);
@@ -42,6 +42,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     const name = text(source.name, 160);
     if (!name || name.length < 2) return NextResponse.json({ ok: false, error: "supplier_name_required" }, { status: 400 });
     patch.name = name;
+  }
+  if ("fiscal_name" in source) {
+    const fiscalName = text(source.fiscal_name, 180);
+    if (!fiscalName || fiscalName.length < 2) return NextResponse.json({ ok: false, error: "supplier_fiscal_name_required" }, { status: 400 });
+    patch.fiscal_name = fiscalName;
   }
   if ("category" in source) patch.category = text(source.category, 100);
   if ("email" in source) patch.email = text(source.email, 240);

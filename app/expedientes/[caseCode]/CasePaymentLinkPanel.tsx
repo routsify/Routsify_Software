@@ -76,3 +76,4 @@ export function CasePaymentLinkPanel({ proposalId, caseRow, onPaymentConfirmed }
     <div className="card"><h2>Registrar cobro</h2><p>Total aceptado: <strong>{money(caseRow.accepted_value, caseRow.currency || "EUR")}</strong></p>{link && link.status !== "confirmed" && canManage ? <form className="form" onSubmit={confirm}><label>Referencia única<input className="input" required value={reference} onChange={(event) => setReference(event.target.value)} placeholder="Ej. TEYA-2026-0001" /></label><label>Fecha de cobro<input className="input" type="date" value={receivedAt} onChange={(event) => setReceivedAt(event.target.value)} /></label><button className="btn" type="submit" disabled={busy}>{busy ? "Confirmando…" : "Marcar como pagado"}</button></form> : <p>{link?.status === "confirmed" ? "El cobro ya está confirmado." : "Crea primero el enlace de pago."}</p>}{message ? <p className="client-message" role="status">{message}</p> : null}</div>
   </section>;
 }
+

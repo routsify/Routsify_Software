@@ -2,24 +2,26 @@ import { notFound } from "next/navigation";
 import { Logo } from "@/components/Logo";
 import { resolvePublicProposal } from "@/lib/proposal-public-server";
 import { AcceptProposalBox } from "./AcceptProposalBox";
+import { loadAppTheme } from "@/lib/app-theme-server";
 
 export default async function PublicProposalPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   const resolved = await resolvePublicProposal(token);
   if (!resolved.ok) notFound();
   const { proposal } = resolved;
+  const brand = await loadAppTheme(resolved.organizationId);
 
   return (
     <div className="proposal-hero">
       <div className="proposal-wrap">
         <section className="hero-panel">
           <div>
-            <Logo size={112} />
+            <Logo size={112} src={brand.logoUrl} alt={`Logo de ${brand.companyName}`} />
             <div className="eyebrow" style={{ marginTop: 24 }}>Propuesta privada para {proposal.client}</div>
             <h1>{proposal.title}</h1>
             <p style={{ fontSize: 20 }}>{proposal.headline}</p>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 24 }}><span className="badge">{proposal.destination}</span><span className="badge">{proposal.dates}</span><span className="badge">{proposal.travelers}</span></div>
-            <p style={{ marginTop: 12 }}><small>Acceso privado validado · propuesta preparada por Routsify</small></p>
+            <p style={{ marginTop: 12 }}><small>Acceso privado validado · propuesta preparada por {brand.companyName}</small></p>
           </div>
           <div className="card"><AcceptProposalBox total={proposal.total} token={token} initialAccepted={resolved.accepted} clientName={proposal.client} clientEmail={proposal.clientEmail || ""} /></div>
         </section>

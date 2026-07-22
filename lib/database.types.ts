@@ -3024,94 +3024,6 @@ export type Database = {
           },
         ]
       }
-      proposal_scenarios: {
-        Row: {
-          applied_at: string | null
-          applied_by: string | null
-          created_at: string
-          created_by: string | null
-          description: string | null
-          id: string
-          lines_snapshot: Json
-          margin_pct: number
-          name: string
-          organization_id: string
-          profit: number
-          proposal_id: string
-          scenario_type: string
-          source_version_id: string
-          status: string
-          target_margin_pct: number
-          total_cost: number
-          total_sale: number
-          updated_at: string
-        }
-        Insert: {
-          applied_at?: string | null
-          applied_by?: string | null
-          created_at?: string
-          created_by?: string | null
-          description?: string | null
-          id?: string
-          lines_snapshot?: Json
-          margin_pct?: number
-          name: string
-          organization_id: string
-          profit?: number
-          proposal_id: string
-          scenario_type?: string
-          source_version_id: string
-          status?: string
-          target_margin_pct: number
-          total_cost?: number
-          total_sale?: number
-          updated_at?: string
-        }
-        Update: {
-          applied_at?: string | null
-          applied_by?: string | null
-          created_at?: string
-          created_by?: string | null
-          description?: string | null
-          id?: string
-          lines_snapshot?: Json
-          margin_pct?: number
-          name?: string
-          organization_id?: string
-          profit?: number
-          proposal_id?: string
-          scenario_type?: string
-          source_version_id?: string
-          status?: string
-          target_margin_pct?: number
-          total_cost?: number
-          total_sale?: number
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "proposal_scenarios_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "proposal_scenarios_proposal_id_fkey"
-            columns: ["proposal_id"]
-            isOneToOne: false
-            referencedRelation: "proposals"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "proposal_scenarios_source_version_id_fkey"
-            columns: ["source_version_id"]
-            isOneToOne: false
-            referencedRelation: "proposal_versions"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       proposal_versions: {
         Row: {
           accepted_at: string | null
@@ -3885,6 +3797,7 @@ export type Database = {
           default_currency: string
           email: string | null
           emergency_contact: Json
+          fiscal_name: string
           holded_contact_id: string | null
           id: string
           name: string
@@ -3911,6 +3824,7 @@ export type Database = {
           default_currency?: string
           email?: string | null
           emergency_contact?: Json
+          fiscal_name: string
           holded_contact_id?: string | null
           id?: string
           name: string
@@ -3937,6 +3851,7 @@ export type Database = {
           default_currency?: string
           email?: string | null
           emergency_contact?: Json
+          fiscal_name?: string
           holded_contact_id?: string | null
           id?: string
           name?: string
@@ -4201,12 +4116,8 @@ export type Database = {
         Args: { target_version: string }
         Returns: Json
       }
-      apply_proposal_scenario: {
-        Args: {
-          actor?: string
-          target_organization: string
-          target_scenario: string
-        }
+      delete_unaccepted_proposal: {
+        Args: { actor?: string; target_org: string; target_proposal: string }
         Returns: Json
       }
       approve_expected_purchase: {
