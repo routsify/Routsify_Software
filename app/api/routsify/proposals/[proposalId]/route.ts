@@ -144,8 +144,8 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     actor: access.actorId,
   });
   if (error) {
-    const protectedHistory = error.message.includes("accepted_proposal_cannot_be_deleted") || error.message.includes("proposal_has_accepted_history");
-    return NextResponse.json({ ok: false, error: protectedHistory ? (error.message.includes("accepted_proposal") ? "accepted_proposal_cannot_be_deleted" : "proposal_has_accepted_history") : error.message }, { status: protectedHistory ? 409 : 400 });
+    const protectedHistory = ["accepted_proposal_cannot_be_deleted", "proposal_has_accepted_history", "proposal_has_protected_history"].find((code) => error.message.includes(code));
+    return NextResponse.json({ ok: false, error: protectedHistory || error.message }, { status: protectedHistory ? 409 : 400 });
   }
   return NextResponse.json({ ok: true, data });
 }

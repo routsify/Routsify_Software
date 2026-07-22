@@ -113,13 +113,13 @@ export function ProposalIndexManager({ initialProposals = [], initialCases = [],
   async function deleteProposal(proposal: ProposalSummary) {
     if (!canManage || deletingId) return;
     const label = proposal.cases?.case_code || "este presupuesto";
-    const sentWarning = proposal.status === "sent" ? " El enlace enviado al cliente dejará de funcionar inmediatamente." : "";
-    if (!window.confirm(`¿Eliminar definitivamente el presupuesto de “${label}”?${sentWarning}\n\nLos presupuestos aceptados y su historial económico seguirán protegidos. Esta acción no se puede deshacer.`)) return;
+    const accessWarning = ["sent", "accepted"].includes(proposal.status) ? " El acceso del cliente dejará de funcionar inmediatamente." : "";
+    if (!window.confirm(`¿Eliminar definitivamente el presupuesto de “${label}”?${accessWarning}\n\nTambién se eliminarán sus versiones, aceptaciones y compras todavía pendientes. Los contratos firmados, pagos y documentos emitidos siguen protegidos. Esta acción no se puede deshacer.`)) return;
     setDeletingId(proposal.id); setMessage(null);
     const response = await fetch(`/api/routsify/proposals/${encodeURIComponent(proposal.id)}`, { method: "DELETE" });
     const result = await response.json().catch(() => null);
     setDeletingId(null);
-    if (!response.ok || !result?.ok) return setMessage(["accepted_proposal_cannot_be_deleted", "proposal_has_accepted_history", "proposal_has_protected_history"].includes(String(result?.error)) ? "No se puede eliminar porque el presupuesto fue aceptado o conserva historial económico protegido." : String(result?.error || "No se pudo eliminar el presupuesto."));
+    if (!response.ok || !result?.ok) return setMessage(["accepted_proposal_cannot_be_deleted", "proposal_has_accepted_history", "proposal_has_protected_history"].includes(String(result?.error)) ? "No se puede eliminar porque ya tiene un contrato preparado o firmado, pagos, compras procesadas o documentos fiscales emitidos." : String(result?.error || "No se pudo eliminar el presupuesto."));
     setProposals((current) => current.filter((item) => item.id !== proposal.id));
     setMessage(`Presupuesto de “${label}” eliminado correctamente.`);
   }
