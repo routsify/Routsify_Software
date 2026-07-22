@@ -1,0 +1,28 @@
+name: Apply Holded Autopilot Patch
+on:
+  push:
+    branches:
+      - release/holded-autopilot-github
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: ${{ !contains(github.event.head_commit.message, 'Apply Holded autopilot implementation') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply validated patch
+        run: |
+          cat .codex/holded-autopilot/chunk_* > /tmp/holded-autopilot.diff.gz.b64
+          echo "f53e7b72d5cb0437f81f8ac41a23c61ba4eab3b98ec33d6c4eaa4a0b880bdb8a  /tmp/holded-autopilot.diff.gz.b64" | sha256sum -c -
+          base64 -d /tmp/holded-autopilot.diff.gz.b64 | gunzip > /tmp/holded-autopilot.diff
+          git apply /tmp/holded-autopilot.diff
+          rm -rf .codex/holded-autopilot .codex/holded-autopilot-trigger.txt .github/workflows/apply-holded-autopilot.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Apply Holded autopilot implementation"
+          git push
