@@ -3,11 +3,11 @@ import {
   buildHoldedContactPayload,
   buildHoldedDocumentPayload,
   buildHoldedPaymentPayload,
-  buildHoldedPurchasePayload,
   holdedConfiguration,
   holdedRequest,
 } from "@/lib/holded-server";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
+import { createHash } from "crypto";
 
 export type WorkerRow = { id: string; organization_id: string; channel: string; event_type: string; attempts: number; max_attempts: number; payload: Record<string, unknown>; related_case_id?: string | null };
 export type WorkerOutcome = { status: "done" | "manual_review"; message: string; metadata?: Record<string, unknown> };
@@ -17,6 +17,8 @@ const num = (value: unknown) => Number.isFinite(Number(value)) ? Number(value) :
 const one = (value: unknown): Record<string, unknown> | null => Array.isArray(value) ? value[0] && typeof value[0] === "object" ? value[0] as Record<string, unknown> : null : value && typeof value === "object" ? value as Record<string, unknown> : null;
 const idOf = (value: unknown) => { const row = one(value); return text(row?.id || row?._id || row?.document_id || row?.documentId || row?.contact_id || row?.contactId); };
 const numberOf = (value: unknown) => { const row = one(value); return text(row?.document_number || row?.docNumber || row?.number || row?.documentNumber); };
+const dateOf = (value: unknown) => text(value).slice(0, 10) || null;
+const hashPayload = (value: unknown) => createHash("sha256").update(JSON.stringify(value || {})).digest("hex");
 const rowsOf = (value: unknown): Record<string, unknown>[] => {
   if (Array.isArray(value)) return value.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"));
   const row = one(value);
@@ -129,25 +131,12 @@ async function billing(row: WorkerRow, module: "proformas" | "invoices"): Promis
 async function purchase(row: WorkerRow): Promise<WorkerOutcome> {
   const purchaseId = text(row.payload.expected_purchase_id);
   if (!purchaseId) throw new Error("expected_purchase_id_required");
-  const db = getSupabaseAdminClient();
-  const { data: purchaseRow, error } = await db.from("expected_purchases").select("*").eq("organization_id", row.organization_id).eq("id", purchaseId).maybeSingle();
-  if (error || !purchaseRow) throw new Error(error?.message || "expected_purchase_not_found");
-  if (purchaseRow.holded_purchase_id) return { status: "done", message: "Compra ya sincronizada." };
-  if (!purchaseRow.supplier_id) return { status: "manual_review", message: "La compra necesita un proveedor maestro antes de enviarse a Holded." };
-  const contactId = await ensureSupplierContact(row.organization_id, String(purchaseRow.supplier_id));
-  const { endpoints } = await holdedConfiguration(row.organization_id);
-  const result = await holdedRequest({ organizationId: row.organization_id, method: "POST", path: endpoints.purchases, body: buildHoldedPurchasePayload({
-    contactId, contactName: text(purchaseRow.supplier_name) || undefined, description: text(purchaseRow.service) || "Servicio de viaje",
-    amount: num(purchaseRow.invoice_base || purchaseRow.approved_cost || purchaseRow.expected_amount || purchaseRow.amount), currency: text(purchaseRow.currency) || "EUR",
-    date: text(purchaseRow.invoice_date) || undefined, dueDate: text(purchaseRow.due_date) || undefined, number: text(purchaseRow.invoice_number) || undefined,
-    notes: `ROUTSIFY_CASE_ID:${purchaseRow.case_id}; ROUTSIFY_BUDGET_LINE_ID:${purchaseRow.budget_line_id || ""}`,
-  }) });
-  if (!result.ok) throw failure(result);
-  const remoteId = idOf(result.payload);
-  const now = new Date().toISOString();
-  await db.from("expected_purchases").update({ holded_purchase_id: remoteId || null, sync_status: remoteId ? "synced" : "manual_review", sync_error: remoteId ? null : "holded_id_missing", last_synced_at: now, updated_at: now })
-    .eq("id", purchaseId).eq("organization_id", row.organization_id);
-  return { status: remoteId ? "done" : "manual_review", message: remoteId ? "Compra sincronizada con Holded v2." : "Revisión manual necesaria.", metadata: { holded_purchase_id: remoteId || null } };
+  await syncHoldedPurchaseCandidates(row.organization_id, { targetPurchaseId: purchaseId });
+  return {
+    status: "manual_review",
+    message: "Flujo saliente desactivado: Routsify no crea facturas de proveedor en Holded. Se ha buscado la factura recibida para conciliación.",
+    metadata: { expected_purchase_id: purchaseId, source: "holded_import_only" },
+  };
 }
 
 async function payment(row: WorkerRow): Promise<WorkerOutcome> {
@@ -194,16 +183,78 @@ export async function handleHoldedOutbox(row: WorkerRow): Promise<WorkerOutcome>
   return { status: "manual_review", message: "Evento Holded sin automatización aprobada." };
 }
 
-export async function syncHoldedPurchaseCandidates(organizationId: string) {
+function remoteContactId(item: Record<string, unknown>) {
+  return text(item.contact_id || item.contactId || item.supplier_id || item.supplierId || one(item.contact)?.id || one(item.supplier)?.id);
+}
+
+function remoteContactName(item: Record<string, unknown>) {
+  return text(item.contact_name || item.contactName || item.supplier_name || item.supplierName || item.supplier || one(item.contact)?.name || one(item.supplier)?.name);
+}
+
+function remoteTaxId(item: Record<string, unknown>) {
+  return text(item.vat_number || item.vatNumber || item.tax_id || item.taxId || one(item.contact)?.vat_number || one(item.contact)?.tax_id);
+}
+
+function remoteTotal(item: Record<string, unknown>) {
+  return num(item.total || item.total_amount || item.totalAmount || item.amount || item.subtotal || item.base_amount);
+}
+
+function remoteCurrency(item: Record<string, unknown>) {
+  return text(item.currency || item.currency_code || item.currencyCode).toUpperCase() || "EUR";
+}
+
+function remoteStatus(item: Record<string, unknown>) {
+  return text(item.status || item.document_status || item.docStatus || item.state) || "received";
+}
+
+function remoteUpdatedAt(item: Record<string, unknown>) {
+  return text(item.updated_at || item.updatedAt || item.modified_at || item.modifiedAt || item.date) || new Date().toISOString();
+}
+
+function remoteHoldedUrl(id: string) {
+  return id ? `https://app.holded.com/purchases/${encodeURIComponent(id)}` : "https://app.holded.com";
+}
+
+function includesNeedle(haystack: string, needle: string) {
+  return Boolean(needle && haystack.includes(needle.toLowerCase()));
+}
+
+function daysApart(left?: string | null, right?: string | null) {
+  if (!left || !right) return Number.POSITIVE_INFINITY;
+  const a = new Date(left).getTime();
+  const b = new Date(right).getTime();
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return Number.POSITIVE_INFINITY;
+  return Math.abs(a - b) / 86_400_000;
+}
+
+export async function syncHoldedPurchaseCandidates(organizationId: string, options: { targetPurchaseId?: string } = {}) {
   const [configuration, settings] = await Promise.all([holdedConfiguration(organizationId), loadEffectiveSettings(organizationId)]);
   const minimumConfidence = Math.min(100, Math.max(0, settings.number("purchases.match.min_confidence", 70)));
-  const result = await holdedRequest({ organizationId, path: `${configuration.endpoints.purchases}?limit=100`, retries: 1 });
-  if (!result.ok) throw failure(result);
-  const remote = rowsOf(result.payload).slice(0, 500);
+  const pageSize = Math.min(100, Math.max(25, settings.number("purchases.holded.page_size", 100)));
+  const maxPages = Math.min(10, Math.max(1, settings.number("purchases.holded.max_pages", 5)));
+  const remote: Record<string, unknown>[] = [];
+  for (let page = 1; page <= maxPages; page += 1) {
+    const separator = configuration.endpoints.purchases.includes("?") ? "&" : "?";
+    const result = await holdedRequest({ organizationId, path: `${configuration.endpoints.purchases}${separator}limit=${pageSize}&page=${page}`, retries: 1 });
+    if (!result.ok) throw failure(result);
+    const rows = rowsOf(result.payload);
+    remote.push(...rows);
+    if (rows.length < pageSize) break;
+  }
   const db = getSupabaseAdminClient();
-  const { data: expected, error } = await db.from("expected_purchases").select("id,supplier_name,expected_amount,amount,status,cases(case_code)")
-    .eq("organization_id", organizationId).in("status", ["expected", "requested", "uploaded", "holded_candidate", "review_needed"]);
+  const expectedQuery = db.from("expected_purchases")
+    .select("id,case_id,supplier_id,supplier_name,service,expected_amount,amount,currency,status,holded_purchase_id,approved_cost,invoice_total,invoice_expected_by,due_date,review_notes,budget_lines(description_public,start_date,end_date),cases(case_code,trip_start,trip_end),suppliers(id,name,fiscal_name,tax_id,holded_contact_id)")
+    .eq("organization_id", organizationId)
+    .in("status", ["expected", "requested", "uploaded", "holded_candidate", "review_needed", "approved"])
+    .limit(5000);
+  const { data: expected, error } = options.targetPurchaseId ? await expectedQuery.eq("id", options.targetPurchaseId) : await expectedQuery;
   if (error) throw new Error(error.message);
+  const { data: suppliers, error: suppliersError } = await db.from("suppliers")
+    .select("id,name,fiscal_name,tax_id,holded_contact_id")
+    .eq("organization_id", organizationId)
+    .limit(5000);
+  if (suppliersError) throw new Error(suppliersError.message);
+  const suppliersByHoldedId = new Map((suppliers || []).filter((item) => text(item.holded_contact_id)).map((item) => [text(item.holded_contact_id), item]));
   const expectedIds = (expected || []).map((item) => String(item.id));
   const reviewed = new Set<string>();
   if (expectedIds.length) {
@@ -213,34 +264,149 @@ export async function syncHoldedPurchaseCandidates(organizationId: string) {
     for (const item of rows || []) reviewed.add(`${item.expected_purchase_id}:${item.holded_purchase_id}`);
   }
   let candidates = 0;
+  let importedInvoices = 0;
+  let unassignedInvoices = 0;
   let matchedPurchases = 0;
   let reviewNeeded = 0;
+
+  const normalizedRemote = remote.map((item) => {
+    const id = idOf(item);
+    const contactId = remoteContactId(item);
+    const supplier = suppliersByHoldedId.get(contactId);
+    const total = remoteTotal(item);
+    const base = num(item.base_amount || item.subtotal || item.net || total);
+    const tax = num(item.tax_amount || item.taxes || Math.max(total - base, 0));
+    const invoiceDate = dateOf(item.date || item.invoice_date || item.invoiceDate);
+    const updatedAt = remoteUpdatedAt(item);
+    const hash = hashPayload(item);
+    return {
+      item,
+      id,
+      hash,
+      contactId,
+      contactName: remoteContactName(item),
+      taxId: remoteTaxId(item),
+      invoiceNumber: numberOf(item),
+      invoiceDate,
+      base,
+      tax,
+      total,
+      currency: remoteCurrency(item),
+      status: remoteStatus(item),
+      updatedAt,
+      supplierId: supplier?.id ? String(supplier.id) : null,
+      supplierName: text(supplier?.name || supplier?.fiscal_name),
+      haystack: [remoteContactName(item), remoteTaxId(item), numberOf(item), item.description, item.notes, item.concept, item.reference].map(text).join(" ").toLowerCase(),
+    };
+  }).filter((item) => item.id);
+
+  for (const invoice of normalizedRemote) {
+    const { data: existingInvoice } = await db.from("supplier_invoices")
+      .select("id,expected_purchase_id,total_amount,source_payload_hash,status")
+      .eq("organization_id", organizationId)
+      .eq("holded_purchase_id", invoice.id)
+      .maybeSingle();
+    const existingHash = text(existingInvoice?.source_payload_hash);
+    const changed = Boolean(existingInvoice?.id && existingHash && existingHash !== invoice.hash);
+    const { error: invoiceError } = await db.from("supplier_invoices").upsert({
+      organization_id: organizationId,
+      expected_purchase_id: existingInvoice?.expected_purchase_id || null,
+      supplier_id: invoice.supplierId,
+      holded_purchase_id: invoice.id,
+      holded_contact_id: invoice.contactId || null,
+      invoice_number: invoice.invoiceNumber || null,
+      invoice_date: invoice.invoiceDate,
+      base_amount: invoice.base || null,
+      tax_amount: invoice.tax || null,
+      total_amount: invoice.total || null,
+      currency: invoice.currency,
+      sync_status: "synced",
+      status: changed && existingInvoice?.status === "approved" ? "review_needed" : existingInvoice?.status || "holded_detected",
+      holded_status: invoice.status,
+      holded_updated_at: invoice.updatedAt,
+      last_seen_at: new Date().toISOString(),
+      source_payload_hash: invoice.hash,
+      holded_url: remoteHoldedUrl(invoice.id),
+      source_payload: invoice.item,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "organization_id,holded_purchase_id" });
+    if (!invoiceError) importedInvoices += 1;
+    if (!existingInvoice?.expected_purchase_id) unassignedInvoices += 1;
+
+    if (changed && existingInvoice?.expected_purchase_id) {
+      await db.from("expected_purchases").update({
+        status: "review_needed",
+        review_notes: "La factura de Holded cambió después de estar registrada. Revisa antes de mantener el coste aprobado.",
+        updated_at: new Date().toISOString(),
+      }).eq("organization_id", organizationId).eq("id", existingInvoice.expected_purchase_id).eq("status", "approved");
+    }
+  }
+
   for (const purchaseRow of expected || []) {
     const caseRow = one(purchaseRow.cases);
+    const supplierRow = one(purchaseRow.suppliers);
+    const lineRow = one(purchaseRow.budget_lines);
     const expectedAmount = num(purchaseRow.expected_amount || purchaseRow.amount);
-    const supplier = text(purchaseRow.supplier_name).toLowerCase();
+    const expectedCurrency = text(purchaseRow.currency).toUpperCase() || "EUR";
+    const supplierName = text(purchaseRow.supplier_name || supplierRow?.name || supplierRow?.fiscal_name).toLowerCase();
+    const supplierTaxId = text(supplierRow?.tax_id).toLowerCase();
+    const supplierHoldedId = text(supplierRow?.holded_contact_id);
     const caseCode = text(caseRow?.case_code).toLowerCase();
-    const matches = remote.map((item) => {
-      const id = idOf(item);
-      const haystack = [item.contact_name, item.contactName, item.supplier, item.description, item.notes, item.document_number, item.docNumber, item.number].map(text).join(" ").toLowerCase();
+    const service = text(purchaseRow.service || lineRow?.description_public).toLowerCase();
+    const targetDate = dateOf(purchaseRow.invoice_expected_by || purchaseRow.due_date || lineRow?.start_date || caseRow?.trip_start);
+
+    const matches = normalizedRemote.map((invoice) => {
       let score = 0;
       const checks: string[] = [];
-      if (caseCode && haystack.includes(caseCode)) { score += 45; checks.push("case_code"); }
-      if (supplier && haystack.includes(supplier)) { score += 25; checks.push("supplier"); }
-      if (Math.abs(num(item.total || item.amount || item.subtotal) - expectedAmount) <= Math.max(2, expectedAmount * 0.02)) { score += 25; checks.push("amount"); }
-      return { id, item, score, checks };
+      if (text(purchaseRow.holded_purchase_id) && text(purchaseRow.holded_purchase_id) === invoice.id) { score += 100; checks.push("holded_purchase_id"); }
+      if (supplierHoldedId && supplierHoldedId === invoice.contactId) { score += 35; checks.push("holded_contact_id"); }
+      if (supplierTaxId && invoice.taxId.toLowerCase() === supplierTaxId) { score += 30; checks.push("tax_id"); }
+      if (supplierName && (includesNeedle(invoice.haystack, supplierName) || includesNeedle(supplierName, invoice.contactName))) { score += 20; checks.push("supplier_name"); }
+      if (caseCode && includesNeedle(invoice.haystack, caseCode)) { score += 25; checks.push("case_code"); }
+      if (service && includesNeedle(invoice.haystack, service.slice(0, 40))) { score += 15; checks.push("service"); }
+      if (invoice.currency === expectedCurrency) { score += 10; checks.push("currency"); }
+      if (expectedAmount > 0 && Math.abs(invoice.total - expectedAmount) <= Math.max(5, expectedAmount * 0.02)) { score += 25; checks.push("amount_2pct"); }
+      else if (expectedAmount > 0 && Math.abs(invoice.total - expectedAmount) <= Math.max(15, expectedAmount * 0.05)) { score += 15; checks.push("amount_5pct"); }
+      if (daysApart(invoice.invoiceDate, targetDate) <= 14) { score += 10; checks.push("date_near"); }
+      return { id: invoice.id, invoice, score: Math.min(score, 100), checks };
     }).filter((candidate) => candidate.id && candidate.score >= minimumConfidence && !reviewed.has(`${purchaseRow.id}:${candidate.id}`))
       .sort((left, right) => right.score - left.score).slice(0, 3);
+
     await db.from("purchase_match_candidates").delete().eq("organization_id", organizationId).eq("expected_purchase_id", purchaseRow.id).eq("status", "candidate");
     for (const match of matches) {
-      const { error: upsertError } = await db.from("purchase_match_candidates").upsert({ organization_id: organizationId, expected_purchase_id: purchaseRow.id,
-        holded_purchase_id: match.id, score: match.score, checks: match.checks, payload: match.item, status: "candidate", updated_at: new Date().toISOString() },
-      { onConflict: "organization_id,expected_purchase_id,holded_purchase_id" });
+      const { error: upsertError } = await db.from("purchase_match_candidates").upsert({
+        organization_id: organizationId,
+        expected_purchase_id: purchaseRow.id,
+        holded_purchase_id: match.id,
+        score: match.score,
+        checks: match.checks,
+        payload: match.invoice.item,
+        status: "candidate",
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "organization_id,expected_purchase_id,holded_purchase_id" });
       if (!upsertError) candidates += 1;
     }
-    if (matches[0]) {
+
+    const best = matches[0];
+    if (best && matches.filter((item) => item.score === best.score).length === 1) {
       matchedPurchases += 1;
-      await db.from("expected_purchases").update({ status: "holded_candidate", match_score: matches[0].score, match_checks: matches[0].checks, updated_at: new Date().toISOString() })
+      await db.from("supplier_invoices").update({ expected_purchase_id: purchaseRow.id, status: "holded_candidate", updated_at: new Date().toISOString() })
+        .eq("organization_id", organizationId).eq("holded_purchase_id", best.id).is("expected_purchase_id", null);
+      await db.from("expected_purchases").update({
+        status: purchaseRow.status === "approved" ? "review_needed" : "holded_candidate",
+        holded_purchase_id: best.id,
+        invoice_number: best.invoice.invoiceNumber || null,
+        invoice_date: best.invoice.invoiceDate,
+        invoice_base: best.invoice.base || null,
+        invoice_tax: best.invoice.tax || null,
+        invoice_total: best.invoice.total || null,
+        match_score: best.score,
+        match_checks: best.checks,
+        sync_status: "synced",
+        last_synced_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        review_notes: purchaseRow.status === "approved" ? "Holded ha detectado una factura nueva o modificada sobre una compra ya aprobada. Revisión necesaria." : purchaseRow.review_notes,
+      })
         .eq("id", purchaseRow.id).eq("organization_id", organizationId);
     } else if (purchaseRow.status === "holded_candidate") {
       reviewNeeded += 1;
@@ -249,5 +415,5 @@ export async function syncHoldedPurchaseCandidates(organizationId: string) {
         .eq("id", purchaseRow.id).eq("organization_id", organizationId);
     }
   }
-  return { remotePurchases: remote.length, expectedPurchases: expected?.length || 0, candidates, matchedPurchases, reviewNeeded, minimumConfidence };
+  return { remotePurchases: normalizedRemote.length, importedInvoices, unassignedInvoices, expectedPurchases: expected?.length || 0, candidates, matchedPurchases, reviewNeeded, minimumConfidence };
 }
