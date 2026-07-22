@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
   const organizationId = await resolveOrganizationId(request, guard.access.organizationId);
   const supabase = getSupabaseAdminClient();
   const { data: organization } = await supabase.from("organizations").select("slug").eq("id", organizationId).maybeSingle();
-  const redirectTo = `${request.nextUrl.origin}/login`;
+  const redirectTo = `${request.nextUrl.origin}/auth/set-password`;
   const { data, error } = await supabase.auth.admin.inviteUserByEmail(email, {
     redirectTo,
     data: { full_name: fullName, org_slug: String(organization?.slug || "routsify-demo") },
