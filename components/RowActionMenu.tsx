@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 
 export function RowActionMenu({ label, children }: { label: string; children: ReactNode }) {
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLMenuElement>(null);
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState({ top: 0, left: 0, maxHeight: 240, ready: false });
 
@@ -68,18 +68,10 @@ export function RowActionMenu({ label, children }: { label: string; children: Re
     };
   }, [open, placeMenu]);
 
-  useEffect(() => {
-    if (!open || !menuRef.current) return;
-    const menu = menuRef.current;
-    const close = () => setOpen(false);
-    menu.addEventListener("click", close);
-    return () => menu.removeEventListener("click", close);
-  }, [open]);
-
   return <>
     <button ref={triggerRef} className="row-action-trigger" type="button" aria-label={label} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((current) => !current)}>•••</button>
     {open ? createPortal(
-      <div ref={menuRef} className="row-action-popover" role="menu" style={{ top: position.top, left: position.left, maxHeight: position.maxHeight, visibility: position.ready ? "visible" : "hidden" }}>{children}</div>,
+      <menu ref={menuRef} className="row-action-popover" role="menu" onClick={() => setOpen(false)} style={{ top: position.top, left: position.left, maxHeight: position.maxHeight, visibility: position.ready ? "visible" : "hidden" }}>{children}</menu>,
       document.body,
     ) : null}
   </>;
