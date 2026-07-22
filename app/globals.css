@@ -95,6 +95,13 @@ small { color: var(--muted); }
 .clients-main { padding: 0; overflow: hidden; }
 .client-filters { display: grid; grid-template-columns: minmax(200px, 1fr) auto; gap: 12px; align-items: end; padding: 18px; border-bottom: 1px solid var(--line); }
 .client-filters-simple { grid-template-columns: minmax(220px, 1fr) auto; }
+.client-filters-wide { grid-template-columns: minmax(260px, 1fr) auto auto auto; }
+.segmented-tabs { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.segmented-tabs button { display: inline-flex; align-items: center; gap: 8px; min-height: 38px; border: 1px solid var(--line); border-radius: 999px; background: #fff; color: var(--muted); padding: 8px 12px; font-weight: 850; cursor: pointer; }
+.segmented-tabs button span { display: inline-grid; place-items: center; min-width: 24px; min-height: 24px; border-radius: 999px; background: var(--soft); color: var(--brand-dark); font-size: 12px; }
+.segmented-tabs button.active { border-color: var(--brand); background: var(--brand); color: #fff; }
+.segmented-tabs button.active span { background: #fff; color: var(--brand-dark); }
+.soft-card { box-shadow: none; background: color-mix(in srgb, var(--soft) 68%, #fff); }
 .client-filters label, .new-client-drawer label { display: grid; gap: 5px; color: var(--muted); font-size: 12px; font-weight: 800; }
 .new-client-drawer { position: relative; }
 .new-client-drawer summary { list-style: none; }
