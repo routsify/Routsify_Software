@@ -32,7 +32,7 @@ export async function AppShell({ children }: { children: React.ReactNode }) {
         <a className="skip-link" href="#main-content">Saltar al contenido</a>
         <aside className="sidebar">
           <Link className="brand" href="/hoy" prefetch={false}>
-            <Logo size={34} />
+            <Logo size={34} src={theme.logoUrl} alt={`Logo de ${theme.companyName}`} />
             <span>{theme.companyName}</span>
           </Link>
           <AppNavigation items={visibleNavigation} />

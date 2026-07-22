@@ -19,7 +19,7 @@ export type PublicProposalView = {
 };
 
 export type PublicProposalResolution =
-  | { ok: true; mode: "supabase"; tokenHash: string; proposal: PublicProposalView; proposalId: string; versionId: string; status: string; accepted: boolean; expiresAt?: number }
+  | { ok: true; mode: "supabase"; tokenHash: string; proposal: PublicProposalView; proposalId: string; versionId: string; organizationId: string; status: string; accepted: boolean; expiresAt?: number }
   | { ok: false; reason: "invalid" | "expired" | "not_found" | "not_sent" };
 
 function stringArray(value: unknown, fallback: string[]) {
@@ -65,7 +65,7 @@ export async function resolvePublicProposal(token: string): Promise<PublicPropos
     const supabase = getSupabaseAdminClient();
     const { data: proposalRow, error: proposalError } = await supabase
       .from("proposals")
-      .select("id,status,case_id,public_token_hash,public_token_expires_at")
+      .select("id,status,case_id,organization_id,public_token_hash,public_token_expires_at")
       .eq("id", payload.proposalId)
       .eq("public_token_hash", tokenHash)
       .single();
@@ -87,7 +87,7 @@ export async function resolvePublicProposal(token: string): Promise<PublicPropos
     const { data: caseRow } = await supabase.from("cases").select("id,title,destination,trip_start,trip_end,accepted_value,clients(display_name,email)").eq("id", proposalRow.case_id).single();
     const { data: lines } = await supabase.from("budget_lines").select("service_type_code,description_public,sale_price").eq("proposal_version_id", payload.versionId).order("sort_order", { ascending: true }).order("created_at", { ascending: true });
 
-    return { ok: true, mode: "supabase", tokenHash, proposal: mapSupabaseProposal({ caseRow: caseRow || {}, versionRow, lines: lines || [] }), proposalId: payload.proposalId, versionId: payload.versionId, status: String(proposalRow.status), accepted, expiresAt: payload.exp };
+    return { ok: true, mode: "supabase", tokenHash, proposal: mapSupabaseProposal({ caseRow: caseRow || {}, versionRow, lines: lines || [] }), proposalId: payload.proposalId, versionId: payload.versionId, organizationId: String(proposalRow.organization_id), status: String(proposalRow.status), accepted, expiresAt: payload.exp };
   } catch (error) {
     const message = error instanceof Error ? error.message : "invalid";
     if (message === "token_expired") return { ok: false, reason: "expired" };

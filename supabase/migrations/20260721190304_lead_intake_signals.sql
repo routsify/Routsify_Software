@@ -87,3 +87,4 @@ create index if not exists leads_intake_queue_idx
 create index if not exists leads_booking_id_idx
   on public.leads (booking_id)
   where booking_id is not null;
+

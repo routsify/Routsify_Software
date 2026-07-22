@@ -37,26 +37,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   try { marginContext = await loadMarginResolutionContext(organizationId); }
   catch (error) { return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "margin_context_load_failed" }, { status: 400 }); }
 
-  const unknownNames = new Map<string, string>();
-  for (const row of rows) {
-    if (optionalText(row.supplier_id)) continue;
-    const rawName = optionalText(row.supplier_name ?? row.supplier);
-    if (rawName) unknownNames.set(normalizeSupplierName(rawName), rawName);
-  }
   const { data: existingSuppliers, error: suppliersError } = await db.from("suppliers").select("id,name,active").eq("organization_id", organizationId).limit(1000);
   if (suppliersError) return NextResponse.json({ ok: false, error: suppliersError.message }, { status: 400 });
-  const existingNames = new Set((existingSuppliers || []).map((supplier) => normalizeSupplierName(supplier.name)));
-  let createdSupplierCount = 0;
-  for (const [normalized, name] of unknownNames) {
-    if (existingNames.has(normalized)) continue;
-    const { error } = await db.from("suppliers").insert({ organization_id: organizationId, name, active: true });
-    if (!error) { existingNames.add(normalized); createdSupplierCount += 1; }
-    else if (error.code !== "23505") return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
-  }
-  const { data: suppliers, error: refreshedSuppliersError } = await db.from("suppliers").select("id,name,active").eq("organization_id", organizationId).limit(1000);
-  if (refreshedSuppliersError) return NextResponse.json({ ok: false, error: refreshedSuppliersError.message }, { status: 400 });
-  const suppliersById = new Map((suppliers || []).map((supplier) => [String(supplier.id), supplier]));
-  const suppliersByName = new Map((suppliers || []).map((supplier) => [normalizeSupplierName(supplier.name), supplier]));
+  const suppliersById = new Map((existingSuppliers || []).map((supplier) => [String(supplier.id), supplier]));
+  const suppliersByName = new Map((existingSuppliers || []).map((supplier) => [normalizeSupplierName(supplier.name), supplier]));
 
   const { data: existingLines, error: existingLinesError } = await db
     .from("budget_lines")
@@ -93,7 +77,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const requestedSupplierId = optionalText(source.supplier_id);
     const requestedSupplierName = optionalText(source.supplier_name ?? source.supplier);
     const supplier = requestedSupplierId ? suppliersById.get(requestedSupplierId) : requestedSupplierName ? suppliersByName.get(normalizeSupplierName(requestedSupplierName)) : null;
-    if (requestedSupplierId && !supplier) validationErrors.push({ row: index + 1, error: "supplier_not_found" });
+    if ((requestedSupplierId || requestedSupplierName) && !supplier) validationErrors.push({ row: index + 1, error: "supplier_not_found" });
     if (supplier?.active === false) validationErrors.push({ row: index + 1, error: "supplier_inactive" });
     if (validationErrors.some((item) => item.row === index + 1)) continue;
 
@@ -122,7 +106,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       cost_budget: cost,
       margin_applied: rule.fraction,
       margin_rule_id: rule.ruleId,
-      margin_snapshot: rule.snapshot,
+      margin_snapshot: { ...rule.snapshot, sale_source: explicitSale === null ? "calculated" : "manual" },
+      origin_margin: rule.source,
       sale_price: salePrice,
       creates_expected_purchase: createsExpectedPurchase,
       sort_order: nextSortOrder + index,
@@ -144,7 +129,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     .eq("organization_id", organizationId);
   if (totalsError) return NextResponse.json({ ok: false, error: totalsError.message, imported: inserts.length, lines_saved: true }, { status: 500 });
 
-  return NextResponse.json({ ok: true, data: data || [], imported: inserts.length, imported_cost: importedCost, imported_sale: importedSale, suppliers_created: createdSupplierCount }, { status: 201 });
+  return NextResponse.json({ ok: true, data: data || [], imported: inserts.length, imported_cost: importedCost, imported_sale: importedSale, suppliers_created: 0 }, { status: 201 });
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ proposalId: string }> }) {
@@ -185,6 +170,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       margin_applied: margin / 100,
       margin_rule_id: null,
       margin_snapshot: { source: "budget_global", percent: margin, formula: "margin_on_sale", applied_at: now },
+      origin_margin: "budget_global",
       sale_price: salePrice,
       updated_at: now,
     }).eq("id", line.id).eq("organization_id", organizationId).select("*").single();

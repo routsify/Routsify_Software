@@ -58,13 +58,13 @@ async function ensureClientContact(organizationId: string, clientId: string, upd
 async function ensureSupplierContact(organizationId: string, supplierId: string) {
   const db = getSupabaseAdminClient();
   const { data: supplier, error } = await db.from("suppliers")
-    .select("id,name,email,phone,tax_id,billing_address,country,holded_contact_id")
+    .select("id,name,fiscal_name,email,phone,tax_id,billing_address,country,holded_contact_id")
     .eq("organization_id", organizationId).eq("id", supplierId).maybeSingle();
   if (error || !supplier) throw new Error(error?.message || "supplier_not_found");
   if (supplier.holded_contact_id) return String(supplier.holded_contact_id);
   const { endpoints } = await holdedConfiguration(organizationId);
   const result = await holdedRequest({ organizationId, method: "POST", path: endpoints.contacts, body: buildHoldedContactPayload({
-    name: String(supplier.name), email: supplier.email, phone: supplier.phone, taxId: supplier.tax_id,
+    name: String(supplier.fiscal_name || supplier.name), email: supplier.email, phone: supplier.phone, taxId: supplier.tax_id,
     billingAddress: supplier.billing_address, countryCode: supplier.country, type: "supplier", isPerson: false,
   }) });
   if (!result.ok) throw failure(result);

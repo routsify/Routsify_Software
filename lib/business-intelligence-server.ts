@@ -2,7 +2,8 @@ import { listCaseDirectoryPage } from "@/lib/case-directory-server";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 
 type Row = Record<string, unknown>;
-export type ReportPeriod = 30 | 90 | 365 | 0;
+export type ReportPeriod = 15 | 30 | 90 | 365;
+export type ReportRangePreset = "15" | "30" | "90" | "365" | "previous_month" | "custom";
 
 export type CurrencyFinancials = {
   currency: string;
@@ -45,6 +46,9 @@ export type MonthlyTrend = {
 
 export type BusinessIntelligenceData = {
   period: ReportPeriod;
+  rangePreset: ReportRangePreset;
+  startDate: string;
+  endDate: string;
   periodLabel: string;
   generatedAt: string;
   counts: {
@@ -106,10 +110,26 @@ function average(values: number[]) { return values.length ? values.reduce((sum, 
 function timestamp(value: unknown) { const parsed = value ? new Date(String(value)).getTime() : NaN; return Number.isFinite(parsed) ? parsed : null; }
 function hoursBetween(left: unknown, right: unknown) { const start = timestamp(left); const end = timestamp(right); return start !== null && end !== null && end >= start ? (end - start) / 3_600_000 : null; }
 function daysBetween(left: unknown, right: unknown) { const hours = hoursBetween(left, right); return hours === null ? null : hours / 24; }
-function periodStart(period: ReportPeriod) { return period === 0 ? null : new Date(Date.now() - period * 86_400_000).toISOString(); }
-function inPeriod(row: Row, start: string | null, field = "created_at") { return !start || text(row[field]) >= start; }
-function periodLabel(period: ReportPeriod) { return period === 30 ? "Últimos 30 días" : period === 90 ? "Últimos 90 días" : period === 365 ? "Últimos 12 meses" : "Todo el histórico"; }
-function normalizePeriod(value?: number): ReportPeriod { return value === 30 || value === 90 || value === 0 ? value : 365; }
+function dateInput(value: unknown) { const raw = text(value); return /^\d{4}-\d{2}-\d{2}$/.test(raw) && Number.isFinite(new Date(`${raw}T00:00:00Z`).getTime()) ? raw : ""; }
+function resolveRange(input?: number | { preset?: string; from?: string; to?: string }) {
+  const today = new Date();
+  const todayKey = today.toISOString().slice(0, 10);
+  const rawPreset = typeof input === "number" ? String(input) : String(input?.preset || "30");
+  if (rawPreset === "custom") {
+    const from = dateInput(typeof input === "object" ? input.from : "");
+    const to = dateInput(typeof input === "object" ? input.to : "");
+    if (from && to && from <= to) return { preset: "custom" as const, period: 30 as ReportPeriod, startDate: from, endDate: to, label: `${new Date(`${from}T00:00:00Z`).toLocaleDateString("es-ES")} — ${new Date(`${to}T00:00:00Z`).toLocaleDateString("es-ES")}` };
+  }
+  if (rawPreset === "previous_month") {
+    const monthStart = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 1, 1));
+    const monthEnd = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 0));
+    return { preset: "previous_month" as const, period: 30 as ReportPeriod, startDate: monthStart.toISOString().slice(0, 10), endDate: monthEnd.toISOString().slice(0, 10), label: `Mes anterior · ${monthStart.toLocaleDateString("es-ES", { month: "long", year: "numeric" })}` };
+  }
+  const period: ReportPeriod = rawPreset === "15" ? 15 : rawPreset === "90" ? 90 : rawPreset === "365" ? 365 : 30;
+  const startDate = new Date(Date.now() - (period - 1) * 86_400_000).toISOString().slice(0, 10);
+  return { preset: String(period) as ReportRangePreset, period, startDate, endDate: todayKey, label: period === 365 ? "Último año" : `Últimos ${period} días` };
+}
+function inPeriod(row: Row, start: string, field = "created_at", end?: string) { const value = text(row[field]).slice(0, 10); return Boolean(value && value >= start && (!end || value <= end)); }
 function currency(value: unknown) { return text(value).toUpperCase() || "EUR"; }
 function monthKey(value: unknown) { const date = value ? new Date(String(value)) : null; return date && Number.isFinite(date.getTime()) ? `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}` : ""; }
 function monthLabel(key: string) { const [year, month] = key.split("-").map(Number); return new Intl.DateTimeFormat("es-ES", { month: "short", year: "2-digit" }).format(new Date(Date.UTC(year, month - 1, 1))); }
@@ -120,9 +140,9 @@ function proposalVersion(proposal: Row) {
   return versions.find((item) => text(item.id) === currentId) || [...versions].sort((a, b) => numberValue(b.version_number) - numberValue(a.version_number))[0] || null;
 }
 
-export async function loadBusinessIntelligence(organizationId: string, requestedPeriod?: number): Promise<BusinessIntelligenceData> {
-  const period = normalizePeriod(requestedPeriod);
-  const start = periodStart(period);
+export async function loadBusinessIntelligence(organizationId: string, requestedRange?: number | { preset?: string; from?: string; to?: string }): Promise<BusinessIntelligenceData> {
+  const range = resolveRange(requestedRange);
+  const { period, startDate: start, endDate: end } = range;
   const db = getSupabaseAdminClient();
   const [clientsResult, leadsResult, bookingsResult, casesResult, proposalsResult, paymentsResult, purchasesResult, suppliersResult, tasksResult] = await Promise.all([
     db.from("clients").select("id,source,created_at").eq("organization_id", organizationId).limit(10_000),
@@ -148,13 +168,13 @@ export async function loadBusinessIntelligence(organizationId: string, requested
   const suppliers = (suppliersResult.data || []) as Row[];
   const allTasks = (tasksResult.data || []) as Row[];
 
-  const leads = allLeads.filter((row) => inPeriod(row, start));
-  const bookings = allBookings.filter((row) => inPeriod(row, start));
-  const cases = allCases.filter((row) => inPeriod(row, start));
-  const proposals = allProposals.filter((row) => inPeriod(row, start));
-  const payments = allPayments.filter((row) => inPeriod(row, start, text(row.received_at) ? "received_at" : text(row.confirmed_at) ? "confirmed_at" : "created_at"));
-  const purchases = allPurchases.filter((row) => inPeriod(row, start));
-  const tasks = allTasks.filter((row) => inPeriod(row, start));
+  const leads = allLeads.filter((row) => inPeriod(row, start, "created_at", end));
+  const bookings = allBookings.filter((row) => inPeriod(row, start, "created_at", end));
+  const cases = allCases.filter((row) => inPeriod(row, start, "created_at", end));
+  const proposals = allProposals.filter((row) => inPeriod(row, start, "created_at", end));
+  const payments = allPayments.filter((row) => inPeriod(row, start, text(row.received_at) ? "received_at" : text(row.confirmed_at) ? "confirmed_at" : "created_at", end));
+  const purchases = allPurchases.filter((row) => inPeriod(row, start, "created_at", end));
+  const tasks = allTasks.filter((row) => inPeriod(row, start, "created_at", end));
   const caseById = new Map(allCases.map((row) => [text(row.id), row]));
   const leadById = new Map(allLeads.map((row) => [text(row.id), row]));
   const supplierById = new Map(suppliers.map((row) => [text(row.id), row]));
@@ -271,9 +291,12 @@ export async function loadBusinessIntelligence(organizationId: string, requested
 
   return {
     period,
-    periodLabel: periodLabel(period),
+    rangePreset: range.preset,
+    startDate: start,
+    endDate: end,
+    periodLabel: range.label,
     generatedAt: new Date().toISOString(),
-    counts: { clients: clients.filter((row) => inPeriod(row, start)).length, leads: leads.length, callsBooked: bookedLeadIds.size, cases: cases.length, acceptedCases: acceptedCases.length, activeCases: activeCases.length, closedCases: closedCases.length, proposals: proposals.length, acceptedProposals: acceptedProposals.length, suppliers: suppliers.filter((row) => row.active !== false).length },
+    counts: { clients: clients.filter((row) => inPeriod(row, start, "created_at", end)).length, leads: leads.length, callsBooked: bookedLeadIds.size, cases: cases.length, acceptedCases: acceptedCases.length, activeCases: activeCases.length, closedCases: closedCases.length, proposals: proposals.length, acceptedProposals: acceptedProposals.length, suppliers: suppliers.filter((row) => row.active !== false).length },
     conversion: { leadToCall: percentage(bookedLeadIds.size, leads.length), leadToCase: percentage(caseLeadIds.size, leads.length), caseToAccepted: percentage(acceptedCases.length, cases.length), proposalToAccepted: percentage(acceptedProposals.length, proposals.length) },
     timing: { leadToCaseHours: average(leadToCaseTimes), caseToProposalHours: average(caseToProposalTimes), proposalToAcceptanceHours: average(proposalAcceptanceTimes), caseToCloseDays: average(caseCloseTimes) },
     taskHealth: { open: openTasks.length, overdue: overdueTasks.length, blocked: blockedTasks.length, done: doneTasks.length, completionRate: percentage(doneTasks.length, doneTasks.length + openTasks.length) },

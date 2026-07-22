@@ -6,6 +6,7 @@ import { usePermission } from "@/components/PermissionProvider";
 export type SupplierDirectoryRow = {
   id: string;
   name: string;
+  fiscal_name?: string | null;
   category?: string | null;
   email?: string | null;
   phone?: string | null;
@@ -27,6 +28,7 @@ export type SupplierDirectoryRow = {
 
 type Draft = {
   name: string;
+  fiscal_name: string;
   category: string;
   email: string;
   phone: string;
@@ -68,7 +70,7 @@ type ImportSummary = {
   errors: Array<{ row: number; message: string }>;
 };
 
-const emptyDraft: Draft = { name: "", category: "", email: "", phone: "", tax_id: "", country: "ES", billing_address: "", notes: "", default_margin_pct: "", active: true };
+const emptyDraft: Draft = { name: "", fiscal_name: "", category: "", email: "", phone: "", tax_id: "", country: "ES", billing_address: "", notes: "", default_margin_pct: "", active: true };
 const pageSizes = [50, 100, 150, 200];
 
 function normalize(input: unknown): SupplierDirectoryRow {
@@ -76,6 +78,7 @@ function normalize(input: unknown): SupplierDirectoryRow {
   return {
     id: String(row.id || crypto.randomUUID()),
     name: String(row.name || "Proveedor sin nombre"),
+    fiscal_name: row.fiscal_name ? String(row.fiscal_name) : null,
     category: row.category ? String(row.category) : null,
     email: row.email ? String(row.email) : null,
     phone: row.phone ? String(row.phone) : null,
@@ -110,6 +113,7 @@ function billingAddressText(value: unknown) {
 function draftFromSupplier(supplier: SupplierDirectoryRow): Draft {
   return {
     name: supplier.name,
+    fiscal_name: supplier.fiscal_name || supplier.name,
     category: supplier.category || "",
     email: supplier.email || "",
     phone: supplier.phone || "",
@@ -135,6 +139,7 @@ function importErrorMessage(result: unknown) {
   if (error === "empty_import_file") return "El archivo está vacío.";
   if (error === "import_file_has_no_rows") return "La plantilla no contiene proveedores para importar.";
   if (error === "import_name_column_required") return "No se encuentra la columna nombre en la plantilla.";
+  if (error === "import_fiscal_name_column_required") return "No se encuentra la columna nombre fiscal en la plantilla.";
   if (error === "import_row_limit_exceeded") return "Puedes importar un máximo de 2.000 proveedores por archivo.";
   return "No se pudo completar la importación.";
 }
@@ -220,6 +225,8 @@ export function SupplierManager({ initialPage, initialSupplierId = "" }: { initi
     const source = editing ? editDraft : draft;
     const name = source.name.trim();
     if (name.length < 2) return setMessage("Introduce un nombre de proveedor válido.");
+    const fiscalName = source.fiscal_name.trim();
+    if (fiscalName.length < 2) return setMessage("Introduce el nombre fiscal o comercial del proveedor.");
     setSaving(true); setMessage(null);
     const endpoint = editing && selected ? `/api/routsify/suppliers/${encodeURIComponent(selected.id)}` : "/api/routsify/suppliers";
     const response = await fetch(endpoint, {
@@ -227,6 +234,7 @@ export function SupplierManager({ initialPage, initialSupplierId = "" }: { initi
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         name,
+        fiscal_name: fiscalName,
         category: source.category.trim() || null,
         email: source.email.trim() || null,
         phone: source.phone.trim() || null,
@@ -299,7 +307,8 @@ export function SupplierManager({ initialPage, initialSupplierId = "" }: { initi
   }
 
   const supplierForm = (value: Draft, update: <K extends keyof Draft>(key: K, value: Draft[K]) => void) => <>
-    <div className="grid grid-2"><label>Nombre comercial *<input className="input" required value={value.name} onChange={(event) => update("name", event.target.value)} /></label><label>Categoría<input className="input" placeholder="Hotel, aerolínea, DMC, seguro..." value={value.category} onChange={(event) => update("category", event.target.value)} /></label></div>
+    <div className="grid grid-2"><label>Nombre interno *<input className="input" required value={value.name} onChange={(event) => update("name", event.target.value)} /><small>Nombre corto para encontrarlo en presupuestos.</small></label><label>Nombre fiscal / comercial *<input className="input" required value={value.fiscal_name} onChange={(event) => update("fiscal_name", event.target.value)} /><small>Nombre enviado a Holded y usado fiscalmente.</small></label></div>
+    <label>Categoría<input className="input" placeholder="Hotel, aerolínea, DMC, seguro..." value={value.category} onChange={(event) => update("category", event.target.value)} /></label>
     <div className="grid grid-2"><label>Email<input className="input" type="email" value={value.email} onChange={(event) => update("email", event.target.value)} /></label><label>Teléfono<input className="input" type="tel" value={value.phone} onChange={(event) => update("phone", event.target.value)} /></label></div>
     <div className="grid grid-2"><label>NIF / ID fiscal<input className="input" value={value.tax_id} onChange={(event) => update("tax_id", event.target.value)} /></label><label>País<input className="input" maxLength={2} value={value.country} onChange={(event) => update("country", event.target.value)} /></label></div>
     <label>Margen predeterminado (%)<input className="input" type="number" min="0" max="99" step="0.1" value={value.default_margin_pct} onChange={(event) => update("default_margin_pct", event.target.value)} placeholder="Usar margen global" /><small>Se aplicará automáticamente a las nuevas líneas de este proveedor, salvo que indiques otro margen en el presupuesto.</small></label>

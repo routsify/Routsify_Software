@@ -16,7 +16,7 @@ function oneRecord(value: unknown): Record<string, unknown> | null {
 
 const CLIENT_SELECT = "id,client_type,display_name,email,email_normalized,phone,phone_normalized,tax_id,billing_address,country,language,source,holded_contact_id,notes,created_at,updated_at";
 const CLIENT_PAGE_SIZES = new Set([50, 100, 150, 200]);
-const SUPPLIER_SELECT = "id,name,category,email,phone,tax_id,country,billing_address,notes,active,holded_contact_id,created_at,updated_at";
+const SUPPLIER_SELECT = "id,name,fiscal_name,category,email,phone,tax_id,country,billing_address,notes,active,holded_contact_id,created_at,updated_at";
 const SUPPLIER_PAGE_SIZES = new Set([50, 100, 150, 200]);
 
 export type OrganizationClientStats = {
@@ -176,7 +176,7 @@ export async function listOrganizationSuppliersPage(
   if (status === "inactive") rowsQuery = rowsQuery.eq("active", false);
   if (query) {
     const like = `%${query}%`;
-    rowsQuery = rowsQuery.or(`name.ilike.${like},category.ilike.${like},email.ilike.${like},phone.ilike.${like},tax_id.ilike.${like},country.ilike.${like}`);
+    rowsQuery = rowsQuery.or(`name.ilike.${like},fiscal_name.ilike.${like},category.ilike.${like},email.ilike.${like},phone.ilike.${like},tax_id.ilike.${like},country.ilike.${like}`);
   }
 
   const requestedFrom = (requestedPage - 1) * pageSize;
@@ -207,7 +207,7 @@ export async function listOrganizationSuppliersPage(
     if (status === "inactive") correctedQuery = correctedQuery.eq("active", false);
     if (query) {
       const like = `%${query}%`;
-      correctedQuery = correctedQuery.or(`name.ilike.${like},category.ilike.${like},email.ilike.${like},phone.ilike.${like},tax_id.ilike.${like},country.ilike.${like}`);
+      correctedQuery = correctedQuery.or(`name.ilike.${like},fiscal_name.ilike.${like},category.ilike.${like},email.ilike.${like},phone.ilike.${like},tax_id.ilike.${like},country.ilike.${like}`);
     }
     const corrected = await correctedQuery.order("active", { ascending: false }).order("name", { ascending: true }).range(from, to);
     if (corrected.error) return { ok: false, mode: "supabase", error: corrected.error.message };
@@ -337,7 +337,7 @@ export async function searchOrganization(organizationId: string, query: string):
     supabase.from("cases").select("id,case_code,title,destination,status").eq("organization_id", organizationId).or(`case_code.ilike.${like},title.ilike.${like},destination.ilike.${like}`).limit(8),
     supabase.from("proposals").select("id,status,cases(id,case_code,title,clients(display_name))").eq("organization_id", organizationId).limit(50),
     supabase.from("expected_purchases").select("id,supplier_name,service,status,cases(case_code)").eq("organization_id", organizationId).or(`supplier_name.ilike.${like},service.ilike.${like}`).limit(8),
-    supabase.from("suppliers").select("id,name,category,email,phone,country").eq("organization_id", organizationId).or(`name.ilike.${like},category.ilike.${like},email.ilike.${like},phone.ilike.${like},tax_id.ilike.${like},country.ilike.${like}`).limit(8),
+    supabase.from("suppliers").select("id,name,fiscal_name,category,email,phone,country").eq("organization_id", organizationId).or(`name.ilike.${like},fiscal_name.ilike.${like},category.ilike.${like},email.ilike.${like},phone.ilike.${like},tax_id.ilike.${like},country.ilike.${like}`).limit(8),
   ]);
   for (const client of clients || []) results.push({ type: "cliente", title: String(client.display_name || "Cliente"), subtitle: String(client.email || client.phone || "Cliente"), href: `/clientes/${client.id}` });
   for (const item of cases || []) results.push({ type: "expediente", title: String(item.case_code || "Expediente"), subtitle: String(item.title || item.destination || "Expediente"), href: `/expedientes?caseId=${item.id}` });

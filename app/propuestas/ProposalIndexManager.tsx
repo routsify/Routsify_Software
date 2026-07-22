@@ -2,6 +2,7 @@
 
 import { FormEvent, useMemo, useState } from "react";
 import { usePermission } from "@/components/PermissionProvider";
+import { RowActionMenu } from "@/components/RowActionMenu";
 
 const statuses = new Map([
   ["draft", "Borrador"],
@@ -72,15 +73,6 @@ function money(value: unknown, currency = "EUR") {
   return new Intl.NumberFormat("es-ES", { style: "currency", currency }).format(numberValue(value));
 }
 
-function groupedMoney(items: ProposalSummary[]) {
-  const totals = new Map<string, number>();
-  for (const proposal of items) {
-    const currency = String(proposal.cases?.currency || "EUR");
-    totals.set(currency, (totals.get(currency) || 0) + numberValue(proposal.current_version?.total_sale));
-  }
-  return [...totals.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([currency, total]) => money(total, currency)).join(" · ") || money(0, "EUR");
-}
-
 export function ProposalIndexManager({ initialProposals = [], initialCases = [], initialCaseId = "" }: { initialProposals?: unknown[]; initialCases?: unknown[]; initialCaseId?: string }) {
   const canManage = usePermission("budgets.manage");
   const [proposals, setProposals] = useState<ProposalSummary[]>(() => initialProposals.map(normalizeProposal).filter((item) => item.id));
@@ -100,8 +92,6 @@ export function ProposalIndexManager({ initialProposals = [], initialCases = [],
 
   const caseIdsWithProposal = useMemo(() => new Set(proposals.map((proposal) => proposal.cases?.id).filter(Boolean)), [proposals]);
   const availableCases = useMemo(() => cases.filter((item) => !caseIdsWithProposal.has(item.id)), [cases, caseIdsWithProposal]);
-  const openProposals = proposals.filter((proposal) => !["accepted", "rejected"].includes(proposal.status));
-  const pipeline = groupedMoney(openProposals);
 
   async function createProposal(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -123,12 +113,13 @@ export function ProposalIndexManager({ initialProposals = [], initialCases = [],
   async function deleteProposal(proposal: ProposalSummary) {
     if (!canManage || deletingId) return;
     const label = proposal.cases?.case_code || "este presupuesto";
-    if (!window.confirm(`¿Eliminar definitivamente el presupuesto de “${label}”?\n\nSolo se permitirá si sigue siendo un borrador sin aceptación ni historial comercial. Esta acción no se puede deshacer.`)) return;
+    const sentWarning = proposal.status === "sent" ? " El enlace enviado al cliente dejará de funcionar inmediatamente." : "";
+    if (!window.confirm(`¿Eliminar definitivamente el presupuesto de “${label}”?${sentWarning}\n\nLos presupuestos aceptados y su historial económico seguirán protegidos. Esta acción no se puede deshacer.`)) return;
     setDeletingId(proposal.id); setMessage(null);
     const response = await fetch(`/api/routsify/proposals/${encodeURIComponent(proposal.id)}`, { method: "DELETE" });
     const result = await response.json().catch(() => null);
     setDeletingId(null);
-    if (!response.ok || !result?.ok) return setMessage(result?.error === "proposal_has_protected_history" ? "No se puede eliminar porque el presupuesto ya fue enviado, aceptado o conserva historial relacionado." : String(result?.error || "No se pudo eliminar el presupuesto."));
+    if (!response.ok || !result?.ok) return setMessage(["accepted_proposal_cannot_be_deleted", "proposal_has_accepted_history", "proposal_has_protected_history"].includes(String(result?.error)) ? "No se puede eliminar porque el presupuesto fue aceptado o conserva historial económico protegido." : String(result?.error || "No se pudo eliminar el presupuesto."));
     setProposals((current) => current.filter((item) => item.id !== proposal.id));
     setMessage(`Presupuesto de “${label}” eliminado correctamente.`);
   }
@@ -138,7 +129,6 @@ export function ProposalIndexManager({ initialProposals = [], initialCases = [],
       <div className="kpi-card"><span className="kpi-icon">P</span><span className="kpi-copy"><strong>Presupuestos</strong><b>{proposals.length}</b><small>Total creados</small></span></div>
       <div className="kpi-card"><span className="kpi-icon">B</span><span className="kpi-copy"><strong>Borradores</strong><b>{proposals.filter((item) => item.status === "draft").length}</b><small>En preparación</small></span></div>
       <div className="kpi-card"><span className="kpi-icon">A</span><span className="kpi-copy"><strong>Aceptados</strong><b>{proposals.filter((item) => item.status === "accepted").length}</b><small>Cerrados con cliente</small></span></div>
-      <div className="kpi-card"><span className="kpi-icon">$</span><span className="kpi-copy"><strong>Pipeline</strong><b>{pipeline}</b><small>Separado por moneda</small></span></div>
     </section>
 
     <section className="card budget-selector">
@@ -158,7 +148,7 @@ export function ProposalIndexManager({ initialProposals = [], initialCases = [],
 
       {!canManage ? <p className="client-message" role="status">Modo consulta: tu rol puede revisar presupuestos, pero no crear ni modificar versiones.</p> : null}
       {message ? <p className="client-message" role="status">{message}</p> : null}
-      {proposals.length === 0 ? <div className="empty-state"><h2>Todavía no hay presupuestos</h2><p>{canManage ? "Crea un expediente y después su presupuesto." : "No hay presupuestos disponibles para consultar."}</p></div> : filtered.length === 0 ? <div className="empty-state"><h2>No hay coincidencias</h2><p>Cambia la búsqueda.</p></div> : <div className="table-scroll"><table><thead><tr><th>Expediente</th><th>Cliente</th><th>Destino</th><th>Estado</th><th>Versión</th><th>Venta</th><th><span className="sr-only">Acciones</span></th></tr></thead><tbody>{filtered.map((proposal) => <tr key={proposal.id}><td><strong>{proposal.cases?.case_code || "Presupuesto"}</strong><br /><small>{proposal.cases?.currency || "EUR"}</small></td><td>{proposal.cases?.clients?.display_name || "—"}</td><td>{proposal.cases?.destination || "—"}</td><td>{statuses.get(proposal.status) || proposal.status}</td><td>v{numberValue(proposal.current_version?.version_number) || 1}</td><td>{money(proposal.current_version?.total_sale, String(proposal.cases?.currency || "EUR"))}</td><td><details className="row-action-menu"><summary aria-label={`Acciones para ${proposal.cases?.case_code || "presupuesto"}`}>•••</summary><div><a href={`/propuestas/editar/${encodeURIComponent(proposal.id)}`}>{canManage ? "Abrir presupuesto" : "Consultar"}</a>{proposal.cases?.id ? <a href={`/expedientes/${encodeURIComponent(proposal.cases.case_code || proposal.cases.id)}`}>Abrir expediente</a> : null}{canManage ? <button className="danger-text" type="button" disabled={deletingId === proposal.id} onClick={() => void deleteProposal(proposal)}>{deletingId === proposal.id ? "Eliminando…" : "Eliminar"}</button> : null}</div></details></td></tr>)}</tbody></table></div>}
+      {proposals.length === 0 ? <div className="empty-state"><h2>Todavía no hay presupuestos</h2><p>{canManage ? "Crea un expediente y después su presupuesto." : "No hay presupuestos disponibles para consultar."}</p></div> : filtered.length === 0 ? <div className="empty-state"><h2>No hay coincidencias</h2><p>Cambia la búsqueda.</p></div> : <div className="table-scroll"><table><thead><tr><th>Expediente</th><th>Cliente</th><th>Destino</th><th>Estado</th><th>Versión</th><th>Venta</th><th><span className="sr-only">Acciones</span></th></tr></thead><tbody>{filtered.map((proposal) => <tr key={proposal.id}><td><strong>{proposal.cases?.case_code || "Presupuesto"}</strong><br /><small>{proposal.cases?.currency || "EUR"}</small></td><td>{proposal.cases?.clients?.display_name || "—"}</td><td>{proposal.cases?.destination || "—"}</td><td>{statuses.get(proposal.status) || proposal.status}</td><td>v{numberValue(proposal.current_version?.version_number) || 1}</td><td>{money(proposal.current_version?.total_sale, String(proposal.cases?.currency || "EUR"))}</td><td><RowActionMenu label={`Acciones para ${proposal.cases?.case_code || "presupuesto"}`}><a role="menuitem" href={`/propuestas/editar/${encodeURIComponent(proposal.id)}`}>{canManage ? "Abrir presupuesto" : "Consultar"}</a>{proposal.cases?.id ? <a role="menuitem" href={`/expedientes/${encodeURIComponent(proposal.cases.case_code || proposal.cases.id)}`}>Abrir expediente</a> : null}{canManage ? <button role="menuitem" className="danger-text" type="button" disabled={deletingId === proposal.id} onClick={() => void deleteProposal(proposal)}>{deletingId === proposal.id ? "Eliminando…" : "Eliminar"}</button> : null}</RowActionMenu></td></tr>)}</tbody></table></div>}
     </section>
   </div>;
 }
