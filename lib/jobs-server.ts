@@ -1,6 +1,7 @@
 import { syncCommunicationFollowups } from "@/lib/communications-server";
 import { loadEffectiveSettings } from "@/lib/effective-settings-server";
 import { queueEligibleFinalInvoices } from "@/lib/fiscal-workflow-server";
+import { recordIntegrationRun } from "@/lib/integration-health-server";
 import { processOutboxBatch, syncHoldedPurchaseCandidates } from "@/lib/outbox-worker-server";
 import { getSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase-admin";
 
@@ -127,6 +128,77 @@ async function syncPurchaseCandidatesForAllOrganizations() {
     }
   }
   return results;
+}
+
+export async function runHoldedSupplierInvoiceAutopilot(triggerSource = "vercel_cron") {
+  if (!hasSupabaseAdminEnv()) return { organizations: 0, failedOrganizations: 1, results: [], error: "supabase_admin_not_configured" };
+  const supabase = getSupabaseAdminClient();
+  const { data: organizations, error } = await supabase.from("organizations").select("id");
+  if (error) throw new Error(error.message);
+
+  const results: Array<Record<string, unknown>> = [];
+  for (const organization of organizations || []) {
+    const organizationId = String(organization.id);
+    const startedAt = new Date().toISOString();
+    try {
+      const settings = await loadEffectiveSettings(organizationId);
+      const intervalMinutes = Math.min(60, Math.max(10, settings.number("purchases.holded.sync_interval_minutes", 15)));
+      const { data: lastRun } = await supabase.from("integration_runs")
+        .select("started_at,finished_at")
+        .eq("organization_id", organizationId)
+        .eq("integration", "holded_supplier_invoices")
+        .eq("kind", "cron")
+        .eq("status", "done")
+        .order("started_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const fallbackSince = new Date(Date.now() - intervalMinutes * 60_000);
+      const lastCompletedAt = lastRun?.finished_at || lastRun?.started_at;
+      const since = lastCompletedAt ? new Date(Date.parse(lastCompletedAt) - 5 * 60_000) : fallbackSince;
+      const until = new Date();
+      const data = await syncHoldedPurchaseCandidates(organizationId, { since, until, autoApprove: true });
+      const { count: overdueInvoices } = await supabase.from("expected_purchases")
+        .select("id", { count: "exact", head: true })
+        .eq("organization_id", organizationId)
+        .eq("active", true)
+        .not("status", "in", "(approved,not_required,cancelled)")
+        .lt("invoice_expected_by", until.toISOString().slice(0, 10));
+      const finishedAt = new Date().toISOString();
+      await recordIntegrationRun({
+        organizationId,
+        integration: "holded_supplier_invoices",
+        kind: "cron",
+        status: "done",
+        startedAt,
+        finishedAt,
+        triggerSource,
+        summary: `${Number(data.importedInvoices || 0)} facturas importadas, ${Number(data.autoApproved || 0)} conciliadas, ${overdueInvoices || 0} vencidas.`,
+        metadata: { ...data, overdueInvoices: overdueInvoices || 0, intervalMinutes },
+      });
+      results.push({ organizationId, ok: true, data, overdueInvoices: overdueInvoices || 0 });
+    } catch (error) {
+      const finishedAt = new Date().toISOString();
+      const message = error instanceof Error ? error.message : "holded_supplier_invoice_autopilot_failed";
+      await recordIntegrationRun({
+        organizationId,
+        integration: "holded_supplier_invoices",
+        kind: "cron",
+        status: "failed",
+        startedAt,
+        finishedAt,
+        triggerSource,
+        summary: "Error sincronizando facturas de proveedor desde Holded.",
+        lastError: message,
+      }).catch(() => null);
+      results.push({ organizationId, ok: false, error: message });
+    }
+  }
+
+  return {
+    organizations: results.length,
+    failedOrganizations: results.filter((item) => !item.ok).length,
+    results,
+  };
 }
 
 async function syncCommunicationFollowupsForAllOrganizations() {
