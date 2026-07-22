@@ -1,5 +1,7 @@
 import { getOrganizationSecret } from "@/lib/organization-secrets-server";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
+import { loadEffectiveSettings } from "@/lib/effective-settings-server";
+import { DEFAULT_OCR_AI_PROMPT } from "@/lib/settings-master";
 
 const fieldNames = ["document_type", "first_name", "last_name", "full_name", "birth_date", "nationality", "document_number", "document_country", "document_expires_at", "mrz"] as const;
 export type OcrFieldName = (typeof fieldNames)[number];
@@ -34,6 +36,11 @@ async function getOcrModel(organizationId: string) {
   if (typeof value === "string" && value.trim()) return value.trim();
   if (value && typeof value === "object" && "value" in value && String((value as { value?: unknown }).value || "").trim()) return String((value as { value?: unknown }).value).trim();
   return process.env.OPENAI_OCR_MODEL || "gpt-4.1-mini";
+}
+
+async function getOcrPrompt(organizationId: string) {
+  const settings = await loadEffectiveSettings(organizationId);
+  return settings.string("ai.ocr.prompt", DEFAULT_OCR_AI_PROMPT).trim() || DEFAULT_OCR_AI_PROMPT;
 }
 
 export async function testOpenAIConnection(organizationId: string) {
@@ -127,7 +134,7 @@ export async function runDocumentOcr(input: { organizationId: string; documentId
   if (file.size > 10 * 1024 * 1024) throw new Error("document_too_large_for_ocr");
   const apiKey = await getOrganizationSecret(input.organizationId, "openai_api_key");
   if (!apiKey) throw new Error("openai_api_key_not_configured");
-  const model = await getOcrModel(input.organizationId);
+  const [model, prompt] = await Promise.all([getOcrModel(input.organizationId), getOcrPrompt(input.organizationId)]);
   const { data: run, error: runError } = await supabase.from("ocr_runs").insert({ organization_id: input.organizationId, case_id: document.case_id, document_id: document.id, traveler_id: input.travelerId || null, provider: "openai", status: "processing", started_at: new Date().toISOString(), created_by: input.actorId }).select("id").single();
   if (runError) throw new Error(runError.message);
   await supabase.from("documents").update({ ocr_status: "processing", updated_at: new Date().toISOString() }).eq("id", document.id);
@@ -150,7 +157,7 @@ export async function runDocumentOcr(input: { organizationId: string; documentId
           model,
           store: false,
           input: [{ role: "user", content: [
-            { type: "input_text", text: "Extrae únicamente los datos visibles del DNI o pasaporte. No inventes valores. Usa fechas ISO YYYY-MM-DD. Para cada campo devuelve una confianza entre 0 y 1. Si no es legible, usa null y confianza 0." },
+            { type: "input_text", text: prompt },
             filePart,
           ] }],
           text: { format: { type: "json_schema", name: "travel_document_ocr", strict: true, schema: {

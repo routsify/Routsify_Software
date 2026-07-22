@@ -67,7 +67,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const requestedContractId = text(body.id);
   let existingQuery = supabase
     .from("contracts")
-    .select("id,status,signed_at,legal_version,legal_document_id,current_version_id,title,external_url,notes")
+    .select("id,status,signed_at,legal_version,legal_document_id,current_version_id,proposal_version_id,title,external_url,notes")
     .eq("organization_id", organizationId)
     .eq("case_id", caseId);
   if (requestedContractId) existingQuery = existingQuery.eq("id", requestedContractId);
@@ -81,6 +81,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const title = text(body.title || existingContract?.title) || "Contrato de viaje";
   const notes = text(body.notes || existingContract?.notes);
   const legalDocumentId = text(body.legal_document_id || existingContract?.legal_document_id);
+  const requestedProposalVersionId = text(body.proposal_version_id || existingContract?.proposal_version_id);
   let legalDocument: JsonRow | null = null;
   if (legalDocumentId) {
     const { data, error } = await supabase
@@ -103,7 +104,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const acceptedValue = Number(caseRow.accepted_value || 0);
     const { data: accepted } = await supabase
       .from("proposals")
-      .select("id,current_version_id")
+      .select("id,current_version_id,proposal_versions!proposal_versions_proposal_id_fkey(id,version_number,status,locked,total_sale)")
       .eq("case_id", caseId)
       .eq("organization_id", organizationId)
       .eq("status", "accepted")
@@ -112,6 +113,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (!accepted?.current_version_id || acceptedValue <= 0) {
       return NextResponse.json({ ok: false, error: "accepted_proposal_required" }, { status: 409 });
     }
+    const acceptedVersions = Array.isArray(accepted.proposal_versions) ? accepted.proposal_versions : [];
+    const proposalVersionId = requestedProposalVersionId || String(accepted.current_version_id);
+    const selectedProposalVersion = acceptedVersions.find((version) => version.id === proposalVersionId && version.status === "accepted" && version.locked);
+    if (!selectedProposalVersion) return NextResponse.json({ ok: false, error: "accepted_locked_proposal_version_required" }, { status: 409 });
 
     const client = firstRelation(caseRow.clients);
     const mustBlockMissingFiscal = settings.boolean("contracts.block_missing_fiscal", true) && settings.boolean("clients.fiscal.required", true);
@@ -123,10 +128,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     try {
       let contract = existingContract as JsonRow | null;
       const documentChanged = existingContract?.legal_document_id !== legalDocumentId;
-      if (status === "sent" || !existingContract?.current_version_id || documentChanged) {
-        const { data: versioned, error: versionError } = await supabase.rpc("create_contract_version_with_legal_document", {
+      const proposalVersionChanged = existingContract?.proposal_version_id !== proposalVersionId;
+      if (status === "sent" || !existingContract?.current_version_id || documentChanged || proposalVersionChanged) {
+        const { data: versioned, error: versionError } = await supabase.rpc("create_contract_version_for_proposal", {
           target_org: organizationId,
           target_case: caseId,
+          proposal_version_id_value: proposalVersionId,
           contract_title: title,
           legal_document_id_value: legalDocumentId,
           notes_value: notes,
@@ -159,6 +166,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           evidence_value: {
             source: "routsify_admin_manual_confirmation",
             legal_document_id: legalDocumentId,
+            proposal_version_id: proposalVersionId,
             legal_version: legalDocument.version_label,
             legal_file_name: legalDocument.file_name,
             legal_checksum: legalDocument.checksum || null,
@@ -194,6 +202,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     external_url: legalDocumentId ? null : existingContract?.external_url || null,
     legal_document_id: legalDocumentId || null,
     legal_version: text(legalDocument?.version_label || existingContract?.legal_version) || null,
+    proposal_version_id: requestedProposalVersionId || existingContract?.proposal_version_id || null,
     notes: notes || null,
     signed_at: null,
     updated_at: now,

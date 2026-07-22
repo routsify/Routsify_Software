@@ -123,12 +123,12 @@ export function CaseWorkspace(props: WorkspaceProps & { role?: string | null }) 
     </ProcessStage>
 
     <ProcessStage number={3} id="contrato" title="PDF privado y firma del contrato" description="Parte de la información precontractual aceptada, fija los PDFs legales vigentes y registra la evidencia de firma." done={signedContract} active={firstPending === 3}>
-      {canAccessContract ? <ContractPaymentsTab mode="contracts" caseRow={props.initialCase} initialContracts={contracts} initialLegalDocuments={legalDocuments} initialPayments={payments} initialFiscal={fiscal} onContractsChange={setContracts} onPaymentsChange={setPayments} onFiscalChange={setFiscal} /> : <section className="card"><h2>Acceso restringido</h2><p>El contrato no está disponible para tu rol.</p></section>}
+      {canAccessContract ? <ContractPaymentsTab mode="contracts" caseRow={props.initialCase} initialContracts={contracts} initialLegalDocuments={legalDocuments} initialPayments={payments} initialFiscal={fiscal} initialProposals={props.initialProposals || []} onContractsChange={setContracts} onPaymentsChange={setPayments} onFiscalChange={setFiscal} /> : <section className="card"><h2>Acceso restringido</h2><p>El contrato no está disponible para tu rol.</p></section>}
     </ProcessStage>
 
     <ProcessStage number={4} id="pago" title="Enlace de pago y confirmación del cobro" description={`Guarda el enlace Teya por el importe correspondiente y registra el cobro. Cobrado: ${money(paid, props.initialCase.currency || "EUR")} de ${money(acceptedValue, props.initialCase.currency || "EUR")}.`} done={fullyPaid} active={firstPending === 4}>
       <CasePaymentLinkPanel proposalId={acceptedProposal?.id} caseRow={props.initialCase} onPaymentConfirmed={addPayment} />
-      {canAccessContract ? <ContractPaymentsTab mode="payments" caseRow={props.initialCase} initialContracts={contracts} initialLegalDocuments={legalDocuments} initialPayments={payments} initialFiscal={fiscal} onContractsChange={setContracts} onPaymentsChange={setPayments} onFiscalChange={setFiscal} /> : null}
+      {canAccessContract ? <ContractPaymentsTab mode="payments" caseRow={props.initialCase} initialContracts={contracts} initialLegalDocuments={legalDocuments} initialPayments={payments} initialFiscal={fiscal} initialProposals={props.initialProposals || []} onContractsChange={setContracts} onPaymentsChange={setPayments} onFiscalChange={setFiscal} /> : null}
     </ProcessStage>
 
     <ProcessStage number={5} id="legales" title="Entrega de documentación legal" description="Prepara el correo con contrato firmado, documentación fiscal, condiciones generales e información normalizada; después registra el envío." done={legalSent} active={firstPending === 5}>

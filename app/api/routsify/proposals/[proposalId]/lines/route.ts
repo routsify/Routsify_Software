@@ -31,6 +31,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const versionId = String(source.proposal_version_id || "").trim();
   const startDate = source.start_date ? String(source.start_date) : null;
   const endDate = source.end_date ? String(source.end_date) : null;
+  const requirementLevel = ["required", "conditional", "optional"].includes(String(source.requirement_level || "required")) ? String(source.requirement_level || "required") : "required";
 
   if (!versionId) return NextResponse.json({ ok: false, error: "proposal_version_required" }, { status: 400 });
   if (description.length < 2) return NextResponse.json({ ok: false, error: "description_required" }, { status: 400 });
@@ -49,7 +50,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     .maybeSingle();
   if (versionError) return NextResponse.json({ ok: false, error: versionError.message }, { status: 400 });
   if (!version) return NextResponse.json({ ok: false, error: "proposal_version_not_found" }, { status: 404 });
-  if (version.locked || version.status === "accepted") return NextResponse.json({ ok: false, error: "proposal_version_locked" }, { status: 409 });
+  if (version.locked || !["draft", "internal_review"].includes(String(version.status))) return NextResponse.json({ ok: false, error: "proposal_version_locked" }, { status: 409 });
 
   try {
     const serviceTypeCode = source.service_type_code ? String(source.service_type_code) : "custom";
@@ -94,6 +95,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       origin_margin: rule.source,
       sale_price: salePrice,
       creates_expected_purchase: source.creates_expected_purchase === undefined ? Boolean(supplierId) : Boolean(source.creates_expected_purchase),
+      included: source.included !== false,
+      requirement_level: requirementLevel,
+      source_reference: source.source_reference ? String(source.source_reference).trim().slice(0, 500) || null : null,
+      ai_generated: source.ai_generated === true,
+      ai_confidence: source.ai_generated === true ? Math.max(0, Math.min(Number(source.ai_confidence || 0), 1)) : null,
       sort_order: count || 0,
     }).select("*").single();
     if (error) throw new Error(error.message);

@@ -26,6 +26,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   ]);
   const configuredValidityDays = settings.number("budgets.validity_days", 15);
   const rawValidityDays = (body as { validity_days?: unknown }).validity_days;
+  const requestedVersionId = String((body as { proposal_version_id?: unknown }).proposal_version_id || "").trim();
   const requestedDays = rawValidityDays === undefined || rawValidityDays === null || rawValidityDays === ""
     ? configuredValidityDays
     : Number(rawValidityDays);
@@ -34,21 +35,22 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   const { data: proposal, error: proposalError } = await supabase
     .from("proposals")
-    .select("id,case_id,status,cases(id,case_code,title,destination,trip_start,trip_end,clients(display_name,email,phone))")
+    .select("id,case_id,status,current_version_id,cases(id,case_code,title,destination,trip_start,trip_end,clients(display_name,email,phone))")
     .eq("id", proposalId)
     .eq("organization_id", organizationId)
     .maybeSingle();
   if (proposalError) return NextResponse.json({ ok: false, error: proposalError.message }, { status: 400 });
   if (!proposal) return NextResponse.json({ ok: false, error: "proposal_not_found" }, { status: 404 });
   if (proposal.status === "accepted") return NextResponse.json({ ok: false, error: "accepted_proposal_locked" }, { status: 409 });
+  if (!requestedVersionId) return NextResponse.json({ ok: false, error: "proposal_version_required" }, { status: 400 });
+  if (proposal.current_version_id !== requestedVersionId) return NextResponse.json({ ok: false, error: "proposal_version_is_not_selected" }, { status: 409 });
 
   const { data: version, error: versionError } = await supabase
     .from("proposal_versions")
     .select("id,version_number,total_sale,status,locked,snapshot")
     .eq("proposal_id", proposalId)
     .eq("organization_id", organizationId)
-    .order("version_number", { ascending: false })
-    .limit(1)
+    .eq("id", requestedVersionId || "00000000-0000-0000-0000-000000000000")
     .maybeSingle();
   if (versionError) return NextResponse.json({ ok: false, error: versionError.message }, { status: 400 });
   if (!version) return NextResponse.json({ ok: false, error: "proposal_version_not_found" }, { status: 404 });

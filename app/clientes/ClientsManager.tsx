@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { usePermission } from "@/components/PermissionProvider";
+import { RowActionMenu } from "@/components/RowActionMenu";
 import type { Client } from "@/lib/types";
 
 type ClientRow = Client & { created_at?: string | null; updated_at?: string | null };
@@ -57,7 +58,6 @@ function normalizeClient(input: unknown): ClientRow {
     updated_at: row.updated_at ? String(row.updated_at) : null,
   };
 }
-
 function billingAddressText(value: unknown) {
   if (!value) return "—";
   if (typeof value === "string") return value || "—";
@@ -323,7 +323,7 @@ export function ClientsManager({ initialPage }: { initialPage: ClientPage }) {
         {message ? <p className="client-message" role="status">{message}</p> : null}
         {loading ? <p className="client-message" role="status">Cargando clientes...</p> : null}
 
-        {clients.length === 0 ? <div className="empty-state"><h2>{query ? "No hay coincidencias" : "Todavía no hay clientes"}</h2><p>{query ? "Cambia la búsqueda o límpiala." : canManage ? "Crea o importa tu primer cliente para empezar." : "No hay clientes disponibles para consultar."}</p></div> : <div className="table-scroll"><table><thead><tr><th>Cliente</th><th>Email</th><th>Teléfono</th><th>País</th><th>Fiscal</th><th><span className="sr-only">Acciones</span></th></tr></thead><tbody>{clients.map((client) => <tr key={client.id} className={client.id === selected?.id ? "selected-row" : ""}><td><button className="table-link" type="button" onClick={() => { setSelectedId(client.id); setShowEdit(false); }}><strong>{client.display_name}</strong></button></td><td>{client.email || "—"}</td><td>{client.phone || "—"}</td><td>{client.country || "—"}</td><td>{client.tax_id && billingAddressText(client.billing_address) !== "—" ? "Completo" : "Pendiente"}</td><td><details className="row-action-menu"><summary aria-label={`Acciones para ${client.display_name}`}>•••</summary><div><a href={`/clientes/${encodeURIComponent(client.id)}`}>Abrir ficha</a>{canManage ? <button type="button" onClick={() => startEdit(client)}>Editar</button> : null}{canManage ? <button className="danger-text" type="button" disabled={saving} onClick={() => void deleteClient(client)}>Eliminar</button> : null}</div></details></td></tr>)}</tbody></table></div>}
+        {clients.length === 0 ? <div className="empty-state"><h2>{query ? "No hay coincidencias" : "Todavía no hay clientes"}</h2><p>{query ? "Cambia la búsqueda o límpiala." : canManage ? "Crea o importa tu primer cliente para empezar." : "No hay clientes disponibles para consultar."}</p></div> : <div className="table-scroll"><table><thead><tr><th>Cliente</th><th>Email</th><th>Teléfono</th><th>País</th><th>Fiscal</th><th><span className="sr-only">Acciones</span></th></tr></thead><tbody>{clients.map((client) => <tr key={client.id} className={client.id === selected?.id ? "selected-row" : ""}><td><button className="table-link" type="button" onClick={() => { setSelectedId(client.id); setShowEdit(false); }}><strong>{client.display_name}</strong></button></td><td>{client.email || "—"}</td><td>{client.phone || "—"}</td><td>{client.country || "—"}</td><td>{client.tax_id && billingAddressText(client.billing_address) !== "—" ? "Completo" : "Pendiente"}</td><td><RowActionMenu label={`Acciones para ${client.display_name}`}><a href={`/clientes/${encodeURIComponent(client.id)}`}>Abrir ficha</a>{canManage ? <button type="button" onClick={() => startEdit(client)}>Editar</button> : null}{canManage ? <button className="danger-text" type="button" disabled={saving} onClick={() => void deleteClient(client)}>Eliminar</button> : null}</RowActionMenu></td></tr>)}</tbody></table></div>}
 
         <div className="form-actions" aria-label="Paginación de clientes">
           <span>Mostrando {rangeStart}-{rangeEnd} de {total}{query ? " coincidencias" : " clientes"}</span>

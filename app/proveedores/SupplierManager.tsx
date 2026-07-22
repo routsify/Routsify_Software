@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { usePermission } from "@/components/PermissionProvider";
+import { RowActionMenu } from "@/components/RowActionMenu";
 
 export type SupplierDirectoryRow = {
   id: string;
@@ -98,7 +99,6 @@ function normalize(input: unknown): SupplierDirectoryRow {
     updated_at: row.updated_at ? String(row.updated_at) : null,
   };
 }
-
 function money(value: unknown) {
   return new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(Number(value || 0));
 }
@@ -347,7 +347,7 @@ export function SupplierManager({ initialPage, initialSupplierId = "" }: { initi
         {message ? <p className="client-message" role="status">{message}</p> : null}
         {loading ? <p className="client-message" role="status">Cargando proveedores...</p> : null}
 
-        {items.length === 0 ? <div className="empty-state"><h2>{query ? "No hay coincidencias" : "Todavía no hay proveedores"}</h2><p>{query ? "Cambia la búsqueda o límpiala." : canManage ? "Crea o importa tu primer proveedor." : "No hay proveedores disponibles para consultar."}</p></div> : <div className="table-scroll"><table><thead><tr><th>Proveedor</th><th>Categoría</th><th>Contacto</th><th>Compras</th><th>Pendientes</th><th>Coste real</th><th>Holded</th><th><span className="sr-only">Acciones</span></th></tr></thead><tbody>{items.map((item) => <tr key={item.id} className={item.id === selected?.id ? "selected-row" : ""}><td><button className="table-link" type="button" onClick={() => { setSelectedId(item.id); setShowEdit(false); }}><strong>{item.name}</strong><br /><small>{item.active === false ? "Inactivo" : item.country || "Sin país"}</small></button></td><td>{item.category || "—"}</td><td>{item.email || item.phone || "—"}</td><td>{item.purchase_count || 0}</td><td>{item.pending_count || 0}</td><td>{money(item.approved_total)}</td><td>{item.holded_contact_id ? "Vinculado" : "Pendiente"}</td><td><details className="row-action-menu"><summary aria-label={`Acciones para ${item.name}`}>•••</summary><div><a href={`/proveedores/${encodeURIComponent(item.id)}`}>Abrir ficha</a>{canManage ? <button type="button" onClick={() => startEdit(item)}>Editar</button> : null}{canManage ? <button className="danger-text" type="button" disabled={saving} onClick={() => void deleteSupplier(item)}>Eliminar</button> : null}</div></details></td></tr>)}</tbody></table></div>}
+        {items.length === 0 ? <div className="empty-state"><h2>{query ? "No hay coincidencias" : "Todavía no hay proveedores"}</h2><p>{query ? "Cambia la búsqueda o límpiala." : canManage ? "Crea o importa tu primer proveedor." : "No hay proveedores disponibles para consultar."}</p></div> : <div className="table-scroll"><table><thead><tr><th>Proveedor</th><th>Categoría</th><th>Contacto</th><th>Compras</th><th>Pendientes</th><th>Coste real</th><th>Holded</th><th><span className="sr-only">Acciones</span></th></tr></thead><tbody>{items.map((item) => <tr key={item.id} className={item.id === selected?.id ? "selected-row" : ""}><td><button className="table-link" type="button" onClick={() => { setSelectedId(item.id); setShowEdit(false); }}><strong>{item.name}</strong><br /><small>{item.active === false ? "Inactivo" : item.country || "Sin país"}</small></button></td><td>{item.category || "—"}</td><td>{item.email || item.phone || "—"}</td><td>{item.purchase_count || 0}</td><td>{item.pending_count || 0}</td><td>{money(item.approved_total)}</td><td>{item.holded_contact_id ? "Vinculado" : "Pendiente"}</td><td><RowActionMenu label={`Acciones para ${item.name}`}><a href={`/proveedores/${encodeURIComponent(item.id)}`}>Abrir ficha</a>{canManage ? <button type="button" onClick={() => startEdit(item)}>Editar</button> : null}{canManage ? <button className="danger-text" type="button" disabled={saving} onClick={() => void deleteSupplier(item)}>Eliminar</button> : null}</RowActionMenu></td></tr>)}</tbody></table></div>}
 
         <div className="form-actions" aria-label="Paginación de proveedores">
           <span>Mostrando {rangeStart}-{rangeEnd} de {total}{query ? " coincidencias" : " proveedores"}</span>
