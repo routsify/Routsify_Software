@@ -10,6 +10,12 @@ function numberValue(value: unknown) {
   return Number.isFinite(number) ? number : 0;
 }
 
+function optionalDate(value: unknown) {
+  const raw = String(value || "").trim().slice(0, 10);
+  if (!raw) return null;
+  return /^\d{4}-\d{2}-\d{2}$/.test(raw) && Number.isFinite(Date.parse(raw)) ? raw : null;
+}
+
 export async function GET(request: NextRequest) {
   const access = await requireInternalAccess(request);
   if (!access.ok) return jsonAccessDenied(access);
@@ -63,6 +69,7 @@ export async function POST(request: NextRequest) {
     expected_amount: amount,
     currency: String(source.currency || "EUR").toUpperCase(),
     status,
+    invoice_expected_by: optionalDate(source.invoice_expected_by),
     review_notes: String(source.review_notes || "").trim() || null,
   };
   const { data, error } = await supabase.from("expected_purchases").insert(payload).select(PURCHASE_WITH_RELATIONS_SELECT).single();

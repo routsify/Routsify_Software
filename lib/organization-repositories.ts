@@ -16,7 +16,7 @@ function oneRecord(value: unknown): Record<string, unknown> | null {
 
 const CLIENT_SELECT = "id,client_type,display_name,email,email_normalized,phone,phone_normalized,tax_id,billing_address,country,language,source,holded_contact_id,notes,created_at,updated_at";
 const CLIENT_PAGE_SIZES = new Set([50, 100, 150, 200]);
-const SUPPLIER_SELECT = "id,name,fiscal_name,category,email,phone,tax_id,country,billing_address,notes,active,holded_contact_id,created_at,updated_at";
+const SUPPLIER_SELECT = "id,name,fiscal_name,category,email,phone,tax_id,country,billing_address,notes,active,holded_contact_id,invoice_portal_url,invoice_retrieval_method,invoice_grace_days,invoice_retrieval_notes,created_at,updated_at";
 const SUPPLIER_PAGE_SIZES = new Set([50, 100, 150, 200]);
 
 export type OrganizationClientStats = {

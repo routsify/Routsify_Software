@@ -227,23 +227,65 @@ function daysApart(left?: string | null, right?: string | null) {
   return Math.abs(a - b) / 86_400_000;
 }
 
-export async function syncHoldedPurchaseCandidates(organizationId: string, options: { targetPurchaseId?: string } = {}) {
+function appendQuery(path: string, params: Record<string, string | number | null | undefined>) {
+  const entries = Object.entries(params).filter(([, value]) => value !== null && value !== undefined && value !== "");
+  if (!entries.length) return path;
+  const separator = path.includes("?") ? "&" : "?";
+  return `${path}${separator}${entries.map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`).join("&")}`;
+}
+
+function unixSeconds(value?: Date | string | null) {
+  if (!value) return null;
+  const ms = value instanceof Date ? value.getTime() : new Date(value).getTime();
+  return Number.isFinite(ms) ? Math.floor(ms / 1000) : null;
+}
+
+function isCancelledOrCredit(item: Record<string, unknown>) {
+  const status = remoteStatus(item).toLowerCase();
+  const kind = text(item.type || item.document_type || item.docType || item.kind).toLowerCase();
+  const total = remoteTotal(item);
+  return total < 0 || ["cancelled", "canceled", "void", "voided", "credit", "credit_note", "refund"].some((token) => status.includes(token) || kind.includes(token));
+}
+
+function amountWithinTolerance(actual: number, expected: number, percent: number, absolute: number) {
+  if (expected <= 0) return true;
+  const tolerance = Math.max(Math.max(0, absolute), expected * (Math.max(0, percent) / 100));
+  return Math.abs(actual - expected) <= tolerance;
+}
+
+type SyncHoldedPurchaseOptions = {
+  targetPurchaseId?: string;
+  since?: Date | string;
+  until?: Date | string;
+  autoApprove?: boolean;
+};
+
+export async function syncHoldedPurchaseCandidates(organizationId: string, options: SyncHoldedPurchaseOptions = {}) {
   const [configuration, settings] = await Promise.all([holdedConfiguration(organizationId), loadEffectiveSettings(organizationId)]);
-  const minimumConfidence = Math.min(100, Math.max(0, settings.number("purchases.match.min_confidence", 70)));
+  const reviewConfidence = Math.min(100, Math.max(0, settings.number("purchases.match.review_min_confidence", settings.number("purchases.match.min_confidence", 70))));
+  const autoApproveConfidence = Math.min(100, Math.max(reviewConfidence, settings.number("purchases.match.auto_reconcile_min_confidence", 95)));
+  const tolerancePercent = Math.max(0, settings.number("purchases.match.amount_tolerance_percent", 2));
+  const toleranceAbsolute = Math.max(0, settings.number("purchases.match.amount_tolerance_absolute", 5));
   const pageSize = Math.min(100, Math.max(25, settings.number("purchases.holded.page_size", 100)));
   const maxPages = Math.min(10, Math.max(1, settings.number("purchases.holded.max_pages", 5)));
+  const starttmp = unixSeconds(options.since);
+  const endtmp = unixSeconds(options.until);
   const remote: Record<string, unknown>[] = [];
   for (let page = 1; page <= maxPages; page += 1) {
-    const separator = configuration.endpoints.purchases.includes("?") ? "&" : "?";
-    const result = await holdedRequest({ organizationId, path: `${configuration.endpoints.purchases}${separator}limit=${pageSize}&page=${page}`, retries: 1 });
+    const result = await holdedRequest({
+      organizationId,
+      path: appendQuery(configuration.endpoints.purchases, { limit: pageSize, page, starttmp, endtmp }),
+      retries: 1,
+    });
     if (!result.ok) throw failure(result);
     const rows = rowsOf(result.payload);
     remote.push(...rows);
     if (rows.length < pageSize) break;
   }
+
   const db = getSupabaseAdminClient();
   const expectedQuery = db.from("expected_purchases")
-    .select("id,case_id,supplier_id,supplier_name,service,expected_amount,amount,currency,status,holded_purchase_id,approved_cost,invoice_total,invoice_expected_by,due_date,review_notes,budget_lines(description_public,start_date,end_date),cases(case_code,trip_start,trip_end),suppliers(id,name,fiscal_name,tax_id,holded_contact_id)")
+    .select("id,case_id,supplier_id,supplier_name,service,expected_amount,amount,currency,status,active,required,allow_partial_invoicing,holded_purchase_id,approved_cost,invoice_total,invoice_expected_by,due_date,review_notes,budget_lines(description_public,start_date,end_date),cases(case_code,trip_start,trip_end),suppliers(id,name,fiscal_name,tax_id,holded_contact_id)")
     .eq("organization_id", organizationId)
     .in("status", ["expected", "requested", "uploaded", "holded_candidate", "review_needed", "approved"])
     .limit(5000);
@@ -254,6 +296,7 @@ export async function syncHoldedPurchaseCandidates(organizationId: string, optio
     .eq("organization_id", organizationId)
     .limit(5000);
   if (suppliersError) throw new Error(suppliersError.message);
+
   const suppliersByHoldedId = new Map((suppliers || []).filter((item) => text(item.holded_contact_id)).map((item) => [text(item.holded_contact_id), item]));
   const expectedIds = (expected || []).map((item) => String(item.id));
   const reviewed = new Set<string>();
@@ -263,11 +306,14 @@ export async function syncHoldedPurchaseCandidates(organizationId: string, optio
     if (reviewedError) throw new Error(reviewedError.message);
     for (const item of rows || []) reviewed.add(`${item.expected_purchase_id}:${item.holded_purchase_id}`);
   }
+
   let candidates = 0;
   let importedInvoices = 0;
   let unassignedInvoices = 0;
   let matchedPurchases = 0;
   let reviewNeeded = 0;
+  let autoApproved = 0;
+  const linkedExpectedByHoldedId = new Map<string, string>();
 
   const normalizedRemote = remote.map((item) => {
     const id = idOf(item);
@@ -293,6 +339,7 @@ export async function syncHoldedPurchaseCandidates(organizationId: string, optio
       total,
       currency: remoteCurrency(item),
       status: remoteStatus(item),
+      cancelledOrCredit: isCancelledOrCredit(item),
       updatedAt,
       supplierId: supplier?.id ? String(supplier.id) : null,
       supplierName: text(supplier?.name || supplier?.fiscal_name),
@@ -300,12 +347,24 @@ export async function syncHoldedPurchaseCandidates(organizationId: string, optio
     };
   }).filter((item) => item.id);
 
+  const invoiceNumberKey = (invoice: { contactId?: string; taxId?: string; supplierId?: string | null; contactName?: string; invoiceNumber?: string }) => {
+    const owner = text(invoice.contactId || invoice.taxId || invoice.supplierId || invoice.contactName).toLowerCase();
+    const number = text(invoice.invoiceNumber).toLowerCase();
+    return owner && number ? `${owner}:${number}` : "";
+  };
+  const invoiceNumberCounts = new Map<string, number>();
+  for (const invoice of normalizedRemote) {
+    const key = invoiceNumberKey(invoice);
+    if (key) invoiceNumberCounts.set(key, (invoiceNumberCounts.get(key) || 0) + 1);
+  }
+
   for (const invoice of normalizedRemote) {
     const { data: existingInvoice } = await db.from("supplier_invoices")
       .select("id,expected_purchase_id,total_amount,source_payload_hash,status")
       .eq("organization_id", organizationId)
       .eq("holded_purchase_id", invoice.id)
       .maybeSingle();
+    if (existingInvoice?.expected_purchase_id) linkedExpectedByHoldedId.set(invoice.id, String(existingInvoice.expected_purchase_id));
     const existingHash = text(existingInvoice?.source_payload_hash);
     const changed = Boolean(existingInvoice?.id && existingHash && existingHash !== invoice.hash);
     const { error: invoiceError } = await db.from("supplier_invoices").upsert({
@@ -321,7 +380,7 @@ export async function syncHoldedPurchaseCandidates(organizationId: string, optio
       total_amount: invoice.total || null,
       currency: invoice.currency,
       sync_status: "synced",
-      status: changed && existingInvoice?.status === "approved" ? "review_needed" : existingInvoice?.status || "holded_detected",
+      status: invoice.cancelledOrCredit ? "cancelled" : changed && existingInvoice?.status === "approved" ? "review_needed" : existingInvoice?.status || "holded_detected",
       holded_status: invoice.status,
       holded_updated_at: invoice.updatedAt,
       last_seen_at: new Date().toISOString(),
@@ -365,11 +424,11 @@ export async function syncHoldedPurchaseCandidates(organizationId: string, optio
       if (caseCode && includesNeedle(invoice.haystack, caseCode)) { score += 25; checks.push("case_code"); }
       if (service && includesNeedle(invoice.haystack, service.slice(0, 40))) { score += 15; checks.push("service"); }
       if (invoice.currency === expectedCurrency) { score += 10; checks.push("currency"); }
-      if (expectedAmount > 0 && Math.abs(invoice.total - expectedAmount) <= Math.max(5, expectedAmount * 0.02)) { score += 25; checks.push("amount_2pct"); }
+      if (expectedAmount > 0 && amountWithinTolerance(invoice.total, expectedAmount, tolerancePercent, toleranceAbsolute)) { score += 25; checks.push("amount_tolerance"); }
       else if (expectedAmount > 0 && Math.abs(invoice.total - expectedAmount) <= Math.max(15, expectedAmount * 0.05)) { score += 15; checks.push("amount_5pct"); }
       if (daysApart(invoice.invoiceDate, targetDate) <= 14) { score += 10; checks.push("date_near"); }
       return { id: invoice.id, invoice, score: Math.min(score, 100), checks };
-    }).filter((candidate) => candidate.id && candidate.score >= minimumConfidence && !reviewed.has(`${purchaseRow.id}:${candidate.id}`))
+    }).filter((candidate) => candidate.id && candidate.score >= reviewConfidence && !candidate.invoice.cancelledOrCredit && !reviewed.has(`${purchaseRow.id}:${candidate.id}`))
       .sort((left, right) => right.score - left.score).slice(0, 3);
 
     await db.from("purchase_match_candidates").delete().eq("organization_id", organizationId).eq("expected_purchase_id", purchaseRow.id).eq("status", "candidate");
@@ -390,6 +449,53 @@ export async function syncHoldedPurchaseCandidates(organizationId: string, optio
     const best = matches[0];
     if (best && matches.filter((item) => item.score === best.score).length === 1) {
       matchedPurchases += 1;
+      const key = invoiceNumberKey(best.invoice);
+      const duplicateNumber = key ? (invoiceNumberCounts.get(key) || 0) > 1 : false;
+      const exactSupplier = Boolean((supplierHoldedId && supplierHoldedId === best.invoice.contactId) || (supplierTaxId && best.invoice.taxId.toLowerCase() === supplierTaxId));
+      const currencyExact = best.invoice.currency === expectedCurrency;
+      const amountOk = amountWithinTolerance(best.invoice.total, expectedAmount, tolerancePercent, toleranceAbsolute);
+      const pendingStatus = !["approved", "not_required", "cancelled"].includes(text(purchaseRow.status));
+      const activeRequired = purchaseRow.active !== false && purchaseRow.required !== false;
+      const linkedExpected = linkedExpectedByHoldedId.get(best.id);
+      const linkOk = !linkedExpected || linkedExpected === String(purchaseRow.id) || purchaseRow.allow_partial_invoicing === true;
+      const canAutoApprove = options.autoApprove !== false
+        && best.score >= autoApproveConfidence
+        && matches.length === 1
+        && exactSupplier
+        && currencyExact
+        && amountOk
+        && pendingStatus
+        && activeRequired
+        && !best.invoice.cancelledOrCredit
+        && !duplicateNumber
+        && linkOk;
+
+      if (canAutoApprove) {
+        const { error: approveError } = await db.rpc("approve_expected_purchase", {
+          target_org: organizationId,
+          target_purchase: purchaseRow.id,
+          target_holded_purchase_id: best.id,
+          approved_amount: best.invoice.total || expectedAmount,
+          actor: null,
+          review_note: "Conciliación automática segura desde Holded.",
+        });
+        if (!approveError) {
+          autoApproved += 1;
+          await db.from("purchase_match_candidates").upsert({
+            organization_id: organizationId,
+            expected_purchase_id: purchaseRow.id,
+            holded_purchase_id: best.id,
+            score: best.score,
+            checks: [...best.checks, "auto_approved"],
+            payload: best.invoice.item,
+            status: "approved",
+            reviewed_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }, { onConflict: "organization_id,expected_purchase_id,holded_purchase_id" });
+          continue;
+        }
+      }
+
       await db.from("supplier_invoices").update({ expected_purchase_id: purchaseRow.id, status: "holded_candidate", updated_at: new Date().toISOString() })
         .eq("organization_id", organizationId).eq("holded_purchase_id", best.id).is("expected_purchase_id", null);
       await db.from("expected_purchases").update({
@@ -405,15 +511,35 @@ export async function syncHoldedPurchaseCandidates(organizationId: string, optio
         sync_status: "synced",
         last_synced_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-        review_notes: purchaseRow.status === "approved" ? "Holded ha detectado una factura nueva o modificada sobre una compra ya aprobada. Revisión necesaria." : purchaseRow.review_notes,
+        review_notes: purchaseRow.status === "approved"
+          ? "Holded ha detectado una factura nueva o modificada sobre una compra ya aprobada. Revisión necesaria."
+          : !canAutoApprove && best.score >= autoApproveConfidence
+            ? "Candidato fuerte de Holded bloqueado para aprobación automática por una regla de seguridad. Revisa proveedor, moneda, importe, duplicados o enlace previo."
+            : purchaseRow.review_notes,
       })
         .eq("id", purchaseRow.id).eq("organization_id", organizationId);
     } else if (purchaseRow.status === "holded_candidate") {
       reviewNeeded += 1;
       await db.from("expected_purchases").update({ status: "review_needed", match_score: null, match_checks: [],
-        review_notes: `No hay candidatos de Holded que alcancen el umbral configurado del ${minimumConfidence}% o los candidatos ya fueron revisados manualmente.`, updated_at: new Date().toISOString() })
+        review_notes: `No hay candidatos de Holded que alcancen el umbral configurado del ${reviewConfidence}% o los candidatos ya fueron revisados manualmente.`, updated_at: new Date().toISOString() })
         .eq("id", purchaseRow.id).eq("organization_id", organizationId);
     }
   }
-  return { remotePurchases: normalizedRemote.length, importedInvoices, unassignedInvoices, expectedPurchases: expected?.length || 0, candidates, matchedPurchases, reviewNeeded, minimumConfidence };
+
+  return {
+    remotePurchases: normalizedRemote.length,
+    importedInvoices,
+    unassignedInvoices,
+    expectedPurchases: expected?.length || 0,
+    candidates,
+    matchedPurchases,
+    reviewNeeded,
+    autoApproved,
+    reviewConfidence,
+    autoApproveConfidence,
+    tolerancePercent,
+    toleranceAbsolute,
+    since: options.since ? new Date(options.since).toISOString() : null,
+    until: options.until ? new Date(options.until).toISOString() : null,
+  };
 }

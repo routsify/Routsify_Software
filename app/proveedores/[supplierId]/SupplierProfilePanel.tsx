@@ -12,6 +12,10 @@ type Draft = {
   payment_terms_days: number;
   default_currency: string;
   default_margin_pct: string;
+  invoice_portal_url: string;
+  invoice_retrieval_method: string;
+  invoice_grace_days: number;
+  invoice_retrieval_notes: string;
   service_regions: string;
   cancellation_policy: string;
   emergency_name: string;
@@ -32,6 +36,10 @@ function draftFromSupplier(supplier: Row): Draft {
     payment_terms_days: Number(supplier.payment_terms_days || 0),
     default_currency: text(supplier.default_currency) || "EUR",
     default_margin_pct: supplier.default_margin_pct === null || supplier.default_margin_pct === undefined ? "" : String(supplier.default_margin_pct),
+    invoice_portal_url: text(supplier.invoice_portal_url),
+    invoice_retrieval_method: text(supplier.invoice_retrieval_method) || "email",
+    invoice_grace_days: Number(supplier.invoice_grace_days ?? 3),
+    invoice_retrieval_notes: text(supplier.invoice_retrieval_notes),
     service_regions: list(supplier.service_regions).join(", "),
     cancellation_policy: text(supplier.cancellation_policy),
     emergency_name: text(emergency.name),
@@ -64,6 +72,10 @@ export function SupplierProfilePanel({ supplier, onSaved }: { supplier: Row; onS
         payment_terms_days: draft.payment_terms_days,
         default_currency: draft.default_currency.trim().toUpperCase(),
         default_margin_pct: draft.default_margin_pct === "" ? null : Number(draft.default_margin_pct.replace(",", ".")),
+        invoice_portal_url: draft.invoice_portal_url || null,
+        invoice_retrieval_method: draft.invoice_retrieval_method,
+        invoice_grace_days: draft.invoice_grace_days,
+        invoice_retrieval_notes: draft.invoice_retrieval_notes || null,
         service_regions: draft.service_regions.split(",").map((item) => item.trim()).filter(Boolean),
         cancellation_policy: draft.cancellation_policy || null,
         emergency_contact: { name: draft.emergency_name, phone: draft.emergency_phone, email: draft.emergency_email },
@@ -89,9 +101,13 @@ export function SupplierProfilePanel({ supplier, onSaved }: { supplier: Row; onS
         <label>Plazo de pago (días)<input className="input" type="number" min={0} max={365} value={draft.payment_terms_days} onChange={(event) => update("payment_terms_days", Number(event.target.value))} /></label>
         <label>Moneda<input className="input" maxLength={3} value={draft.default_currency} onChange={(event) => update("default_currency", event.target.value)} /></label>
         <label>Margen predeterminado (%)<input className="input" type="number" min={0} max={99} step="0.1" value={draft.default_margin_pct} onChange={(event) => update("default_margin_pct", event.target.value)} placeholder="Usar global" /></label>
+        <label>Método facturas<select value={draft.invoice_retrieval_method} onChange={(event) => update("invoice_retrieval_method", event.target.value)}><option value="email">Email</option><option value="portal">Portal proveedor</option><option value="automatic">Automático</option><option value="not_required">No requiere factura</option></select></label>
+        <label>Gracia factura (días)<input className="input" type="number" min={0} max={90} value={draft.invoice_grace_days} onChange={(event) => update("invoice_grace_days", Number(event.target.value))} /></label>
+        <label>Portal facturas<input className="input" type="url" value={draft.invoice_portal_url} onChange={(event) => update("invoice_portal_url", event.target.value)} placeholder="https://..." /></label>
         <label>Regiones / destinos<input className="input" value={draft.service_regions} onChange={(event) => update("service_regions", event.target.value)} placeholder="Italia, Francia, París..." /></label>
       </div>
       <label><input type="checkbox" checked={draft.preferred} onChange={(event) => update("preferred", event.target.checked)} /> Proveedor preferente para nuevas propuestas</label>
+      <label>Notas de recuperación de facturas<textarea rows={3} value={draft.invoice_retrieval_notes} onChange={(event) => update("invoice_retrieval_notes", event.target.value)} placeholder="Indicaciones internas. No guardes contraseñas aquí." /></label>
       <label>Política de cancelación<textarea rows={4} value={draft.cancellation_policy} onChange={(event) => update("cancellation_policy", event.target.value)} /></label>
       <div className="grid grid-3"><label>Contacto de emergencia<input className="input" value={draft.emergency_name} onChange={(event) => update("emergency_name", event.target.value)} /></label><label>Teléfono de emergencia<input className="input" value={draft.emergency_phone} onChange={(event) => update("emergency_phone", event.target.value)} /></label><label>Email de emergencia<input className="input" type="email" value={draft.emergency_email} onChange={(event) => update("emergency_email", event.target.value)} /></label></div>
       <div className="form-actions"><button className="btn secondary" type="button" onClick={() => { setDraft(draftFromSupplier(supplier)); setEditing(false); }} disabled={saving}>Cancelar</button><button className="btn" type="submit" disabled={saving}>{saving ? "Guardando..." : "Guardar perfil"}</button></div>
@@ -100,8 +116,11 @@ export function SupplierProfilePanel({ supplier, onSaved }: { supplier: Row; onS
       <div><dt>Fiabilidad</dt><dd>{Number(supplier.reliability_score || 0)}/100</dd></div><div><dt>Valoración</dt><dd>{supplier.average_rating === null || supplier.average_rating === undefined ? "—" : `${Number(supplier.average_rating).toFixed(1)}/5`}</dd></div>
       <div><dt>Pago</dt><dd>{Number(supplier.payment_terms_days || 0)} días</dd></div><div><dt>Moneda</dt><dd>{text(supplier.default_currency) || "EUR"}</dd></div>
       <div><dt>Margen predeterminado</dt><dd>{supplier.default_margin_pct === null || supplier.default_margin_pct === undefined ? "Global" : `${Number(supplier.default_margin_pct).toFixed(1)}%`}</dd></div>
+      <div><dt>Facturas</dt><dd>{text(supplier.invoice_retrieval_method) || "email"} · gracia {Number(supplier.invoice_grace_days ?? 3)} días</dd></div>
+      <div><dt>Portal</dt><dd>{text(supplier.invoice_portal_url) ? <a href={text(supplier.invoice_portal_url)} target="_blank" rel="noreferrer">Abrir portal</a> : "Sin portal"}</dd></div>
       <div><dt>Cobertura</dt><dd>{list(supplier.service_regions).join(", ") || "Sin definir"}</dd></div><div><dt>Emergencias</dt><dd>{text(emergency.name) || text(emergency.phone) || "Sin contacto"}</dd></div>
     </dl>}
+    {!editing && text(supplier.invoice_retrieval_notes) ? <div className="client360-note"><strong>Recuperación de facturas</strong><p>{text(supplier.invoice_retrieval_notes)}</p></div> : null}
     {!editing ? <div className="client360-note"><strong>Política de cancelación</strong><p>{text(supplier.cancellation_policy) || "Sin política registrada."}</p></div> : null}
   </section>;
 }

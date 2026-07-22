@@ -1677,6 +1677,7 @@ export type Database = {
         Row: {
           active: boolean
           amount: number | null
+          allow_partial_invoicing: boolean
           approved_at: string | null
           approved_by: string | null
           approved_cost: number | null
@@ -1692,6 +1693,7 @@ export type Database = {
           id: string
           invoice_base: number | null
           invoice_date: string | null
+          invoice_expected_by: string | null
           invoice_number: string | null
           invoice_tax: number | null
           invoice_total: number | null
@@ -1722,6 +1724,7 @@ export type Database = {
         Insert: {
           active?: boolean
           amount?: number | null
+          allow_partial_invoicing?: boolean
           approved_at?: string | null
           approved_by?: string | null
           approved_cost?: number | null
@@ -1737,6 +1740,7 @@ export type Database = {
           id?: string
           invoice_base?: number | null
           invoice_date?: string | null
+          invoice_expected_by?: string | null
           invoice_number?: string | null
           invoice_tax?: number | null
           invoice_total?: number | null
@@ -1767,6 +1771,7 @@ export type Database = {
         Update: {
           active?: boolean
           amount?: number | null
+          allow_partial_invoicing?: boolean
           approved_at?: string | null
           approved_by?: string | null
           approved_cost?: number | null
@@ -1782,6 +1787,7 @@ export type Database = {
           id?: string
           invoice_base?: number | null
           invoice_date?: string | null
+          invoice_expected_by?: string | null
           invoice_number?: string | null
           invoice_tax?: number | null
           invoice_total?: number | null
@@ -3878,6 +3884,10 @@ export type Database = {
           fiscal_name: string
           holded_contact_id: string | null
           id: string
+          invoice_grace_days: number
+          invoice_portal_url: string | null
+          invoice_retrieval_method: string
+          invoice_retrieval_notes: string | null
           name: string
           notes: string | null
           organization_id: string
@@ -3905,6 +3915,10 @@ export type Database = {
           fiscal_name: string
           holded_contact_id?: string | null
           id?: string
+          invoice_grace_days?: number
+          invoice_portal_url?: string | null
+          invoice_retrieval_method?: string
+          invoice_retrieval_notes?: string | null
           name: string
           notes?: string | null
           organization_id: string
@@ -3932,6 +3946,10 @@ export type Database = {
           fiscal_name?: string
           holded_contact_id?: string | null
           id?: string
+          invoice_grace_days?: number
+          invoice_portal_url?: string | null
+          invoice_retrieval_method?: string
+          invoice_retrieval_notes?: string | null
           name?: string
           notes?: string | null
           organization_id?: string

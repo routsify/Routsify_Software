@@ -19,7 +19,7 @@ function stringList(value: unknown, maxItems = 30, maxLength = 80) {
   return [...new Set(source.map((item) => String(item ?? "").trim().slice(0, maxLength)).filter(Boolean))].slice(0, maxItems);
 }
 
-const select = "id,name,fiscal_name,category,email,phone,tax_id,country,billing_address,notes,active,holded_contact_id,preferred,risk_level,reliability_score,average_rating,payment_terms_days,default_currency,service_regions,cancellation_policy,emergency_contact,profile_updated_at,created_at,updated_at";
+const select = "id,name,fiscal_name,category,email,phone,tax_id,country,billing_address,notes,active,holded_contact_id,invoice_portal_url,invoice_retrieval_method,invoice_grace_days,invoice_retrieval_notes,preferred,risk_level,reliability_score,average_rating,payment_terms_days,default_currency,service_regions,cancellation_policy,emergency_contact,profile_updated_at,created_at,updated_at";
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ supplierId: string }> }) {
   const access = await requireInternalAccess(request);
@@ -54,6 +54,22 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if ("tax_id" in source) patch.tax_id = text(source.tax_id, 80);
   if ("country" in source) patch.country = text(source.country, 100);
   if ("notes" in source) patch.notes = text(source.notes, 2000);
+  if ("invoice_portal_url" in source) {
+    const url = text(source.invoice_portal_url, 500);
+    if (url && !/^https?:\/\//i.test(url)) return NextResponse.json({ ok: false, error: "invalid_invoice_portal_url" }, { status: 400 });
+    patch.invoice_portal_url = url;
+  }
+  if ("invoice_retrieval_method" in source) {
+    const method = String(source.invoice_retrieval_method || "email");
+    if (!["portal", "email", "automatic", "not_required"].includes(method)) return NextResponse.json({ ok: false, error: "invalid_invoice_retrieval_method" }, { status: 400 });
+    patch.invoice_retrieval_method = method;
+  }
+  if ("invoice_grace_days" in source) {
+    const days = Math.round(numberValue(source.invoice_grace_days, 3));
+    if (days < 0 || days > 90) return NextResponse.json({ ok: false, error: "invalid_invoice_grace_days" }, { status: 400 });
+    patch.invoice_grace_days = days;
+  }
+  if ("invoice_retrieval_notes" in source) patch.invoice_retrieval_notes = text(source.invoice_retrieval_notes, 2000);
   if ("billing_address" in source) patch.billing_address = source.billing_address && typeof source.billing_address === "object" ? source.billing_address : {};
   if ("active" in source) patch.active = Boolean(source.active);
   if ("preferred" in source) patch.preferred = Boolean(source.preferred);
@@ -89,7 +105,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   if ("service_regions" in source) patch.service_regions = stringList(source.service_regions);
   if ("cancellation_policy" in source) patch.cancellation_policy = text(source.cancellation_policy, 4000);
   if ("emergency_contact" in source) patch.emergency_contact = source.emergency_contact && typeof source.emergency_contact === "object" && !Array.isArray(source.emergency_contact) ? source.emergency_contact : {};
-  if (["preferred", "risk_level", "reliability_score", "average_rating", "payment_terms_days", "default_currency", "service_regions", "cancellation_policy", "emergency_contact"].some((key) => key in source)) patch.profile_updated_at = now;
+  if (["preferred", "risk_level", "reliability_score", "average_rating", "payment_terms_days", "default_currency", "service_regions", "cancellation_policy", "emergency_contact", "invoice_portal_url", "invoice_retrieval_method", "invoice_grace_days", "invoice_retrieval_notes"].some((key) => key in source)) patch.profile_updated_at = now;
 
   const { data, error } = await db.from("suppliers").update(patch).eq("id", supplierId).eq("organization_id", access.organizationId).select(select).single();
   if (error?.code === "23505") return NextResponse.json({ ok: false, error: "supplier_already_exists" }, { status: 409 });
