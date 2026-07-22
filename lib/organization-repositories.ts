@@ -305,7 +305,7 @@ export async function listOrganizationProposals(organizationId: string): Promise
 
 export async function listOrganizationPurchases(organizationId: string): Promise<RepositoryResult<unknown[]>> {
   if (!hasSupabaseAdminEnv()) return unavailable();
-  const { data, error } = await getSupabaseAdminClient().from("expected_purchases").select(PURCHASE_WITH_RELATIONS_SELECT).eq("organization_id", organizationId).order("created_at", { ascending: false }).limit(200);
+  const { data, error } = await getSupabaseAdminClient().from("expected_purchases").select(PURCHASE_WITH_RELATIONS_SELECT).eq("organization_id", organizationId).order("invoice_expected_by", { ascending: true, nullsFirst: false }).order("created_at", { ascending: false }).limit(1000);
   return error ? { ok: false, mode: "supabase", error: error.message } : { ok: true, mode: "supabase", data: data || [] };
 }
 
