@@ -1,0 +1,39 @@
+name: Apply Supplier Payments Cashflow
+
+on:
+  push:
+    branches:
+      - agent/supplier-payments-cashflow
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+      - name: Apply validated patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          python3 - <<'PY'
+          import base64
+          import pathlib
+          import zlib
+
+          source = pathlib.Path('.github/agent/supplier-payments.patch.zlib.b64')
+          target = pathlib.Path('/tmp/supplier-payments.patch')
+          target.write_bytes(zlib.decompress(base64.b64decode(source.read_text().strip())))
+          PY
+          git apply --index /tmp/supplier-payments.patch
+          git commit -m "Añade pagos proveedor y cash flow provisional"
+          git rm .github/agent/supplier-payments.patch.zlib.b64 .github/workflows/apply-supplier-payments-cashflow.yml
+          rmdir .github/agent 2>/dev/null || true
+          git commit -m "Retira transporte de pagos proveedor"
+          git push origin HEAD:${{ github.ref_name }}
