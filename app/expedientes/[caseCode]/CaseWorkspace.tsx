@@ -20,6 +20,40 @@ function statusLabel(done: boolean, active = false) {
   return <span className={`status-pill ${done ? "status-success" : active ? "status-warning" : ""}`}>{done ? "Completado" : active ? "En curso" : "Pendiente"}</span>;
 }
 
+function one<T>(value: unknown): T | null {
+  return Array.isArray(value) ? (value[0] as T | undefined) || null : value && typeof value === "object" ? value as T : null;
+}
+
+function purchaseExpected(item: PurchaseRow) {
+  return numberValue(item.expected_amount || item.amount);
+}
+
+function purchasePaid(item: PurchaseRow) {
+  return (item.supplier_payment_allocations || []).reduce((sum, allocation) => {
+    const event = one<{ status?: string | null }>(allocation.supplier_payment_events);
+    return ["reversed", "ignored"].includes(String(event?.status || "")) ? sum : sum + numberValue(allocation.allocated_amount);
+  }, 0);
+}
+
+function purchaseInvoiced(item: PurchaseRow) {
+  return numberValue(item.invoice_total || (item.supplier_invoices || [])[0]?.total_amount || (item.supplier_invoices || [])[0]?.total);
+}
+
+function purchaseFinalCost(item: PurchaseRow) {
+  return ["approved", "not_required"].includes(String(item.status)) ? numberValue(item.approved_cost || purchaseInvoiced(item)) : 0;
+}
+
+function purchaseFinancialStatus(item: PurchaseRow) {
+  const expected = Math.max(purchaseExpected(item), purchaseInvoiced(item), purchaseFinalCost(item));
+  const paid = purchasePaid(item);
+  const invoiced = purchaseInvoiced(item);
+  if (paid > 0 && invoiced <= 0) return "Pagada, falta factura";
+  if (paid <= 0) return "Pendiente de pago";
+  if (paid + 0.01 < expected) return "Pago parcial";
+  if (invoiced > 0 && Math.abs(invoiced - paid) > 0.01) return "Revisión diferencia";
+  return "Completo";
+}
+
 function ProcessStage({ number, id, title, description, done, active, children }: { number: number; id: string; title: string; description: string; done: boolean; active?: boolean; children: ReactNode }) {
   return <section className={`case-process-stage ${done ? "complete" : active ? "active" : ""}`} id={id}><div className="case-process-marker"><span>{done ? "✓" : number}</span><i /></div><div className="case-process-body"><header><div><span className="eyebrow">Paso {number}</span><h2>{title}</h2><p>{description}</p></div>{statusLabel(done, active)}</header>{children}</div></section>;
 }
@@ -92,6 +126,19 @@ export function CaseWorkspace(props: WorkspaceProps & { role?: string | null }) 
   const fullyPaid = acceptedValue > 0 && paid + 0.01 >= acceptedValue;
   const legalSent = timeline.some((item) => item.event_type === "legal_pack.sent");
   const purchasesComplete = purchases.length > 0 && purchases.every((item) => ["approved", "not_required", "cancelled"].includes(String(item.status)));
+  const supplierExpected = purchases.reduce((sum, item) => sum + purchaseExpected(item), 0);
+  const supplierPaid = purchases.reduce((sum, item) => sum + purchasePaid(item), 0);
+  const supplierInvoiced = purchases.reduce((sum, item) => sum + purchaseInvoiced(item), 0);
+  const supplierFinalCost = purchases.reduce((sum, item) => sum + purchaseFinalCost(item), 0);
+  const supplierPaidWithoutInvoice = Math.max(0, supplierPaid - supplierInvoiced);
+  const supplierPendingToPay = purchases.reduce((sum, item) => sum + Math.max(0, Math.max(purchaseExpected(item), purchaseInvoiced(item), purchaseFinalCost(item)) - purchasePaid(item)), 0);
+  const provisionalCost = Math.max(supplierExpected, supplierPaid, supplierInvoiced);
+  const provisionalMargin = acceptedValue ? acceptedValue - provisionalCost : 0;
+  const finalMargin = acceptedValue && supplierFinalCost ? acceptedValue - supplierFinalCost : 0;
+  const financialReady = purchases.length > 0
+    && supplierPendingToPay <= 0.01
+    && purchases.every((item) => ["approved", "not_required", "cancelled"].includes(String(item.status)))
+    && purchases.every((item) => purchasePaid(item) <= 0.01 || purchaseInvoiced(item) > 0 || String(item.status) === "not_required");
   const ticketDocuments = documents.filter((item) => ["ticket_cliente", "reserva", "bono_viaje"].includes(String(item.type || item.document_type || "").toLowerCase()));
   const operationComplete = purchasesComplete && ticketDocuments.length > 0;
   const firstPending = [precontractAccepted, travelersComplete, signedContract, fullyPaid, legalSent, operationComplete].findIndex((value) => !value) + 1;
@@ -136,7 +183,7 @@ export function CaseWorkspace(props: WorkspaceProps & { role?: string | null }) 
     </ProcessStage>
 
     <ProcessStage number={6} id="operativa" title="Compras de proveedores y entrega de tickets" description="Concilia cada compra y sube bonos, reservas y tickets que quedarán disponibles para el cliente." done={operationComplete} active={firstPending === 6}>
-      {canAccessPurchases ? <section className="card"><div className="section-heading"><div><h2>Compras esperadas</h2><p>Cada servicio externo debe quedar conciliado con factura o compra de Holded.</p></div><a className="btn" href={`/compras?caseId=${encodeURIComponent(props.initialCase.id)}`}>Abrir compras</a></div>{purchases.length ? <div className="table-scroll"><table><thead><tr><th>Proveedor</th><th>Servicio</th><th>Esperado</th><th>Estado</th></tr></thead><tbody>{purchases.map((item) => <tr key={item.id}><td>{item.supplier_name || "Sin proveedor"}</td><td>{item.service || "Servicio"}</td><td>{money(item.expected_amount || item.amount, props.initialCase.currency || "EUR")}</td><td>{item.status || "pending"}</td></tr>)}</tbody></table></div> : <p>No hay compras esperadas.</p>}</section> : <section className="card"><h2>Acceso restringido</h2><p>Las compras no están disponibles para tu rol.</p></section>}
+      {canAccessPurchases ? <section className="card"><div className="section-heading"><div><h2>Compras y costes del expediente</h2><p>Separa salida de caja, factura recibida y coste final. No se trata como margen final hasta que la factura esté conciliada.</p></div><a className="btn" href={`/compras?caseId=${encodeURIComponent(props.initialCase.id)}`}>Abrir compras</a></div>{purchases.length ? <><section className="client-kpis"><div className="kpi-card"><span className="kpi-icon">C</span><span className="kpi-copy"><strong>Coste presupuestado</strong><b>{money(supplierExpected, props.initialCase.currency || "EUR")}</b><small>Previsión inicial</small></span></div><div className="kpi-card"><span className="kpi-icon">€</span><span className="kpi-copy"><strong>Pagado proveedor</strong><b>{money(supplierPaid, props.initialCase.currency || "EUR")}</b><small>Cash flow real</small></span></div><div className="kpi-card"><span className="kpi-icon">F</span><span className="kpi-copy"><strong>Facturado</strong><b>{money(supplierInvoiced, props.initialCase.currency || "EUR")}</b><small>{money(supplierPaidWithoutInvoice, props.initialCase.currency || "EUR")} pagado sin factura</small></span></div><div className="kpi-card"><span className="kpi-icon">↘</span><span className="kpi-copy"><strong>Pendiente pagar</strong><b>{money(supplierPendingToPay, props.initialCase.currency || "EUR")}</b><small>{financialReady ? "Finanzas conciliadas" : "Finanzas pendientes"}</small></span></div></section><section className="client-kpis"><div className="kpi-card"><span className="kpi-icon">M</span><span className="kpi-copy"><strong>Margen provisional</strong><b>{money(provisionalMargin, props.initialCase.currency || "EUR")}</b><small>Venta aceptada − coste provisional</small></span></div><div className="kpi-card"><span className="kpi-icon">✓</span><span className="kpi-copy"><strong>Margen final</strong><b>{supplierFinalCost ? money(finalMargin, props.initialCase.currency || "EUR") : "Pendiente"}</b><small>Solo con facturas conciliadas</small></span></div></section><div className="table-scroll"><table><thead><tr><th>Proveedor</th><th>Servicio</th><th>Previsto</th><th>Pagado</th><th>Facturado</th><th>Pendiente</th><th>Estado</th></tr></thead><tbody>{purchases.map((item) => { const expected = purchaseExpected(item); const paidSupplier = purchasePaid(item); const invoiced = purchaseInvoiced(item); const pending = Math.max(0, Math.max(expected, invoiced, purchaseFinalCost(item)) - paidSupplier); return <tr key={item.id}><td>{item.supplier_name || "Sin proveedor"}<br /><small>{item.payment_reference || "sin referencia"}</small></td><td>{item.service || "Servicio"}</td><td>{money(expected, props.initialCase.currency || "EUR")}</td><td>{money(paidSupplier, props.initialCase.currency || "EUR")}</td><td>{invoiced ? money(invoiced, props.initialCase.currency || "EUR") : "Pendiente"}</td><td>{pending ? money(pending, props.initialCase.currency || "EUR") : "—"}</td><td>{purchaseFinancialStatus(item)}<br /><small>{item.status || "pending"}</small></td></tr>; })}</tbody></table></div></> : <p>No hay compras esperadas.</p>}</section> : <section className="card"><h2>Acceso restringido</h2><p>Las compras no están disponibles para tu rol.</p></section>}
       <section className="card"><div className="panel-head"><div><h2>Tickets y bonos del cliente</h2><p>Sube los documentos desde el paso de documentación usando el tipo “Ticket / bono de viaje”.</p></div><span className="badge">{ticketDocuments.length}</span></div><button className="btn secondary" type="button" onClick={() => scrollTo("viajeros-documentos")}>Ir a documentación</button></section>
     </ProcessStage>
 

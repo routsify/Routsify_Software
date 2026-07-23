@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
 import { requireAppPermission } from "@/lib/app-auth";
-import { CASE_SUMMARY_PROPOSALS_SELECT } from "@/lib/query-selects";
+import { CASE_SUMMARY_PROPOSALS_SELECT, PURCHASE_WITH_RELATIONS_SELECT } from "@/lib/query-selects";
 import { hasPermission } from "@/lib/rbac";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 import { CaseWorkspace } from "./CaseWorkspace";
@@ -29,7 +29,7 @@ export default async function CaseDetailPage({ params }: { params: Promise<{ cas
       ? supabase.from("payments").select("id,amount,currency,status,confirmed_at").eq("case_id", caseRow.id).eq("organization_id", session.organizationId).order("created_at", { ascending: false })
       : emptyResult,
     canViewPurchases
-      ? supabase.from("expected_purchases").select("id,supplier_name,service,expected_amount,amount,status").eq("case_id", caseRow.id).eq("organization_id", session.organizationId).order("created_at", { ascending: false })
+      ? supabase.from("expected_purchases").select(PURCHASE_WITH_RELATIONS_SELECT).eq("case_id", caseRow.id).eq("organization_id", session.organizationId).order("created_at", { ascending: false })
       : emptyResult,
     supabase.from("proposals").select(CASE_SUMMARY_PROPOSALS_SELECT).eq("case_id", caseRow.id).eq("organization_id", session.organizationId).order("created_at", { ascending: false }),
   ]);
