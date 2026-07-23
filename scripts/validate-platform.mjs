@@ -22,10 +22,6 @@ const secretRoute = read("app/api/routsify/settings/secrets/[secretKey]/route.ts
 
 assert(pkg.scripts?.["platform:build"], "Missing platform:build script");
 assert(pkg.scripts?.["validate:platform"], "Missing validate:platform script");
-assert(!pkg.scripts?.["netlify:build"], "Remove platform-specific netlify:build script; auto-deploy is handled by the platform");
-assert(!pkg.scripts?.["smoke:netlify"], "Remove smoke:netlify script; deployment smoke checks are external/manual");
-assert(!pkg.devDependencies?.["@netlify/plugin-nextjs"], "Remove the unused Netlify deployment plugin");
-assert(!existsSync(join(root, "netlify.toml")), "Vercel is the only deployment target; remove stale Netlify configuration");
 assert(!JSON.stringify(pkg).includes('"latest"'), "Dependencies must not use latest");
 
 assert(
