@@ -59,15 +59,16 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
     return NextResponse.json({ ok: false, error: "purchase_has_protected_history", blockers: { source_or_status: 1 } }, { status: 409 });
   }
 
-  const [invoices, communications, matches, outbox] = await Promise.all([
+  const [invoices, communications, matches, outbox, supplierPayments] = await Promise.all([
     db.from("supplier_invoices").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("expected_purchase_id", purchaseId),
     db.from("communication_followups").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("purchase_id", purchaseId),
     db.from("purchase_match_candidates").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("expected_purchase_id", purchaseId),
     db.from("integration_outbox").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("entity_id", purchaseId),
+    db.from("supplier_payment_allocations").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("expected_purchase_id", purchaseId),
   ]);
-  const dependencyError = [invoices, communications, matches, outbox].find((result) => result.error)?.error;
+  const dependencyError = [invoices, communications, matches, outbox, supplierPayments].find((result) => result.error)?.error;
   if (dependencyError) return NextResponse.json({ ok: false, error: dependencyError.message }, { status: 400 });
-  const blockers = { invoices: invoices.count || 0, communications: communications.count || 0, matches: matches.count || 0, outbox: outbox.count || 0 };
+  const blockers = { invoices: invoices.count || 0, communications: communications.count || 0, matches: matches.count || 0, outbox: outbox.count || 0, supplier_payments: supplierPayments.count || 0 };
   if (Object.values(blockers).some((value) => value > 0)) {
     return NextResponse.json({ ok: false, error: "purchase_has_protected_history", blockers }, { status: 409 });
   }

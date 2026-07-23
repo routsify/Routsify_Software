@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jsonAccessDenied, requireInternalAccess } from "@/lib/api-security";
-import { CASE_SUMMARY_PROPOSALS_SELECT } from "@/lib/query-selects";
+import { CASE_SUMMARY_PROPOSALS_SELECT, PURCHASE_WITH_RELATIONS_SELECT } from "@/lib/query-selects";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 
 const sections = new Set(["summary", "travelers", "documents", "contract", "purchases", "activity"]);
@@ -75,7 +75,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
   if (section === "purchases") {
     if (!roleAllowed(access.role, ["admin", "direction", "sales", "operations", "billing"])) return NextResponse.json({ ok: false, error: "insufficient_role" }, { status: 403, headers: NO_STORE_HEADERS });
-    const { data, error } = await supabase.from("expected_purchases").select("id,supplier_name,service,expected_amount,amount,status").eq("case_id", caseId).eq("organization_id", organizationId).order("created_at", { ascending: false });
+    const { data, error } = await supabase.from("expected_purchases").select(PURCHASE_WITH_RELATIONS_SELECT).eq("case_id", caseId).eq("organization_id", organizationId).order("created_at", { ascending: false });
     return error ? NextResponse.json({ ok: false, error: error.message }, { status: 400, headers: NO_STORE_HEADERS }) : ok({ purchases: data || [] });
   }
 
@@ -90,7 +90,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
   const [paymentsResult, purchasesResult, proposalsResult] = await Promise.all([
     supabase.from("payments").select("id,amount,currency,status,confirmed_at").eq("case_id", caseId).eq("organization_id", organizationId).order("created_at", { ascending: false }),
-    supabase.from("expected_purchases").select("id,supplier_name,service,expected_amount,amount,status").eq("case_id", caseId).eq("organization_id", organizationId).order("created_at", { ascending: false }),
+    supabase.from("expected_purchases").select(PURCHASE_WITH_RELATIONS_SELECT).eq("case_id", caseId).eq("organization_id", organizationId).order("created_at", { ascending: false }),
     supabase.from("proposals").select(CASE_SUMMARY_PROPOSALS_SELECT).eq("case_id", caseId).eq("organization_id", organizationId).order("created_at", { ascending: false }),
   ]);
   const error = paymentsResult.error || purchasesResult.error || proposalsResult.error;
