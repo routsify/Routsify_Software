@@ -3,9 +3,10 @@ import { loadEffectiveSettings } from "@/lib/effective-settings-server";
 import { queueEligibleFinalInvoices } from "@/lib/fiscal-workflow-server";
 import { recordIntegrationRun } from "@/lib/integration-health-server";
 import { processOutboxBatch, syncHoldedPurchaseCandidates } from "@/lib/outbox-worker-server";
+import { sendTransactionalEmail } from "@/lib/smtp-email-server";
 import { getSupabaseAdminClient, hasSupabaseAdminEnv } from "@/lib/supabase-admin";
 
-export type RoutsifyJob = "holded_sync_pending" | "communication_followup_sync" | "sync_holded_purchases" | "pre_trip_supplier_check" | "post_trip_supplier_check" | "operational_close_check" | "fiscal_final_invoice_check" | "privacy_retention_review";
+export type RoutsifyJob = "holded_sync_pending" | "communication_followup_sync" | "pre_trip_supplier_check" | "post_trip_supplier_check" | "operational_close_check" | "fiscal_final_invoice_check" | "privacy_retention_review";
 
 async function createOrRefreshOpenTask(input: {
   organizationId: string;
@@ -115,19 +116,53 @@ async function closeChecks() {
   return results;
 }
 
-async function syncPurchaseCandidatesForAllOrganizations() {
+async function notifyHoldedCronFailure(input: { organizationId: string; startedAt: string; finishedAt: string; error: string }) {
   const supabase = getSupabaseAdminClient();
-  const { data: organizations, error } = await supabase.from("organizations").select("id");
-  if (error) throw new Error(error.message);
-  const results = [];
-  for (const organization of organizations || []) {
-    try {
-      results.push({ organizationId: organization.id, ok: true, data: await syncHoldedPurchaseCandidates(organization.id) });
-    } catch (error) {
-      results.push({ organizationId: organization.id, ok: false, error: error instanceof Error ? error.message : "holded_purchase_sync_failed" });
-    }
-  }
-  return results;
+  const settings = await loadEffectiveSettings(input.organizationId).catch(() => null);
+  const configuredRecipients = String(settings?.string("alerts.operations_email", "") || "")
+    .split(/[,\s;]+/)
+    .map((item) => item.trim().toLowerCase())
+    .filter((item) => /^\S+@\S+\.\S+$/.test(item));
+  const { data: profiles } = await supabase.from("profiles")
+    .select("user_id,role")
+    .eq("organization_id", input.organizationId)
+    .in("role", ["admin", "direction"])
+    .limit(50);
+  const profileUserIds = new Set((profiles || []).map((profile) => String(profile.user_id)));
+  const { data: users } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  const authRecipients = (users?.users || [])
+    .filter((user) => profileUserIds.has(user.id))
+    .map((user) => String(user.email || "").trim().toLowerCase())
+    .filter((email) => /^\S+@\S+\.\S+$/.test(email));
+  const recipients = [...new Set([...configuredRecipients, ...authRecipients])].slice(0, 5);
+  if (!recipients.length) return { ok: false as const, skipped: "no_admin_recipient" };
+
+  const subject = "Routsify · Fallo en sincronización Holded";
+  const body = [
+    "La sincronización automática de facturas de proveedor desde Holded ha fallado.",
+    "",
+    `Organización: ${input.organizationId}`,
+    `Inicio: ${input.startedAt}`,
+    `Fin: ${input.finishedAt}`,
+    `Error: ${input.error}`,
+    "",
+    "Acción recomendada: revisar /compras, corregir la causa y ejecutar “Sincronizar Holded ahora”.",
+  ].join("\n");
+  const deliveries = await Promise.allSettled(recipients.map((to) => sendTransactionalEmail({ organizationId: input.organizationId, to, subject, body })));
+  return {
+    ok: deliveries.some((delivery) => delivery.status === "fulfilled" && delivery.value.ok),
+    recipients: recipients.length,
+  };
+}
+
+function hasFailedOrganizations(data: unknown) {
+  return Boolean(data && typeof data === "object" && Number((data as { failedOrganizations?: unknown }).failedOrganizations || 0) > 0);
+}
+
+function jobResult<T>(job: RoutsifyJob, data: T) {
+  return hasFailedOrganizations(data)
+    ? { ok: false as const, job, data, error: "job_partial_failure" }
+    : { ok: true as const, job, data };
 }
 
 export async function runHoldedSupplierInvoiceAutopilot(triggerSource = "vercel_cron") {
@@ -141,18 +176,17 @@ export async function runHoldedSupplierInvoiceAutopilot(triggerSource = "vercel_
     const organizationId = String(organization.id);
     const startedAt = new Date().toISOString();
     try {
-      const settings = await loadEffectiveSettings(organizationId);
-      const intervalMinutes = Math.min(60, Math.max(10, settings.number("purchases.holded.sync_interval_minutes", 15)));
       const { data: lastRun } = await supabase.from("integration_runs")
         .select("started_at,finished_at")
         .eq("organization_id", organizationId)
         .eq("integration", "holded_supplier_invoices")
-        .eq("kind", "cron")
         .eq("status", "done")
         .order("started_at", { ascending: false })
         .limit(1)
         .maybeSingle();
-      const fallbackSince = new Date(Date.now() - intervalMinutes * 60_000);
+      const settings = await loadEffectiveSettings(organizationId);
+      const initialBackfillDays = Math.min(90, Math.max(1, settings.number("purchases.holded.initial_backfill_days", 30)));
+      const fallbackSince = new Date(Date.now() - initialBackfillDays * 24 * 60 * 60 * 1000);
       const lastCompletedAt = lastRun?.finished_at || lastRun?.started_at;
       const since = lastCompletedAt ? new Date(Date.parse(lastCompletedAt) - 5 * 60_000) : fallbackSince;
       const until = new Date();
@@ -173,7 +207,7 @@ export async function runHoldedSupplierInvoiceAutopilot(triggerSource = "vercel_
         finishedAt,
         triggerSource,
         summary: `${Number(data.importedInvoices || 0)} facturas importadas, ${Number(data.autoApproved || 0)} conciliadas, ${overdueInvoices || 0} vencidas.`,
-        metadata: { ...data, overdueInvoices: overdueInvoices || 0, intervalMinutes },
+        metadata: { ...data, overdueInvoices: overdueInvoices || 0, initialBackfillDays, cursorMode: lastCompletedAt ? "last_success_with_overlap" : "initial_backfill" },
       });
       results.push({ organizationId, ok: true, data, overdueInvoices: overdueInvoices || 0 });
     } catch (error) {
@@ -189,8 +223,11 @@ export async function runHoldedSupplierInvoiceAutopilot(triggerSource = "vercel_
         triggerSource,
         summary: "Error sincronizando facturas de proveedor desde Holded.",
         lastError: message,
+        metadata: { alert: "pending" },
       }).catch(() => null);
+      const alert = await notifyHoldedCronFailure({ organizationId, startedAt, finishedAt, error: message }).catch((alertError) => ({ ok: false as const, error: alertError instanceof Error ? alertError.message : "alert_failed" }));
       results.push({ organizationId, ok: false, error: message });
+      results[results.length - 1] = { ...results[results.length - 1], alert };
     }
   }
 
@@ -289,14 +326,13 @@ async function retentionReview() {
 export async function runRoutsifyJob(job: RoutsifyJob) {
   if (!hasSupabaseAdminEnv()) return { ok: false as const, error: "supabase_admin_not_configured" };
   try {
-    if (job === "holded_sync_pending") return { ok: true as const, job, data: await processOutboxBatch(50) };
-    if (job === "communication_followup_sync") return { ok: true as const, job, data: await syncCommunicationFollowupsForAllOrganizations() };
-    if (job === "sync_holded_purchases") return { ok: true as const, job, data: await syncPurchaseCandidatesForAllOrganizations() };
-    if (job === "pre_trip_supplier_check") return { ok: true as const, job, data: await createSupplierTasks("pre") };
-    if (job === "post_trip_supplier_check") return { ok: true as const, job, data: await createSupplierTasks("post") };
-    if (job === "operational_close_check") return { ok: true as const, job, data: await closeChecks() };
-    if (job === "fiscal_final_invoice_check") return { ok: true as const, job, data: await queueEligibleFinalInvoices() };
-    if (job === "privacy_retention_review") return { ok: true as const, job, data: await retentionReview() };
+    if (job === "holded_sync_pending") return jobResult(job, await processOutboxBatch(50));
+    if (job === "communication_followup_sync") return jobResult(job, await syncCommunicationFollowupsForAllOrganizations());
+    if (job === "pre_trip_supplier_check") return jobResult(job, await createSupplierTasks("pre"));
+    if (job === "post_trip_supplier_check") return jobResult(job, await createSupplierTasks("post"));
+    if (job === "operational_close_check") return jobResult(job, await closeChecks());
+    if (job === "fiscal_final_invoice_check") return jobResult(job, await queueEligibleFinalInvoices());
+    if (job === "privacy_retention_review") return jobResult(job, await retentionReview());
     return { ok: false as const, error: "unknown_job" };
   } catch (error) {
     return { ok: false as const, error: error instanceof Error ? error.message : "job_failed" };

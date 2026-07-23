@@ -11,7 +11,6 @@ export const maxDuration = 300;
 const jobs: RoutsifyJob[] = [
   "holded_sync_pending",
   "communication_followup_sync",
-  "sync_holded_purchases",
   "pre_trip_supplier_check",
   "post_trip_supplier_check",
   "operational_close_check",
