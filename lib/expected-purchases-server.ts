@@ -1,5 +1,6 @@
 import { PURCHASE_WITH_RELATIONS_SELECT } from "@/lib/query-selects";
 import { syncHoldedPurchaseCandidates } from "@/lib/holded-outbox-handlers-v2";
+import { recordIntegrationRun } from "@/lib/integration-health-server";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 
 const ACTIVE_STATUSES = new Set(["expected", "requested", "uploaded", "holded_candidate", "matched", "review_needed"]);
@@ -97,10 +98,36 @@ export async function enqueuePurchaseHoldedSync(input: { organizationId: string;
 }
 
 export async function syncExpectedPurchasesFromHolded(input: { organizationId: string }) {
+  const startedAt = new Date().toISOString();
   try {
     const data = await syncHoldedPurchaseCandidates(input.organizationId);
+    const finishedAt = new Date().toISOString();
+    await recordIntegrationRun({
+      organizationId: input.organizationId,
+      integration: "holded_supplier_invoices",
+      kind: "worker",
+      status: "done",
+      startedAt,
+      finishedAt,
+      triggerSource: "manual",
+      summary: `${Number(data.importedInvoices || 0)} facturas importadas, ${Number(data.autoApproved || 0)} conciliadas manualmente.`,
+      metadata: { ...data, mode: "manual_sync" },
+    }).catch(() => null);
     return { ok: true as const, data };
   } catch (caught) {
-    return { ok: false as const, error: caught instanceof Error ? caught.message : "holded_sync_failed" };
+    const error = caught instanceof Error ? caught.message : "holded_sync_failed";
+    await recordIntegrationRun({
+      organizationId: input.organizationId,
+      integration: "holded_supplier_invoices",
+      kind: "worker",
+      status: "failed",
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      triggerSource: "manual",
+      summary: "Error sincronizando facturas de proveedor desde Holded.",
+      lastError: error,
+      metadata: { mode: "manual_sync" },
+    }).catch(() => null);
+    return { ok: false as const, error };
   }
 }

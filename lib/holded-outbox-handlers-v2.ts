@@ -285,7 +285,7 @@ export async function syncHoldedPurchaseCandidates(organizationId: string, optio
 
   const db = getSupabaseAdminClient();
   const expectedQuery = db.from("expected_purchases")
-    .select("id,case_id,supplier_id,supplier_name,service,expected_amount,amount,currency,status,active,required,allow_partial_invoicing,holded_purchase_id,approved_cost,invoice_total,invoice_expected_by,due_date,review_notes,budget_lines(description_public,start_date,end_date),cases(case_code,trip_start,trip_end),suppliers(id,name,fiscal_name,tax_id,holded_contact_id)")
+    .select("id,case_id,supplier_id,supplier_name,service,expected_amount,amount,currency,status,active,required,allow_partial_invoicing,holded_purchase_id,approved_cost,invoice_total,invoice_expected_by,due_date,review_notes,budget_lines:budget_lines!expected_purchases_budget_line_id_fkey(description_public,start_date,end_date),cases(case_code,trip_start,trip_end),suppliers(id,name,fiscal_name,tax_id,holded_contact_id)")
     .eq("organization_id", organizationId)
     .in("status", ["expected", "requested", "uploaded", "holded_candidate", "review_needed", "approved"])
     .limit(5000);

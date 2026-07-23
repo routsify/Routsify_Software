@@ -8,7 +8,7 @@ import { PurchasesManagerOperational } from "./PurchasesManagerOperational";
 
 export default async function PurchasesPage({ searchParams }: { searchParams: Promise<{ caseId?: string; supplierId?: string }> }) {
   const session = await requireAppPermission("purchases.view");
-  const [{ caseId, supplierId }, purchaseResult, caseResult, supplierResult, syncRunResult] = await Promise.all([
+  const [{ caseId, supplierId }, purchaseResult, caseResult, supplierResult, syncRunResult, successfulSyncRunResult] = await Promise.all([
     searchParams,
     listOrganizationPurchases(session.organizationId),
     listOrganizationCases(session.organizationId),
@@ -17,7 +17,14 @@ export default async function PurchasesPage({ searchParams }: { searchParams: Pr
       .select("id,status,started_at,finished_at,summary,last_error")
       .eq("organization_id", session.organizationId)
       .eq("integration", "holded_supplier_invoices")
-      .eq("kind", "cron")
+      .order("started_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    getSupabaseAdminClient().from("integration_runs")
+      .select("finished_at,started_at")
+      .eq("organization_id", session.organizationId)
+      .eq("integration", "holded_supplier_invoices")
+      .eq("status", "done")
       .order("started_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
@@ -34,7 +41,7 @@ export default async function PurchasesPage({ searchParams }: { searchParams: Pr
         description="Controla las facturas esperadas por proveedor. Holded recibe y lee las facturas; Routsify las sincroniza, concilia y muestra lo que falta."
         action={<Link className="btn secondary" href="/proveedores" prefetch={false}>Directorio de proveedores</Link>}
       />
-      <PurchasesManagerOperational initialPurchases={purchases} initialCases={cases} initialSuppliers={suppliers} initialSyncRun={syncRunResult.data || null} initialCaseId={caseId || ""} initialSupplierId={supplierId || ""} />
+      <PurchasesManagerOperational initialPurchases={purchases} initialCases={cases} initialSuppliers={suppliers} initialSyncRun={syncRunResult.data || null} initialLastSuccessfulSyncAt={successfulSyncRunResult.data?.finished_at || successfulSyncRunResult.data?.started_at || null} generatedAt={new Date().toISOString()} initialCaseId={caseId || ""} initialSupplierId={supplierId || ""} />
     </AppShell>
   );
 }
