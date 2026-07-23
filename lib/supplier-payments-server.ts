@@ -47,12 +47,10 @@ export async function registerManualSupplierPayment(input: {
   const method = String(input.method || "manual").trim().slice(0, 80) || "manual";
   const description = String(input.description || `${purchase.supplier_name || "Proveedor"} · ${purchase.service || "Pago proveedor"}`).trim().slice(0, 500);
 
-  const { data: payment, error: paymentError } = await db
-    .from("supplier_payment_events")
-    .insert({
-      organization_id: input.organizationId,
-      supplier_id: purchase.supplier_id || null,
-      case_id: purchase.case_id || null,
+  const { data: importResult, error: importError } = await (db as any).rpc("import_and_allocate_supplier_payment", {
+    target_organization_id: input.organizationId,
+    target_expected_purchase_id: input.purchaseId,
+    payment_event: {
       amount,
       currency,
       paid_at: paidAt,
@@ -62,49 +60,12 @@ export async function registerManualSupplierPayment(input: {
       status: "matched",
       match_score: 100,
       source_payload: { method, actor_id: input.actorId, expected_purchase_id: input.purchaseId },
-    })
-    .select("id")
-    .single();
-  if (paymentError) return { ok: false as const, error: paymentError.message };
-
-  const { error: allocationError } = await db
-    .from("supplier_payment_allocations")
-    .insert({
-      organization_id: input.organizationId,
-      supplier_payment_event_id: payment.id,
-      expected_purchase_id: input.purchaseId,
-      allocated_amount: amount,
-      currency,
-      allocation_source: "manual",
-      match_score: 100,
-    });
-  if (allocationError) return { ok: false as const, error: allocationError.message };
-
-  await db.from("timeline_events").insert({
-    organization_id: input.organizationId,
-    case_id: purchase.case_id,
-    event_type: "supplier_payment.registered",
-    title: "Pago a proveedor registrado",
-    payload: {
-      expected_purchase_id: input.purchaseId,
-      supplier_payment_event_id: payment.id,
-      amount,
-      currency,
-      paid_at: paidAt,
-      source: "manual",
-      reference,
     },
-    created_by: input.actorId,
-  }).then(() => null, () => null);
-
-  await db.from("audit_log").insert({
-    organization_id: input.organizationId,
+    allocation_source: "manual",
     actor_id: input.actorId,
-    entity_type: "supplier_payment_event",
-    entity_id: payment.id,
-    action: "supplier_payment.registered",
-    after_data: { expected_purchase_id: input.purchaseId, amount, currency, paid_at: paidAt, reference },
-  }).then(() => null, () => null);
+  });
+  if (importError) return { ok: false as const, error: importError.message };
+  if (!importResult?.ok) return { ok: false as const, error: String(importResult?.error || "supplier_payment_import_failed") };
 
   const { data, error } = await db
     .from("expected_purchases")

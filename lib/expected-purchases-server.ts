@@ -1,5 +1,6 @@
 import { PURCHASE_WITH_RELATIONS_SELECT } from "@/lib/query-selects";
 import { syncHoldedPurchaseCandidates } from "@/lib/holded-outbox-handlers-v2";
+import { syncHoldedSupplierPayments } from "@/lib/holded-supplier-payments-server";
 import { recordIntegrationRun } from "@/lib/integration-health-server";
 import { getSupabaseAdminClient } from "@/lib/supabase-admin";
 
@@ -90,8 +91,10 @@ export async function enqueuePurchaseHoldedSync(input: { organizationId: string;
   if (error) return { ok: false as const, error: error.message };
   if (!purchase) return { ok: false as const, error: "purchase_not_found" };
   try {
-    const data = await syncHoldedPurchaseCandidates(input.organizationId, { targetPurchaseId: input.purchaseId });
-    return { ok: true as const, data: { ...data, mode: "holded_import_only" } };
+    const payments = await syncHoldedSupplierPayments(input.organizationId, { targetPurchaseId: input.purchaseId, triggerSource: "manual", recordRun: true });
+    if (!payments.ok) return { ok: false as const, error: payments.error || "holded_supplier_payments_failed" };
+    const invoices = await syncHoldedPurchaseCandidates(input.organizationId, { targetPurchaseId: input.purchaseId });
+    return { ok: true as const, data: { payments, invoices, mode: "holded_import_only" } };
   } catch (caught) {
     return { ok: false as const, error: caught instanceof Error ? caught.message : "holded_sync_failed" };
   }
@@ -100,6 +103,8 @@ export async function enqueuePurchaseHoldedSync(input: { organizationId: string;
 export async function syncExpectedPurchasesFromHolded(input: { organizationId: string }) {
   const startedAt = new Date().toISOString();
   try {
+    const payments = await syncHoldedSupplierPayments(input.organizationId, { triggerSource: "manual", recordRun: true });
+    if (!payments.ok) throw new Error(payments.error || "holded_supplier_payments_failed");
     const data = await syncHoldedPurchaseCandidates(input.organizationId);
     const finishedAt = new Date().toISOString();
     await recordIntegrationRun({
@@ -110,10 +115,10 @@ export async function syncExpectedPurchasesFromHolded(input: { organizationId: s
       startedAt,
       finishedAt,
       triggerSource: "manual",
-      summary: `${Number(data.importedInvoices || 0)} facturas importadas, ${Number(data.autoApproved || 0)} conciliadas manualmente.`,
-      metadata: { ...data, mode: "manual_sync" },
+      summary: `${Number(payments.assigned || 0)} pagos asignados, ${Number(data.importedInvoices || 0)} facturas importadas, ${Number(data.autoApproved || 0)} conciliadas manualmente.`,
+      metadata: { payments, invoices: data, mode: "manual_sync" },
     }).catch(() => null);
-    return { ok: true as const, data };
+    return { ok: true as const, data: { payments, invoices: data } };
   } catch (caught) {
     const error = caught instanceof Error ? caught.message : "holded_sync_failed";
     await recordIntegrationRun({
